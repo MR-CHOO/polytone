@@ -135,6 +135,53 @@ public interface CodecXmapMixin {
         return wrapped;
     }
 
+    @ModifyReturnValue(method = "lenientOptionalFieldOf(Ljava/lang/String;)Lcom/mojang/serialization/MapCodec;",
+            at = @At("RETURN"))
+    private MapCodec<?> polytone$tagLenientOptionalFieldOf(MapCodec<?> wrapped, @Local(argsOnly = true) String name) {
+        polytone$tagSingleField(wrapped, name, true, null);
+        return wrapped;
+    }
+
+    @ModifyReturnValue(
+            method = "lenientOptionalFieldOf(Ljava/lang/String;Ljava/lang/Object;)Lcom/mojang/serialization/MapCodec;",
+            at = @At("RETURN"))
+    private MapCodec<?> polytone$tagLenientOptionalFieldOfWithDefault(
+            MapCodec<?> wrapped, @Local(argsOnly = true) String name, @Local(argsOnly = true) Object defaultValue) {
+        polytone$tagSingleField(wrapped, name, true, defaultValue);
+        return wrapped;
+    }
+
+    // ---- static range/length factories: preserve the exact bounds, which the generic
+    // xmap-inheritance path would otherwise erase back to full-range primitives ----
+
+    @ModifyReturnValue(method = "intRange", at = @At("RETURN"))
+    private static Codec<Integer> polytone$tagIntRange(Codec<Integer> wrapped,
+            @Local(argsOnly = true, ordinal = 0) int min, @Local(argsOnly = true, ordinal = 1) int max) {
+        SchemaTags.tag(wrapped, new Schema.IntRange(min, max));
+        return wrapped;
+    }
+
+    @ModifyReturnValue(method = "floatRange", at = @At("RETURN"))
+    private static Codec<Float> polytone$tagFloatRange(Codec<Float> wrapped,
+            @Local(argsOnly = true, ordinal = 0) float min, @Local(argsOnly = true, ordinal = 1) float max) {
+        SchemaTags.tag(wrapped, new Schema.FloatRange(min, max));
+        return wrapped;
+    }
+
+    @ModifyReturnValue(method = "doubleRange", at = @At("RETURN"))
+    private static Codec<Double> polytone$tagDoubleRange(Codec<Double> wrapped,
+            @Local(argsOnly = true, ordinal = 0) double min, @Local(argsOnly = true, ordinal = 1) double max) {
+        SchemaTags.tag(wrapped, new Schema.DoubleRange(min, max));
+        return wrapped;
+    }
+
+    @ModifyReturnValue(method = "string(II)Lcom/mojang/serialization/Codec;", at = @At("RETURN"))
+    private static Codec<String> polytone$tagBoundedString(Codec<String> wrapped,
+            @Local(argsOnly = true, ordinal = 0) int minSize, @Local(argsOnly = true, ordinal = 1) int maxSize) {
+        SchemaTags.tag(wrapped, new Schema.Str(minSize, maxSize, null));
+        return wrapped;
+    }
+
     @Unique
     @SuppressWarnings({"unchecked", "rawtypes"})
     private void polytone$tagSingleField(MapCodec<?> wrapped, String name, boolean optional, Object defaultValue) {

@@ -2,7 +2,10 @@ package net.mehvahdjukaar.polytone.common.codec_ui;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
+import com.mojang.serialization.codecs.CompoundListCodec;
+import com.mojang.serialization.codecs.DispatchedMapCodec;
 import com.mojang.serialization.codecs.EitherCodec;
+import com.mojang.serialization.codecs.EitherMapCodec;
 import com.mojang.serialization.codecs.KeyDispatchCodec;
 import com.mojang.serialization.codecs.ListCodec;
 import com.mojang.serialization.codecs.OptionalFieldCodec;
@@ -10,6 +13,7 @@ import com.mojang.serialization.codecs.PairCodec;
 import com.mojang.serialization.codecs.PairMapCodec;
 import com.mojang.serialization.codecs.SimpleMapCodec;
 import com.mojang.serialization.codecs.UnboundedMapCodec;
+import com.mojang.serialization.codecs.XorCodec;
 import com.mojang.serialization.DataResult;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.common.codec_ui.internal.DispatchRegistry;
@@ -54,12 +58,24 @@ public final class SchemaResolver {
     private static final @org.jetbrains.annotations.Nullable VarHandle SIMPLE_MAP_ELEMENT;
     private static final @org.jetbrains.annotations.Nullable VarHandle SIMPLE_MAP_KEYS;
 
+    private static final @org.jetbrains.annotations.Nullable VarHandle RECURSIVE_WRAPPED;
+    private static final @org.jetbrains.annotations.Nullable Class<?> RECURSIVE_MAP_CLASS;
+    private static final @org.jetbrains.annotations.Nullable VarHandle RECURSIVE_MAP_WRAPPED;
+    private static final @org.jetbrains.annotations.Nullable VarHandle COMPOUND_LIST_KEY;
+    private static final @org.jetbrains.annotations.Nullable VarHandle COMPOUND_LIST_ELEMENT;
+    private static final @org.jetbrains.annotations.Nullable VarHandle EITHER_MAP_FIRST;
+    private static final @org.jetbrains.annotations.Nullable VarHandle EITHER_MAP_SECOND;
+
     static {
         VarHandle pf = null, ps = null;
         VarHandle ofn = null, ofe = null, ofl = null;
         VarHandle pmf = null, pms = null;
         VarHandle kdk = null, kdt = null, kdd = null;
         VarHandle smk = null, sme = null, sms = null;
+        VarHandle rw = null, rmw = null;
+        Class<?> rmc = null;
+        VarHandle clk = null, cle = null;
+        VarHandle emf = null, ems = null;
         try {
             var lookup = MethodHandles.privateLookupIn(PairCodec.class, MethodHandles.lookup());
             pf = lookup.findVarHandle(PairCodec.class, "first", Codec.class);
@@ -93,6 +109,27 @@ public final class SchemaResolver {
             sme = lookup.findVarHandle(SimpleMapCodec.class, "elementCodec", Codec.class);
             sms = lookup.findVarHandle(SimpleMapCodec.class, "keys", com.mojang.serialization.Keyable.class);
         } catch (Throwable ignored) {}
+        try {
+            var lookup = MethodHandles.privateLookupIn(Codec.RecursiveCodec.class, MethodHandles.lookup());
+            rw = lookup.findVarHandle(Codec.RecursiveCodec.class, "wrapped", java.util.function.Supplier.class);
+        } catch (Throwable ignored) {}
+        try {
+            rmc = Class.forName("com.mojang.serialization.MapCodec$RecursiveMapCodec");
+            var lookup = MethodHandles.privateLookupIn(rmc, MethodHandles.lookup());
+            rmw = lookup.findVarHandle(rmc, "wrapped", java.util.function.Supplier.class);
+        } catch (Throwable ignored) {
+            rmc = null;
+        }
+        try {
+            var lookup = MethodHandles.privateLookupIn(CompoundListCodec.class, MethodHandles.lookup());
+            clk = lookup.findVarHandle(CompoundListCodec.class, "keyCodec", Codec.class);
+            cle = lookup.findVarHandle(CompoundListCodec.class, "elementCodec", Codec.class);
+        } catch (Throwable ignored) {}
+        try {
+            var lookup = MethodHandles.privateLookupIn(EitherMapCodec.class, MethodHandles.lookup());
+            emf = lookup.findVarHandle(EitherMapCodec.class, "first", MapCodec.class);
+            ems = lookup.findVarHandle(EitherMapCodec.class, "second", MapCodec.class);
+        } catch (Throwable ignored) {}
 
         PAIR_CODEC_FIRST = pf;
         PAIR_CODEC_SECOND = ps;
@@ -107,6 +144,13 @@ public final class SchemaResolver {
         SIMPLE_MAP_KEYCODEC = smk;
         SIMPLE_MAP_ELEMENT = sme;
         SIMPLE_MAP_KEYS = sms;
+        RECURSIVE_WRAPPED = rw;
+        RECURSIVE_MAP_CLASS = rmc;
+        RECURSIVE_MAP_WRAPPED = rmw;
+        COMPOUND_LIST_KEY = clk;
+        COMPOUND_LIST_ELEMENT = cle;
+        EITHER_MAP_FIRST = emf;
+        EITHER_MAP_SECOND = ems;
     }
 
     // Per-call cache; new IdentityHashMap each resolve() so it doesn't leak codecs.
@@ -179,9 +223,6 @@ public final class SchemaResolver {
         net.mehvahdjukaar.polytone.common.codec_ui.internal.FieldOfTags.Entry foe =
                 net.mehvahdjukaar.polytone.common.codec_ui.internal.FieldOfTags.get(codec);
         if (foe != null) {
-            System.out.println("[codec_ui] tier-0a fieldOf HIT: name=" + foe.name()
-                    + " innerCodec=" + foe.innerCodec().getClass().getSimpleName()
-                    + "@" + System.identityHashCode(foe.innerCodec()));
             Schema<?> innerSchema = resolveCodec((Codec) foe.innerCodec(), cache);
             Schema.Field field = new Schema.Field(foe.name(), innerSchema, foe.optional(), foe.defaultValue());
             Schema rec = new Schema.Record(Object.class, java.util.List.of(field));
@@ -293,6 +334,34 @@ public final class SchemaResolver {
             Schema<?> s = resolveCodec(second, cache);
             return new Schema.PairOf(f, s);
         }
+        if (codec instanceof XorCodec<?, ?> xor) {
+            Schema<?> l = resolveCodec(xor.first(), cache);
+            Schema<?> r = resolveCodec(xor.second(), cache);
+            return new Schema.EitherOf(l, r);
+        }
+        // Codec.recursive / Codec.lazyInitialized. Forcing the memoized supplier is safe:
+        // the placeholder already inserted for this codec short-circuits self-references,
+        // which render as Opaque (raw JSON validated by the real codec).
+        if (codec instanceof Codec.RecursiveCodec<?> rec && RECURSIVE_WRAPPED != null) {
+            try {
+                java.util.function.Supplier<?> sup = (java.util.function.Supplier<?>) RECURSIVE_WRAPPED.get(rec);
+                Object inner = sup.get();
+                if (inner instanceof Codec<?> c && c != codec) {
+                    return resolveCodec(c, cache);
+                }
+            } catch (Throwable ignored) {}
+        }
+        // Encodes as a JSON object of key -> value entries, so a map editor is the right surface.
+        if (codec instanceof CompoundListCodec<?, ?> cl && COMPOUND_LIST_KEY != null && COMPOUND_LIST_ELEMENT != null) {
+            Schema<?> k = resolveCodec((Codec<?>) COMPOUND_LIST_KEY.get(cl), cache);
+            Schema<?> v = resolveCodec((Codec<?>) COMPOUND_LIST_ELEMENT.get(cl), cache);
+            return new Schema.MapOf(k, v);
+        }
+        // Value codec depends on the key via an opaque function; keys are still editable.
+        if (codec instanceof DispatchedMapCodec<?, ?> dm) {
+            Schema<?> k = resolveCodec(dm.keyCodec(), cache);
+            return new Schema.MapOf(k, new Schema.Opaque<>(null, null));
+        }
         return null;
     }
 
@@ -339,6 +408,21 @@ public final class SchemaResolver {
             Schema<?> v = resolveCodec(elemCodec, cache);
             return new Schema.MapOf(k, v);
         }
+        if (codec instanceof EitherMapCodec<?, ?> em && EITHER_MAP_FIRST != null && EITHER_MAP_SECOND != null) {
+            Schema<?> f = resolveMapCodec((MapCodec<?>) EITHER_MAP_FIRST.get(em), cache);
+            Schema<?> s = resolveMapCodec((MapCodec<?>) EITHER_MAP_SECOND.get(em), cache);
+            return new Schema.EitherOf(f, s);
+        }
+        // MapCodec.recursive — mirror of the RecursiveCodec handler above.
+        if (RECURSIVE_MAP_CLASS != null && RECURSIVE_MAP_WRAPPED != null && RECURSIVE_MAP_CLASS.isInstance(codec)) {
+            try {
+                java.util.function.Supplier<?> sup = (java.util.function.Supplier<?>) RECURSIVE_MAP_WRAPPED.get(codec);
+                Object inner = sup.get();
+                if (inner instanceof MapCodec<?> mc && mc != codec) {
+                    return resolveMapCodec(mc, cache);
+                }
+            } catch (Throwable ignored) {}
+        }
         return null;
     }
 
@@ -363,14 +447,14 @@ public final class SchemaResolver {
     private LinkedHashMap<String, Schema<?>> enumerateDispatchVariants(KeyDispatchCodec<?, ?> dispatch,
                                                                        IdentityHashMap<Object, Schema<?>> cache) {
         LinkedHashMap<String, Schema<?>> variants = new LinkedHashMap<>();
-        Polytone.LOGGER.info("[codec_ui] enumerateDispatchVariants called for {}", dispatch.getClass().getName());
+        Polytone.LOGGER.debug("[codec_ui] enumerateDispatchVariants called for {}", dispatch.getClass().getName());
 
         if (KEY_DISPATCH_DECODER == null) {
             Polytone.LOGGER.warn("[codec_ui]   KEY_DISPATCH_DECODER VarHandle is null — field lookup failed at init");
             return variants;
         }
         VanillaDispatches.bootstrap();
-        Polytone.LOGGER.info("[codec_ui]   DispatchRegistry has {} hooks", DispatchRegistry.all().size());
+        Polytone.LOGGER.debug("[codec_ui]   DispatchRegistry has {} hooks", DispatchRegistry.all().size());
 
         Object decoderFn = KEY_DISPATCH_DECODER.get(dispatch);
         if (!(decoderFn instanceof Function<?, ?> fn)) {
@@ -380,7 +464,7 @@ public final class SchemaResolver {
         }
 
         for (DispatchRegistry.Hook<?> hook : DispatchRegistry.all()) {
-            Polytone.LOGGER.info("[codec_ui]   trying hook {} with {} keys", hook.keyType().getName(), hook.keys().get().size());
+            Polytone.LOGGER.debug("[codec_ui]   trying hook {} with {} keys", hook.keyType().getName(), hook.keys().get().size());
             boolean any = false;
             LinkedHashMap<String, Schema<?>> local = new LinkedHashMap<>();
             for (Object k : hook.keys().get()) {
@@ -391,7 +475,7 @@ public final class SchemaResolver {
                 String name = ((Function<Object, String>) hook.nameOf()).apply(k);
                 local.put(name, variantSchema);
             }
-            Polytone.LOGGER.info("[codec_ui]   hook {} produced {} variants", hook.keyType().getSimpleName(), local.size());
+            Polytone.LOGGER.debug("[codec_ui]   hook {} produced {} variants", hook.keyType().getSimpleName(), local.size());
             if (any) {
                 variants.putAll(local);
                 break;
@@ -402,7 +486,7 @@ public final class SchemaResolver {
         // because hook.codecOf.apply(k) succeeds for any registered K regardless of whether
         // the dispatch's actual K matches. Result: BlockState's dispatch got IntProvider variants.)
 
-        Polytone.LOGGER.info("[codec_ui]   final variant count: {}", variants.size());
+        Polytone.LOGGER.debug("[codec_ui]   final variant count: {}", variants.size());
         return variants;
     }
 
@@ -448,14 +532,14 @@ public final class SchemaResolver {
         if (foe != null) {
             IdentityHashMap<Object, Schema<?>> tmpCache = new IdentityHashMap<>();
             Schema<?> innerSchema = resolveCodec((Codec) foe.innerCodec(), tmpCache);
-            Polytone.LOGGER.info("[codec_ui]   registry-tag fallback: FieldOfTags inner={}, schema={}",
+            Polytone.LOGGER.debug("[codec_ui]   registry-tag fallback: FieldOfTags inner={}, schema={}",
                     foe.innerCodec().getClass().getSimpleName(), innerSchema);
             if (innerSchema instanceof Schema.ResourceId r && r.registry() != null) rid = r;
         }
         // Fall back to eager SchemaTags entry (manual companion tagging on the keyCodec).
         if (rid == null) {
             Schema<?> keyCodecSchema = SchemaTags.lookupMap(keyCodec);
-            Polytone.LOGGER.info("[codec_ui]   registry-tag fallback: SchemaTags entry={}", keyCodecSchema);
+            Polytone.LOGGER.debug("[codec_ui]   registry-tag fallback: SchemaTags entry={}", keyCodecSchema);
             if (keyCodecSchema instanceof Schema.Record<?> rec && rec.fields().size() == 1) {
                 Schema<?> fs = rec.fields().get(0).schema();
                 if (fs instanceof Schema.ResourceId r && r.registry() != null) rid = r;
@@ -475,7 +559,7 @@ public final class SchemaResolver {
                 variants.put(id.toString(), new Schema.Opaque<>(null, null));
                 count++;
             }
-            Polytone.LOGGER.info("[codec_ui]   registry-backed dispatch: populated {} variants from {}", count, rid.registry().identifier());
+            Polytone.LOGGER.debug("[codec_ui]   registry-backed dispatch: populated {} variants from {}", count, rid.registry().identifier());
         } catch (Throwable t) {
             Polytone.LOGGER.warn("[codec_ui]   Failed to enumerate registry {}: {}", rid.registry(), t.toString());
         }

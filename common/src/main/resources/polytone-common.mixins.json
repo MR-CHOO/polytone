@@ -15,7 +15,8 @@
     "codec_ui.MapCodecXmapMixin",
     "codec_ui.RecordCodecBuilderMixin",
     "codec_ui.RecordCodecBuilderInstanceMixin",
-    "codec_ui.RegistryByNameCodecMixin"
+    "codec_ui.RegistryByNameCodecMixin",
+    "codec_ui.StringRepresentableCodecMixin"
   ],
   "client": [
     "AbstractContainerMenuMixin",

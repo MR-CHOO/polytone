@@ -52,6 +52,51 @@ public abstract class RecordCodecBuilderInstanceMixin {
         return result;
     }
 
+    /**
+     * The Applicative interface defaults for {@code ap5..ap16} all begin with
+     * {@code this.map(curryN, func)} before delegating to ap2/ap3/ap4. Instance overrides
+     * {@code map}, producing a NEW builder — without this hook the tags accumulated on
+     * {@code func} are dropped there, and any record with more than 4 fields loses all
+     * fields captured before the map (e.g. a 9-field record only showed fields 5–9).
+     */
+    @SuppressWarnings("rawtypes")
+    @ModifyReturnValue(method = "map", at = @At("RETURN"))
+    private App<?, ?> polytone$tagMap(App<?, ?> result, @Local(argsOnly = true) App ts) {
+        try {
+            if (result instanceof RecordCodecBuilder<?, ?> out && ts instanceof RecordCodecBuilder<?, ?> in) {
+                RecordFieldTags.copy(in, out);
+            }
+        } catch (Throwable ignored) {
+            // Best-effort.
+        }
+        return result;
+    }
+
+    /**
+     * Single-field records go through {@code Products.P1.apply -> Applicative.ap ->
+     * lift1(func).apply(t1)} — never touching ap2/3/4. Wrap the function returned by
+     * {@code lift1} so the App it produces inherits the tags of both the function position
+     * and the argument (in that order).
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    @ModifyReturnValue(method = "lift1", at = @At("RETURN"))
+    private java.util.function.Function polytone$tagLift1(java.util.function.Function original,
+                                                          @Local(argsOnly = true) App func) {
+        return arg -> {
+            Object result = original.apply(arg);
+            try {
+                if (result instanceof RecordCodecBuilder<?, ?> out) {
+                    RecordFieldTags.concat(out,
+                            func instanceof RecordCodecBuilder<?, ?> f ? f : null,
+                            arg instanceof RecordCodecBuilder<?, ?> a ? a : null);
+                }
+            } catch (Throwable ignored) {
+                // Best-effort.
+            }
+            return result;
+        };
+    }
+
     @Unique
     @SuppressWarnings("rawtypes")
     private static void polytone$concat(App<?, ?> result, App... inputs) {

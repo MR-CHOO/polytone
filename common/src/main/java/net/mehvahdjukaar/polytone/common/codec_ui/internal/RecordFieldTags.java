@@ -62,12 +62,30 @@ public final class RecordFieldTags {
     private static @Nullable String extractFirstKey(MapCodec<?> mapCodec) {
         try {
             return mapCodec.keys(com.mojang.serialization.JsonOps.INSTANCE)
-                    .map(Object::toString)
+                    .map(RecordFieldTags::unwrapJsonKey)
                     .findFirst()
                     .orElse(null);
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    // JsonOps emits keys as JsonPrimitive(String); toString() would return the QUOTED form
+    // ("\"name\""), which then never matches the on-disk field name in the editor.
+    private static String unwrapJsonKey(Object o) {
+        if (o instanceof com.google.gson.JsonPrimitive prim && prim.isString()) return prim.getAsString();
+        return String.valueOf(o);
+    }
+
+    /**
+     * Propagates the tag list of one builder to a derived builder unchanged. Used by the
+     * {@code Instance.map} hook — the Applicative ap5..ap16 defaults pipe the accumulated
+     * function position through {@code map}, which must not lose the fields gathered so far.
+     */
+    public static void copy(RecordCodecBuilder<?, ?> from, RecordCodecBuilder<?, ?> to) {
+        if (from == null || to == null || from == to) return;
+        List<Entry> v = TAGS.get(from);
+        if (v != null && !v.isEmpty()) TAGS.put(to, v);
     }
 
     /**
