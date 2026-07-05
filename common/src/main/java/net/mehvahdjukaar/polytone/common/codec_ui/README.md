@@ -21,13 +21,15 @@ codec_ui/internal/   machinery — SchemaResolver, mixin tag stores, dispatch en
 codec_ui/swing/      Swing backend. Depends on api + workbench, never on internal/.
                      SwingWorkbench (single-window shell), EditorPanel (per-codec tab),
                      widgets. Custom widgets bind via SwingWidgetDef.bind(codec).
-codec_ui/example/    demo/test entries + tool bootstrap (codec library, game reload hooks).
+codec_ui/example/    resolver test/demo pages only (dev-gated). PRODUCTION editor assembly
+                     lives OUTSIDE the library: net.mehvahdjukaar.polytone.editor
+                     (PolytoneEditor entry point, PolytoneSchemas, GameReloadHooks).
 mixins/codec_ui/     construction mixins — part of the internal layer, live outside only
                      because the mixin package is fixed by polytone-common.mixins.json.
 ```
 
-Dependency direction: `example → swing → workbench → api ← internal ← mixins`. Each package
-has a `package-info.java` restating its contract.
+Dependency direction: `polytone.editor → example → swing → workbench → api ← internal ←
+mixins`. Each package has a `package-info.java` restating its contract.
 
 ## Extending: making an unparseable codec editable
 
@@ -68,7 +70,7 @@ In priority order (first match wins at resolve time) — all registered via `Sch
 5. **Custom widget** — `MyWidget.DEF.bind(codec)` (Swing backend): bypass schema-driven
    widget selection with a domain editor (see `swing/ExpressionWidget` — the big
    syntax-highlighted expression editor with live compile-check and variable chips,
-   configured per expression dialect in `example/PolytoneSchemas`).
+   configured per expression dialect in `polytone.editor.PolytoneSchemas`).
 
 ## Porting cookbook (for future agents)
 
@@ -95,7 +97,7 @@ can't gets either a declaration-site schema (codecs we own) or a curated registr
   must resolve at editor-open (wrap/DSL/`alt` are already lazy; `SchemaCodec.lazy` is the
   manual escape hatch).
 - Swing widget bindings (`Schema.Custom` + `SwingWidgetDef`) NEVER go in content code —
-  they're registered at editor bootstrap (`example/PolytoneSchemas`) so production classes
+  they're registered at editor bootstrap (`polytone.editor.PolytoneSchemas`) so production classes
   stay UI-free.
 - MapCodecs registered into dispatch maps (e.g. `ItemPredicate.TYPES.register`) can't be
   ported yet: `SchemaMapCodec` does not extend `MapCodec` (known gap). Their dispatch still
@@ -110,8 +112,8 @@ External mods do the same from their own init.
 have two views — client-synced (what resource-pack files, i.e. ALL polytone content, see)
 and the server's (what datapack files see). A file's pack type decides its side; the editor
 binds the matching registry access for encode/validate ops (fallback outside a world:
-`VanillaRegistries.createLookup()`). The launcher's two top-level tabs (Client | Server)
-are driven by `CodecRegistry.Entry.side`.
+`VanillaRegistries.createLookup()`). In the workbench, `CodecEntry.side` drives the codec
+library's Client/Server filter and which base dir (`assets`/`data`) New Content targets.
 
 ## Architecture
 
@@ -211,20 +213,21 @@ Fix: `RecordCodecBuilderInstanceMixin` propagates tags through `map` (copy) and 
 
 ## The workbench (single-window UI)
 
-`example/ExamplesLauncher.open()` boots `swing/SwingWorkbench` — ONE frame, everything in it:
+`polytone.editor.PolytoneEditor.open()` (called by the platform classes) boots
+`swing/SwingWorkbench` — ONE frame, everything in it:
 
 - **Toolbar**: Open Pack… (lenient folder picker — ANY directory opens, since mods load packs
   from odd places; `assets/`/`data/`/`pack.mcmeta` only refine the detected kind; starts at
   the running game's `resourcepacks` folder via the `workbench/GamePaths` provider hook,
   falling back to the last-used directory), plus
   Reload Resources / Reload Data buttons driven by the `PackReloader` hook
-  (`example/GameReloadHooks` binds them to `Minecraft.reloadResourcePacks()` and the
+  (`polytone.editor.GameReloadHooks` binds them to `Minecraft.reloadResourcePacks()` and the
   integrated server's `reloadResources`; disabled when no game / no server). Reloading is
   what makes freshly saved files referenceable by registry pickers and dispatch enumeration.
 - **Sidebar**: *Files* — lazy file tree of the opened pack (double-click routes a file:
   codec-associated JSON → `EditorPanel`, other text → syntax-highlighted `TextEditorPanel`,
   images → preview tab). *Codecs* — the searchable/side-filterable codec library from
-  `example/CodecRegistry` (now `workbench/CodecEntry`s).
+  `PolytoneEditor` (real content) plus `example/CodecRegistry` demo pages in dev.
 - **Editor tabs**: closable (Ctrl+W), dirty-dot titles, unsaved-changes confirm on close.
   Each `EditorPanel` is form (left) | live JSON preview (right): read-only RSyntaxTextArea +
   a wrapping status line that re-validates through the codec (registry-aware ops) whenever
@@ -239,12 +242,26 @@ lenient about extra levels). Add a containerDir to an entry and its files become
 double-click-editable. `SwingSchemaEditor.open(...)` (the `SchemaEditor` API) now lands as
 a tab in the same window — no separate frames anywhere.
 
+**New Content flow** (toolbar, enabled when a pack is open): pick a concept (any entry with
+a containerDir), pick/type a namespace (existing ones enumerated from `assets/*`+`data/*`;
+new ones just typed), type a name — the dialog live-previews and computes the ONE valid
+location itself (`PackWorkspace.fileFor` → `assets|data/<ns>/<container>/<name>.json`), so
+users can never place content in a folder the game won't read. The tab opens bound but
+unwritten; file + folders are created on first save (cancelled tabs leave no debris).
+`PolytoneEditor`'s "Polytone content" group carries the creatable set — Colormap
+(`Colormap.DIRECT_CODEC`, what ColormapsManager actually parses), Lightmap (`Lightmap.CODEC`),
+Block/Fluid modifier (Decoder-only fields downcast — RCB makes them real Codecs; the editor
+never encodes), Item modifier, Dimension modifier — each with the folder its manager scans.
+Known gap: managers also scan legacy alias folders (`block_properties`, `fluid_properties`,
+`dimension_effects`, `item_properties`); files there open as plain text until
+`CodecEntry` grows container aliases.
+
 ## Testing
 
-Run `ExamplesLauncher.open()` from the IDE with the mod classpath; mixins must be active
+Run `PolytoneEditor.open()` from the IDE with the mod classpath; mixins must be active
 for the construction tags to exist (run via a client run config / dev launch, not plain main,
 when testing mixin-dependent paths). For pure UI-structure work there is
-`example/UiPreviewLauncher.main()` — a bare-JVM launch with no game: reload buttons are
+`polytone.editor.UiPreviewLauncher.main()` — a bare-JVM launch with no game: reload buttons are
 disabled, registry codecs validate with errors, RCB records resolve opaque (no mixins), and
 if the full codec library can't even class-load it falls back to pure-DFU demo entries. The
 Swing shell logs through `swing/UiLog` (falls back to a plain log4j logger) precisely so a

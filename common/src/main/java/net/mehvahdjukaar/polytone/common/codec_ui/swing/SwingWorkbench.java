@@ -97,6 +97,7 @@ public final class SwingWorkbench {
     private final JLabel packLabel = new JLabel("No pack opened");
     private final JLabel statusLabel = new JLabel(" ");
     private final JLabel infoLabel = new JLabel();
+    private final JButton newContentButton = new JButton("New Content…");
     private final JButton reloadResourcesButton = new JButton("Reload Resources");
     private final JButton reloadDataButton = new JButton("Reload Data");
     private final javax.swing.Timer reloadAvailabilityTimer;
@@ -186,6 +187,12 @@ public final class SwingWorkbench {
         openPack.setToolTipText("Open a resource pack / datapack folder — any folder works");
         openPack.addActionListener(e -> openPackChooser());
         bar.add(openPack);
+        bar.add(Box.createHorizontalStrut(UiScale.small()));
+
+        newContentButton.setToolTipText(
+                "Add content to the pack — the file lands in its correct folder automatically");
+        newContentButton.addActionListener(e -> openNewContentDialog());
+        bar.add(newContentButton);
         bar.add(Box.createHorizontalStrut(UiScale.med()));
 
         packLabel.setForeground(EditorOps.mutedColor());
@@ -387,6 +394,8 @@ public final class SwingWorkbench {
     private void onWorkspaceChanged() {
         PackWorkspace ws = model.workspace();
         treePanel.setWorkspace(ws);
+        newContentButton.setEnabled(ws != null
+                && model.entries().stream().anyMatch(e -> e.containerDir() != null));
         if (ws == null) {
             packLabel.setText("No pack opened");
             infoLabel.setText(UiScale.scaleAsPercent());
@@ -418,6 +427,40 @@ public final class SwingWorkbench {
             status(error == null ? "Reload complete — new files are now referenceable"
                     : "Reload failed: " + error);
         }));
+    }
+
+    // -------------------- New content flow --------------------
+
+    private void openNewContentDialog() {
+        PackWorkspace ws = model.workspace();
+        if (ws == null) return;
+        NewContentDialog.Result created = NewContentDialog.show(frame, model, ws);
+        if (created == null) return;
+
+        String key = created.file().toString();
+        if (focusExisting(key)) return;
+        @SuppressWarnings("unchecked")
+        SchemaCodec<Object> codec = (SchemaCodec<Object>) created.entry().codec();
+        EditorPanel<Object> panel;
+        try {
+            panel = new EditorPanel<>(codec, String.valueOf(created.file().getFileName()),
+                    created.entry().side());
+        } catch (Throwable t) {
+            UiLog.get().error("[codec_ui] failed to build editor for {}", created.entry().label(), t);
+            status("Could not build editor for " + created.entry().label() + ": " + t);
+            return;
+        }
+        // Bound but not yet on disk: the file (and its namespace/container folders) are
+        // created on first save, so cancelled tabs leave no debris in the pack.
+        panel.bindFile(created.file());
+        panel.setDefaultDir(created.file().getParent());
+        panel.setOnSavedToFile(saved -> {
+            status("Saved " + ws.relativize(saved));
+            treePanel.refresh();
+        });
+        addTab(key, panel, created.entry().label());
+        status("New " + created.entry().label().toLowerCase(Locale.ROOT) + " → "
+                + ws.relativize(created.file()) + "  (created on first save)");
     }
 
     // -------------------- Tabs --------------------

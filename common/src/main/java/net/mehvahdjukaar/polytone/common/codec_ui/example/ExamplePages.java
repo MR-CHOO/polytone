@@ -8,7 +8,6 @@ import net.mehvahdjukaar.polytone.common.codec_ui.workbench.CodecEntry;
 import net.mehvahdjukaar.polytone.content.block.BlockPropertyModifier;
 import net.mehvahdjukaar.polytone.content.colormap.Colormap;
 import net.mehvahdjukaar.polytone.content.dimension.DimensionEffectsModifier;
-import net.mehvahdjukaar.polytone.content.fluid.FluidPropertyModifier;
 import net.mehvahdjukaar.polytone.content.shaders.ExpressionUniformBuffers;
 import net.mehvahdjukaar.polytone.content.tabs.ItemPredicate;
 import net.mehvahdjukaar.polytone.content.tabs.CreativeTabModifier;
@@ -35,14 +34,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Central registry of editor entries — every {@link SchemaCodec} that should appear in the
- * workbench codec library is listed here as a {@link CodecEntry} (label, group, side and,
- * where known, the in-pack container dir used for file association).
- * Consumed by {@code ExamplesLauncher}.
+ * Resolver test/demo pages — {@link CodecEntry} list of codecs exercised to verify what
+ * inference derives, from migrated demo records to raw vanilla codecs and stress tests.
+ * Appended to the editor library in dev by {@code net.mehvahdjukaar.polytone.editor.PolytoneEditor}.
  */
-public final class CodecRegistry {
+public final class ExamplePages {
 
-    private CodecRegistry() {}
+    private ExamplePages() {}
 
     private static final net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side SERVER =
             net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side.SERVER_DATA;
@@ -63,12 +61,6 @@ public final class CodecRegistry {
         return new CodecEntry(label, group, codec, side);
     }
 
-    /** Client-side entry with a pack container dir — files under it open with this codec. */
-    private static CodecEntry entry(String label, String group, SchemaCodec<?> codec, String containerDir) {
-        return new CodecEntry(label, group, codec,
-                net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side.CLIENT_RESOURCES, containerDir);
-    }
-
     private static final List<CodecEntry> ENTRIES = build();
 
     public static List<CodecEntry> all() {
@@ -76,8 +68,12 @@ public final class CodecRegistry {
     }
 
     private static List<CodecEntry> build() {
-        PolytoneSchemas.bootstrap();
+        net.mehvahdjukaar.polytone.editor.PolytoneSchemas.bootstrap();
         List<CodecEntry> list = new ArrayList<>();
+
+        // NOTE: the real, creatable polytone content entries live in
+        // net.mehvahdjukaar.polytone.editor.PolytoneEditor — this class is ONLY the
+        // resolver test/demo pages, appended to the editor's library in dev.
 
         // ----- Demo / migration examples -----
         list.add(entry("Migrated GuiDepthTarget (3 fields)",   "Demo types", MigratedGuiDepthTargetExample.SCHEMA_CODEC));
@@ -98,7 +94,7 @@ public final class CodecRegistry {
         list.add(entry("raw ItemStack.CODEC",                  g, SchemaCodec.wrap(ItemStack.CODEC)));
         list.add(entry("raw RuleTest.CODEC",                   g, SchemaCodec.wrap(RuleTest.CODEC), SERVER));
         list.add(entry("raw dimensitonType.CODEC",                   g, SchemaCodec.wrap(DimensionType.DIRECT_CODEC), SERVER));
-        list.add(entry("Colormap",                             g, SchemaCodec.wrap(Colormap.CODEC), "polytone/colormaps"));
+        list.add(entry("raw colormap.CODEC (IColorGetter)",    g, SchemaCodec.wrap(Colormap.CODEC)));
         list.add(entry("raw dimensionmod.CODEC",                   g, SchemaCodec.wrap(DimensionEffectsModifier.CODEC)));
         list.add(entry("raw sound event.CODEC",                   g, SchemaCodec.wrap(SoundEvent.CODEC)));
         list.add(entry("raw itempreciate.CODEC",                   g, SchemaCodec.wrap(ItemPredicate.CODEC)));

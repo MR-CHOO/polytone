@@ -1,21 +1,21 @@
-[15:57:16] [AWT-EventQueue-0/INFO]: [codec_ui] FlatLaf class: com.formdev.flatlaf.FlatDarkLaf (dark=true)
-[15:57:16] [AWT-EventQueue-0/INFO]: [codec_ui] flatlaf.uiScale (system prop): 1.5x
-[15:57:16] [AWT-EventQueue-0/INFO]: [codec_ui] FlatLaf UIScale.getUserScaleFactor(): 1.5
-[15:57:16] [AWT-EventQueue-0/INFO]: [codec_ui] Toolkit.getScreenResolution(): 96
-[15:57:16] [AWT-EventQueue-0/INFO]: [codec_ui] Display mode: 2560x1600 @ 165Hz
-[15:57:16] [AWT-EventQueue-0/INFO]: [codec_ui] Detected initial scale: 1.5x
-[15:57:16] [AWT-EventQueue-0/INFO]: [codec_ui] Default font: javax.swing.plaf.FontUIResource[family=SansSerif,name=SansSerif,style=plain,size=20]
-[15:57:16] [AWT-EventQueue-0/INFO]: [codec_ui] GDK_SCALE env: null, GDK_DPI_SCALE env: null
-[15:57:26] [AWT-EventQueue-0/INFO]: [codec_ui] Opened resource pack: /home/matteo/IdeaProjects/polytone/fabric/run/resourcepacks/sunbathing
-[15:57:48] [AWT-EventQueue-0/WARN]: [codec_ui] VanillaRegistries lookup unavailable
+[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] FlatLaf class: com.formdev.flatlaf.FlatDarkLaf (dark=true)
+[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] flatlaf.uiScale (system prop): 1.5x
+[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] FlatLaf UIScale.getUserScaleFactor(): 1.5
+[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] Toolkit.getScreenResolution(): 96
+[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] Display mode: 2560x1600 @ 165Hz
+[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] Detected initial scale: 1.5x
+[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] Default font: javax.swing.plaf.FontUIResource[family=SansSerif,name=SansSerif,style=plain,size=20]
+[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] GDK_SCALE env: null, GDK_DPI_SCALE env: null
+[16:34:44] [AWT-EventQueue-0/INFO]: [codec_ui] Opened resource pack: /home/matteo/IdeaProjects/polytone/fabric/run/resourcepacks/sunbathing
+[16:34:54] [AWT-EventQueue-0/WARN]: [codec_ui] VanillaRegistries lookup unavailable
 java.lang.NoClassDefFoundError: Could not initialize class net.minecraft.core.registries.BuiltInRegistries
 	at net.minecraft.data.registries.VanillaRegistries.createLookup(VanillaRegistries.java:124)
 	at net.mehvahdjukaar.polytone.common.codec_ui.swing.EditorOps.vanillaLookup(EditorOps.java:67)
 	at net.mehvahdjukaar.polytone.common.codec_ui.swing.EditorOps.buildOps(EditorOps.java:50)
 	at net.mehvahdjukaar.polytone.common.codec_ui.swing.EditorPanel.<init>(EditorPanel.java:85)
-	at net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWorkbench.addCodecTab(SwingWorkbench.java:438)
-	at net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWorkbench.openEntryTab(SwingWorkbench.java:427)
-	at net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWorkbench.lambda$rebuildCodecColumn$11(SwingWorkbench.java:355)
+	at net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWorkbench.addCodecTab(SwingWorkbench.java:481)
+	at net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWorkbench.openEntryTab(SwingWorkbench.java:470)
+	at net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWorkbench.lambda$rebuildCodecColumn$12(SwingWorkbench.java:362)
 	at java.desktop/javax.swing.AbstractButton.fireActionPerformed(AbstractButton.java:1972)
 	at java.desktop/javax.swing.AbstractButton$Handler.actionPerformed(AbstractButton.java:2314)
 	at java.desktop/javax.swing.DefaultButtonModel.fireActionPerformed(DefaultButtonModel.java:407)
@@ -49,4 +49,5 @@ Caused by: java.lang.ExceptionInInitializerError: Exception java.lang.IllegalArg
 	at net.minecraft.core.registries.BuiltInRegistries.registerDefaulted(BuiltInRegistries.java:373)
 	at net.minecraft.core.registries.BuiltInRegistries.<clinit>(BuiltInRegistries.java:171)
 	at net.mehvahdjukaar.polytone.common.codec_ui.example.VanillaCodecs.<clinit>(VanillaCodecs.java:45)
-	at net.mehvahdjukaar.polytone.common.codec_ui.example.UiPreviewLauncher.main(UiPreviewLauncher.java:34)
+	at net.mehvahdjukaar.polytone.editor.PolytoneEditor.buildEntries(PolytoneEditor.java:46)
+	at net.mehvahdjukaar.polytone.editor.UiPreviewLauncher.main(UiPreviewLauncher.java:34)

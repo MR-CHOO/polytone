@@ -1,12 +1,16 @@
 package net.mehvahdjukaar.polytone.common.codec_ui.internal;
 
-import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.UUIDUtil;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.ExtraCodecs;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import java.util.List;
 
 /**
  * THE hand-maintained list of schema registrations for codecs that auto-inspection can't
@@ -30,6 +34,10 @@ import net.minecraft.util.ExtraCodecs;
  */
 public final class CuratedSchemas {
 
+    // Own logger (not Polytone.LOGGER): this runs at resolver entry, which must also work
+    // on a bare JVM where Polytone's class-init (all the content managers) can fail.
+    private static final Logger LOGGER = LogManager.getLogger("PolytoneCodecUi");
+
     private static volatile boolean bootstrapped = false;
 
     private CuratedSchemas() {}
@@ -44,7 +52,16 @@ public final class CuratedSchemas {
         try {
             register();
         } catch (Throwable t) {
-            Polytone.LOGGER.warn("[codec_ui] curated schema registration failed", t);
+            LOGGER.warn("[codec_ui] curated schema registration failed", t);
+        }
+        // Separate block: these reference classes that need the game bootstrap (Blocks,
+        // ItemStack components). On a bare JVM they fail without taking down the safe
+        // registrations above.
+        try {
+            registerBootstrapDependent();
+        } catch (Throwable t) {
+            LOGGER.info("[codec_ui] game-dependent curated schemas unavailable (no game bootstrap): {}",
+                    String.valueOf(t));
         }
     }
 
@@ -84,5 +101,52 @@ public final class CuratedSchemas {
         SchemaCodecs.registerCompanion(ExtraCodecs.ARGB_COLOR_CODEC, new Schema.Color(true, false));
         SchemaCodecs.registerCompanion(ExtraCodecs.STRING_RGB_COLOR, new Schema.Color(false, true));
         SchemaCodecs.registerCompanion(ExtraCodecs.STRING_ARGB_COLOR, new Schema.Color(true, true));
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static void registerBootstrapDependent() {
+        // BlockState.CODEC is built during *very early* MC bootstrap (Blocks init), before
+        // our codec_ui mixins are applied to Codec.fieldOf — so the internal keyCodec never
+        // gets the ResourceId tag and the registry-tag dropdown fallback finds nothing.
+        // Manual Record matching the on-disk shape: {"Name": id, "Properties": {prop: value}}
+        // (Properties is lenientOptionalFieldOf in vanilla, so omitting it is fine).
+        Schema.Str anyStr = new Schema.Str(0, Integer.MAX_VALUE, null);
+        SchemaCodecs.registerCompanion(net.minecraft.world.level.block.state.BlockState.CODEC,
+                new Schema.Record<>(net.minecraft.world.level.block.state.BlockState.class,
+                        List.<Schema.Field<net.minecraft.world.level.block.state.BlockState, ?>>of(
+                        new Schema.Field<>("Name", new Schema.ResourceId(Registries.BLOCK), false, null),
+                        new Schema.Field<>("Properties", new Schema.MapOf<>(anyStr, anyStr), true, null))));
+
+        // ItemStack.CODEC routes through data components — opaque to inference. Minimal
+        // round-tripping shape for plain stacks.
+        SchemaCodecs.registerCompanion(net.minecraft.world.item.ItemStack.CODEC,
+                new Schema.Record<>(net.minecraft.world.item.ItemStack.class,
+                        List.<Schema.Field<net.minecraft.world.item.ItemStack, ?>>of(
+                        new Schema.Field<>("id", new Schema.ResourceId(Registries.ITEM), false, null),
+                        new Schema.Field<>("count", new Schema.IntRange(1, 99), true, 1))));
+
+        // DimensionType.DIRECT_CODEC wraps fields via ExtraCodecs.catchDecoderException
+        // (a raw Codec.of with anonymous decoder) — no mixin point. Companion describes the
+        // standard vanilla on-disk shape.
+        SchemaCodecs.registerCompanion(net.minecraft.world.level.dimension.DimensionType.DIRECT_CODEC,
+                new Schema.Record<>(net.minecraft.world.level.dimension.DimensionType.class,
+                        List.<Schema.Field<net.minecraft.world.level.dimension.DimensionType, ?>>of(
+                        new Schema.Field<>("ultrawarm", new Schema.Bool(), false, null),
+                        new Schema.Field<>("natural", new Schema.Bool(), false, null),
+                        new Schema.Field<>("coordinate_scale", new Schema.DoubleRange(1e-5, 30_000_000.0), false, null),
+                        new Schema.Field<>("has_skylight", new Schema.Bool(), false, null),
+                        new Schema.Field<>("has_ceiling", new Schema.Bool(), false, null),
+                        new Schema.Field<>("ambient_light", new Schema.FloatRange(0f, 1f), false, null),
+                        new Schema.Field<>("fixed_time", new Schema.LongRange(0L, 24000L), true, null),
+                        new Schema.Field<>("monster_spawn_block_light_limit", new Schema.IntRange(0, 15), false, null),
+                        new Schema.Field<>("piglin_safe", new Schema.Bool(), false, null),
+                        new Schema.Field<>("bed_works", new Schema.Bool(), false, null),
+                        new Schema.Field<>("respawn_anchor_works", new Schema.Bool(), false, null),
+                        new Schema.Field<>("has_raids", new Schema.Bool(), false, null),
+                        new Schema.Field<>("logical_height", new Schema.IntRange(0, 4064), false, null),
+                        new Schema.Field<>("min_y", new Schema.IntRange(-2032, 2031), false, null),
+                        new Schema.Field<>("height", new Schema.IntRange(16, 4064), false, null),
+                        new Schema.Field<>("infiniburn", anyStr, false, null),
+                        new Schema.Field<>("effects", anyStr, true, "minecraft:overworld"))));
     }
 }

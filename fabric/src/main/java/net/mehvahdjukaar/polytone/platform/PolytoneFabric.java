@@ -14,7 +14,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.PolytoneRenderTypes;
 import net.mehvahdjukaar.polytone.common.ClientFrameTicker;
-import net.mehvahdjukaar.polytone.common.codec_ui.example.FooExampleTrigger;
+import net.mehvahdjukaar.polytone.editor.PolytoneEditor;
 import net.mehvahdjukaar.polytone.content.expmodel.ExpressionBlockStateModel;
 import net.mehvahdjukaar.polytone.content.expmodel.ExpressionModel;
 import net.mehvahdjukaar.polytone.content.item.IPolytoneItem;
@@ -53,7 +53,7 @@ public class PolytoneFabric implements ClientModInitializer {
 
 
         ItemEvents.USE.register((player, world, hand) -> {
-            FooExampleTrigger.open();
+            PolytoneEditor.open();
             return InteractionResult.PASS;
         });
 

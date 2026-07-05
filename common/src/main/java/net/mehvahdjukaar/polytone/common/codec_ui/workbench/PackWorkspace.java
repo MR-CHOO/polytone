@@ -97,6 +97,41 @@ public final class PackWorkspace {
         }
     }
 
+    /**
+     * Namespaces present in this pack (union of {@code assets/*} and {@code data/*}
+     * directories), in listing order. Empty for packs without that structure.
+     */
+    public List<String> namespaces() {
+        var out = new java.util.LinkedHashSet<String>();
+        for (String base : List.of("assets", "data")) {
+            for (Path child : children(root.resolve(base))) {
+                if (Files.isDirectory(child)) out.add(String.valueOf(child.getFileName()));
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * THE canonical location for a piece of content — the editor computes it, the user only
+     * picks namespace and name, so files can never land in an invalid folder:
+     * {@code <root>/(assets|data)/<namespace>/<containerDir>/<name>.json}.
+     */
+    public Path fileFor(SchemaEditor.Side side, String namespace, String containerDir, String name) {
+        String base = side == SchemaEditor.Side.SERVER_DATA ? "data" : "assets";
+        return root.resolve(base).resolve(namespace)
+                .resolve(containerDir.replace('\\', '/')).resolve(name + ".json");
+    }
+
+    /** Vanilla namespace charset: {@code [a-z0-9_.-]+}. */
+    public static boolean isValidNamespace(String s) {
+        return !s.isEmpty() && s.matches("[a-z0-9_.\\-]+");
+    }
+
+    /** Vanilla resource path charset, optionally with subfolders: {@code a/b/c}. */
+    public static boolean isValidResourcePath(String s) {
+        return !s.isEmpty() && s.matches("[a-z0-9_.\\-]+(/[a-z0-9_.\\-]+)*");
+    }
+
     /** Root-relative display path with forward slashes; falls back to the absolute path. */
     public String relativize(Path p) {
         try {

@@ -1,4 +1,4 @@
-package net.mehvahdjukaar.polytone.common.codec_ui.example;
+package net.mehvahdjukaar.polytone.editor;
 
 import com.mojang.serialization.Codec;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec;
@@ -31,8 +31,7 @@ public final class UiPreviewLauncher {
 
         List<CodecEntry> entries;
         try {
-            VanillaCodecs.bootstrap();
-            entries = CodecRegistry.all();
+            entries = PolytoneEditor.buildEntries(true);
         } catch (Throwable t) {
             System.err.println("[codec_ui] Codec library needs game classes (" + t
                     + ") — falling back to pure-DFU demo entries.");

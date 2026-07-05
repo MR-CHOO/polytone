@@ -1,4 +1,4 @@
-package net.mehvahdjukaar.polytone.common.codec_ui.example;
+package net.mehvahdjukaar.polytone.editor;
 
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side;
 import net.mehvahdjukaar.polytone.common.codec_ui.workbench.GamePaths;

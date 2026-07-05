@@ -57,7 +57,7 @@ public final class Colormap implements IColorGetter, ColorResolver {
 
     // Declared via the SchemaRecord DSL: same wire format as the old RecordCodecBuilder,
     // plus a Schema so the editor renders real widgets (schema is built lazily at editor open).
-    static final SchemaCodec<Colormap> DIRECT_CODEC = SchemaRecord.create(Colormap.class, i -> i.group(
+    public static final SchemaCodec<Colormap> DIRECT_CODEC = SchemaRecord.create(Colormap.class, i -> i.group(
             i.optional("default_color", ColorUtils.COLOR, c -> Optional.ofNullable(c.defaultColor)),
             i.field("x_axis", IColormapExp.CODEC, c -> c.xGetter),
             i.field("y_axis", IColormapExp.CODEC, c -> c.yGetter),

@@ -1,4 +1,4 @@
-package net.mehvahdjukaar.polytone.common.codec_ui.example;
+package net.mehvahdjukaar.polytone.editor;
 
 import com.google.gson.JsonPrimitive;
 import com.mojang.serialization.Codec;
@@ -11,11 +11,11 @@ import net.mehvahdjukaar.polytone.common.expressions.impl.ISimpleExp;
 import net.mehvahdjukaar.polytone.content.colormap.ColormapExpressionProvider;
 
 /**
- * "Convert our own codecs" showcase: a handful of small polytone codecs annotated with
- * GUI-friendly schemas via the public companion API — the same pattern any mod uses for
- * its weird codecs. Lives in {@code example} because the launcher is currently the only
- * consumer; once an in-game editor exists these registrations move to polytone init
- * (ideally right next to each codec's declaration).
+ * Polytone's schema companions and Swing widget bindings for codecs that can't carry their
+ * schema at the declaration site — widget bindings must never leak into content code, so
+ * they live here and are registered once at editor bootstrap. When no widget is involved,
+ * the preferred home for a schema remains the codec's own declaration
+ * (SchemaRecord / SchemaCodecs.alt).
  *
  * <p>Colormap itself is deliberately NOT converted here (huge); its leaf codecs are —
  * which already fixes its worst spots, since companions apply wherever the codec appears
@@ -37,7 +37,7 @@ public final class PolytoneSchemas {
     private PolytoneSchemas() {}
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    static synchronized void bootstrap() {
+    public static synchronized void bootstrap() {
         if (bootstrapped) return;
         bootstrapped = true;
 
