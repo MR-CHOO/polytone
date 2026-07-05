@@ -108,8 +108,8 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         // ---- Footer: error label above right-aligned action row ----
         errorLabel.setForeground(EditorOps.errorColor());
 
-        JButton load = new JButton("Load JSON…");
-        JButton save = new JButton("Save");
+        JButton load = new JButton("Load JSON…", WorkbenchIcons.file());
+        JButton save = new JButton("Save", WorkbenchIcons.save());
         save.putClientProperty("JButton.buttonType", "default");
         save.setToolTipText("Save (Ctrl+S)");
         load.setToolTipText("Load a JSON file into the form");
@@ -294,6 +294,7 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
     @Override
     public void dispose() {
         previewTimer.stop();
+        UIManager.removePropertyChangeListener(lafListener);
     }
 
     private void setDirty(boolean value) {
@@ -312,13 +313,9 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         previewArea.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_JSON);
         previewArea.setEditable(false);
         previewArea.setHighlightCurrentLine(false);
-        try (var in = Theme.class.getResourceAsStream(
-                "/org/fife/ui/rsyntaxtextarea/themes/" + (FlatLaf.isLafDark() ? "dark.xml" : "default.xml"))) {
-            if (in != null) Theme.load(in).apply(previewArea);
-        } catch (Throwable ignored) {
-            // Theme is cosmetic only.
-        }
-        previewArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UiScale.px(15)));
+        applySyntaxTheme();
+        // Keep the JSON highlighting in step with a live light/dark theme switch.
+        UIManager.addPropertyChangeListener(lafListener);
 
         RTextScrollPane areaScroll = new RTextScrollPane(previewArea);
         areaScroll.setLineNumbersEnabled(false);
@@ -341,6 +338,24 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         panel.setMinimumSize(new Dimension(UiScale.px(280), UiScale.px(200)));
         return panel;
     }
+
+    /** (Re)apply the RSyntaxTextArea theme matching the current FlatLaf light/dark mode. */
+    private void applySyntaxTheme() {
+        if (previewArea == null) return;
+        try (var in = Theme.class.getResourceAsStream(
+                "/org/fife/ui/rsyntaxtextarea/themes/" + (FlatLaf.isLafDark() ? "dark.xml" : "default.xml"))) {
+            if (in != null) Theme.load(in).apply(previewArea);
+        } catch (Throwable ignored) {
+            // Theme is cosmetic only.
+        }
+        previewArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UiScale.px(15)));
+    }
+
+    private final java.beans.PropertyChangeListener lafListener = e -> {
+        if ("lookAndFeel".equals(e.getPropertyName())) {
+            SwingUtilities.invokeLater(this::applySyntaxTheme);
+        }
+    };
 
     private void refreshPreview() {
         if (!isShowing()) return;

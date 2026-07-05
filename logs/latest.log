@@ -1,53 +1,8 @@
-[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] FlatLaf class: com.formdev.flatlaf.FlatDarkLaf (dark=true)
-[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] flatlaf.uiScale (system prop): 1.5x
-[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] FlatLaf UIScale.getUserScaleFactor(): 1.5
-[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] Toolkit.getScreenResolution(): 96
-[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] Display mode: 2560x1600 @ 165Hz
-[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] Detected initial scale: 1.5x
-[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] Default font: javax.swing.plaf.FontUIResource[family=SansSerif,name=SansSerif,style=plain,size=20]
-[16:34:36] [AWT-EventQueue-0/INFO]: [codec_ui] GDK_SCALE env: null, GDK_DPI_SCALE env: null
-[16:34:44] [AWT-EventQueue-0/INFO]: [codec_ui] Opened resource pack: /home/matteo/IdeaProjects/polytone/fabric/run/resourcepacks/sunbathing
-[16:34:54] [AWT-EventQueue-0/WARN]: [codec_ui] VanillaRegistries lookup unavailable
-java.lang.NoClassDefFoundError: Could not initialize class net.minecraft.core.registries.BuiltInRegistries
-	at net.minecraft.data.registries.VanillaRegistries.createLookup(VanillaRegistries.java:124)
-	at net.mehvahdjukaar.polytone.common.codec_ui.swing.EditorOps.vanillaLookup(EditorOps.java:67)
-	at net.mehvahdjukaar.polytone.common.codec_ui.swing.EditorOps.buildOps(EditorOps.java:50)
-	at net.mehvahdjukaar.polytone.common.codec_ui.swing.EditorPanel.<init>(EditorPanel.java:85)
-	at net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWorkbench.addCodecTab(SwingWorkbench.java:481)
-	at net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWorkbench.openEntryTab(SwingWorkbench.java:470)
-	at net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWorkbench.lambda$rebuildCodecColumn$12(SwingWorkbench.java:362)
-	at java.desktop/javax.swing.AbstractButton.fireActionPerformed(AbstractButton.java:1972)
-	at java.desktop/javax.swing.AbstractButton$Handler.actionPerformed(AbstractButton.java:2314)
-	at java.desktop/javax.swing.DefaultButtonModel.fireActionPerformed(DefaultButtonModel.java:407)
-	at java.desktop/javax.swing.DefaultButtonModel.setPressed(DefaultButtonModel.java:262)
-	at java.desktop/javax.swing.plaf.basic.BasicButtonListener.mouseReleased(BasicButtonListener.java:279)
-	at java.desktop/java.awt.Component.processMouseEvent(Component.java:6576)
-	at java.desktop/javax.swing.JComponent.processMouseEvent(JComponent.java:3404)
-	at java.desktop/java.awt.Component.processEvent(Component.java:6341)
-	at java.desktop/java.awt.Container.processEvent(Container.java:2260)
-	at java.desktop/java.awt.Component.dispatchEventImpl(Component.java:4958)
-	at java.desktop/java.awt.Container.dispatchEventImpl(Container.java:2318)
-	at java.desktop/java.awt.Component.dispatchEvent(Component.java:4790)
-	at java.desktop/java.awt.LightweightDispatcher.retargetMouseEvent(Container.java:4917)
-	at java.desktop/java.awt.LightweightDispatcher.processMouseEvent(Container.java:4560)
-	at java.desktop/java.awt.LightweightDispatcher.dispatchEvent(Container.java:4501)
-	at java.desktop/java.awt.Container.dispatchEventImpl(Container.java:2304)
-	at java.desktop/java.awt.Window.dispatchEventImpl(Window.java:2671)
-	at java.desktop/java.awt.Component.dispatchEvent(Component.java:4790)
-	at java.desktop/java.awt.EventQueue.dispatchEventImpl(EventQueue.java:725)
-	at java.desktop/java.awt.EventQueue.dispatchEvent(EventQueue.java:702)
-	at java.desktop/java.awt.EventDispatchThread.pumpOneEventForFilters(EventDispatchThread.java:203)
-	at java.desktop/java.awt.EventDispatchThread.pumpEventsForFilter(EventDispatchThread.java:124)
-	at java.desktop/java.awt.EventDispatchThread.pumpEventsForHierarchy(EventDispatchThread.java:113)
-	at java.desktop/java.awt.EventDispatchThread.pumpEvents(EventDispatchThread.java:109)
-	at java.desktop/java.awt.EventDispatchThread.pumpEvents(EventDispatchThread.java:101)
-	at java.desktop/java.awt.EventDispatchThread.run(EventDispatchThread.java:90)
-Caused by: java.lang.ExceptionInInitializerError: Exception java.lang.IllegalArgumentException: Not bootstrapped (called from registry minecraft:game_event) [in thread "main"]
-	at net.minecraft.server.Bootstrap.createBootstrapException(Bootstrap.java:114)
-	at net.minecraft.server.Bootstrap.checkBootstrapCalled(Bootstrap.java:107)
-	at net.minecraft.core.registries.BuiltInRegistries.internalRegister(BuiltInRegistries.java:385)
-	at net.minecraft.core.registries.BuiltInRegistries.registerDefaulted(BuiltInRegistries.java:373)
-	at net.minecraft.core.registries.BuiltInRegistries.<clinit>(BuiltInRegistries.java:171)
-	at net.mehvahdjukaar.polytone.common.codec_ui.example.VanillaCodecs.<clinit>(VanillaCodecs.java:45)
-	at net.mehvahdjukaar.polytone.editor.PolytoneEditor.buildEntries(PolytoneEditor.java:46)
-	at net.mehvahdjukaar.polytone.editor.UiPreviewLauncher.main(UiPreviewLauncher.java:34)
+[16:54:17] [AWT-EventQueue-0/INFO]: [codec_ui] FlatLaf class: com.formdev.flatlaf.FlatDarkLaf (dark=true)
+[16:54:17] [AWT-EventQueue-0/INFO]: [codec_ui] flatlaf.uiScale (system prop): 1.5x
+[16:54:17] [AWT-EventQueue-0/INFO]: [codec_ui] FlatLaf UIScale.getUserScaleFactor(): 1.5
+[16:54:17] [AWT-EventQueue-0/INFO]: [codec_ui] Toolkit.getScreenResolution(): 96
+[16:54:17] [AWT-EventQueue-0/INFO]: [codec_ui] Display mode: 2560x1600 @ 165Hz
+[16:54:17] [AWT-EventQueue-0/INFO]: [codec_ui] Detected initial scale: 1.5x
+[16:54:17] [AWT-EventQueue-0/INFO]: [codec_ui] Default font: javax.swing.plaf.FontUIResource[family=SansSerif,name=SansSerif,style=plain,size=20]
+[16:54:17] [AWT-EventQueue-0/INFO]: [codec_ui] GDK_SCALE env: null, GDK_DPI_SCALE env: null

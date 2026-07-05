@@ -2,12 +2,14 @@ package net.mehvahdjukaar.polytone.common.codec_ui.swing;
 
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLaf;
+import com.formdev.flatlaf.FlatLightLaf;
 import com.google.gson.JsonElement;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.UIManager;
+import javax.swing.plaf.ColorUIResource;
 import javax.swing.plaf.FontUIResource;
 import java.awt.Font;
 import java.awt.GraphicsEnvironment;
@@ -85,15 +87,63 @@ public final class SwingSchemaEditor implements SchemaEditor {
             System.setProperty("flatlaf.uiScale", UiScale.detectInitialScale());
         }
 
-        // Phase 2: install FlatLaf (dark). Hard requirement — let it throw if missing.
-        FlatDarkLaf.setup();
+        // Phase 1b: single accent color, seeded via global extra defaults BEFORE the L&F
+        // installs so every accent-derived color (default button, focus ring, selection,
+        // tab underline, checkbox/radio) is recomputed from it. The map is retained by
+        // FlatLaf and re-applied on every subsequent theme install, so light/dark toggles
+        // keep the accent for free. One source of truth lives in EditorOps so hand-drawn
+        // touches (brand text) match exactly.
+        FlatLaf.setGlobalExtraDefaults(java.util.Map.of("@accentColor", EditorOps.ACCENT_HEX));
 
-        // Phase 3: bigger fonts + minimum component sizes + visual polish.
+        // Phase 2 + 3: install the persisted theme and apply our defaults on top.
+        darkTheme = PREFS.getBoolean(THEME_PREF_KEY, true);
+        installTheme(darkTheme);
+
+        // Phase 4: diagnostic logging — gives the user concrete numbers if
+        // the editor STILL renders too small after this fix.
+        logBootstrapDiagnostics();
+    }
+
+    // -------------------- Light / dark theme --------------------
+
+    private static final java.util.prefs.Preferences PREFS =
+            java.util.prefs.Preferences.userNodeForPackage(SwingSchemaEditor.class);
+    private static final String THEME_PREF_KEY = "darkTheme";
+    private static boolean darkTheme = true;
+
+    /** True when the current L&amp;F is the dark theme. */
+    public static boolean isDarkTheme() {
+        return darkTheme;
+    }
+
+    /**
+     * Flip between the dark and light FlatLaf themes and restyle every open window live.
+     * The accent (global extra default) and our UI defaults are re-applied by
+     * {@link #installTheme(boolean)}; {@link FlatLaf#updateUI()} then repaints all frames.
+     */
+    public static void toggleTheme() {
+        darkTheme = !darkTheme;
+        PREFS.putBoolean(THEME_PREF_KEY, darkTheme);
+        installTheme(darkTheme);
+        FlatLaf.updateUI();
+    }
+
+    /** Install the requested theme, then (re-)apply our UI defaults on top of it. */
+    private static void installTheme(boolean dark) {
+        if (dark) FlatDarkLaf.setup(); else FlatLightLaf.setup();
+        applyUiDefaults();
+    }
+
+    /**
+     * Fonts, minimum component sizes and visual polish layered on top of whichever FlatLaf
+     * theme is installed. Must run after EVERY {@code setup()} — installing an L&amp;F resets
+     * the UIManager defaults, so a live theme switch has to re-apply these.
+     */
+    private static void applyUiDefaults() {
         // 20pt logical (was 18). FlatLaf further scales by flatlaf.uiScale.
         UIManager.put("defaultFont", new FontUIResource(Font.SANS_SERIF, Font.PLAIN, 20));
 
         // Minimum component heights — logical px, FlatLaf scales them.
-        // Bumped proportionally with the font bump above.
         UIManager.put("Button.minimumHeight", 48);
         UIManager.put("TextComponent.minimumHeight", 44);
         UIManager.put("Spinner.minimumHeight", 44);
@@ -114,9 +164,15 @@ public final class SwingSchemaEditor implements SchemaEditor {
         UIManager.put("Component.focusWidth", 1);
         UIManager.put("Component.innerFocusWidth", 1);
 
-        // Phase 4: diagnostic logging — gives the user concrete numbers if
-        // the editor STILL renders too small after this fix.
-        logBootstrapDiagnostics();
+        // Modern tabbed-pane styling: a slim accent underline marks the selected tab,
+        // roomy tab height, and a subtle elevation on the selected/hovered tab so the
+        // card-style editor tabs read like a real code editor's file tabs.
+        UIManager.put("TabbedPane.tabSelectionHeight", 3);
+        UIManager.put("TabbedPane.tabHeight", 38);
+        UIManager.put("TabbedPane.showTabSeparators", Boolean.TRUE);
+        UIManager.put("TabbedPane.tabSeparatorsFullHeight", Boolean.FALSE);
+        UIManager.put("TabbedPane.selectedBackground", new ColorUIResource(EditorOps.surface(0.05f)));
+        UIManager.put("TabbedPane.hoverColor", new ColorUIResource(EditorOps.surface(0.03f)));
     }
 
     private static void logBootstrapDiagnostics() {

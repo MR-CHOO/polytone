@@ -177,18 +177,34 @@ public final class SwingWorkbench {
     }
 
     private JComponent buildToolbar() {
-        JToolBar bar = new JToolBar();
+        // Slight elevation + bottom hairline turns the toolbar into a proper header band.
+        // Styling in updateUI() so a live theme switch recomputes the surface + divider.
+        JToolBar bar = new JToolBar() {
+            @Override public void updateUI() {
+                super.updateUI();
+                setOpaque(true);
+                setBackground(EditorOps.surface(0.03f));
+                setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createMatteBorder(0, 0, 1, 0, EditorOps.dividerColor()),
+                        BorderFactory.createEmptyBorder(UiScale.small(), UiScale.med(), UiScale.small(), UiScale.med())));
+            }
+        };
         bar.setFloatable(false);
-        bar.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, UIManager.getColor("Component.borderColor")),
-                BorderFactory.createEmptyBorder(UiScale.small(), UiScale.med(), UiScale.small(), UiScale.med())));
 
-        JButton openPack = new JButton("Open Pack…");
+        // Accent brand mark, left-aligned like an app title bar.
+        JLabel brand = new JLabel("Polytone");
+        brand.setFont(UiScale.deriveFont(brand.getFont(), Font.BOLD, 2f));
+        brand.setForeground(EditorOps.accentColor());
+        brand.setBorder(BorderFactory.createEmptyBorder(0, UiScale.small(), 0, UiScale.large()));
+        bar.add(brand);
+
+        JButton openPack = new JButton("Open Pack…", WorkbenchIcons.folder());
         openPack.setToolTipText("Open a resource pack / datapack folder — any folder works");
         openPack.addActionListener(e -> openPackChooser());
         bar.add(openPack);
         bar.add(Box.createHorizontalStrut(UiScale.small()));
 
+        newContentButton.setIcon(WorkbenchIcons.filePlus());
         newContentButton.setToolTipText(
                 "Add content to the pack — the file lands in its correct folder automatically");
         newContentButton.addActionListener(e -> openNewContentDialog());
@@ -200,24 +216,50 @@ public final class SwingWorkbench {
 
         bar.add(Box.createHorizontalGlue());
 
+        reloadResourcesButton.setIcon(WorkbenchIcons.refresh());
         reloadResourcesButton.setToolTipText("Reload the game's resource packs (F3+T) so saved files take effect");
         reloadResourcesButton.addActionListener(e -> triggerReload(Side.CLIENT_RESOURCES, reloadResourcesButton));
+        reloadDataButton.setIcon(WorkbenchIcons.database());
         reloadDataButton.setToolTipText("Reload the integrated server's datapacks (/reload)");
         reloadDataButton.addActionListener(e -> triggerReload(Side.SERVER_DATA, reloadDataButton));
         bar.add(reloadResourcesButton);
         bar.add(Box.createHorizontalStrut(UiScale.small()));
         bar.add(reloadDataButton);
+
+        bar.add(Box.createHorizontalStrut(UiScale.med()));
+        bar.add(buildThemeToggle());
         return bar;
+    }
+
+    /** Sun/moon button flipping the whole workbench between the light and dark FlatLaf themes. */
+    private JButton buildThemeToggle() {
+        JButton toggle = new JButton();
+        toggle.putClientProperty("JButton.buttonType", "toolBarButton");
+        toggle.setFocusable(false);
+        Runnable sync = () -> {
+            boolean dark = SwingSchemaEditor.isDarkTheme();
+            // Show the destination: a sun while dark (click → light), a moon while light.
+            toggle.setIcon(dark ? WorkbenchIcons.sun() : WorkbenchIcons.moon());
+            toggle.setToolTipText(dark ? "Switch to light theme" : "Switch to dark theme");
+        };
+        sync.run();
+        toggle.addActionListener(e -> {
+            SwingSchemaEditor.toggleTheme();
+            sync.run();
+        });
+        return toggle;
     }
 
     private JComponent buildCenter() {
         JTabbedPane sidebar = new JTabbedPane();
-        sidebar.addTab("Files", treePanel);
-        sidebar.addTab("Codecs", buildCodecLibrary());
+        sidebar.addTab("Files", WorkbenchIcons.folder(), treePanel);
+        sidebar.addTab("Codecs", WorkbenchIcons.layers(), buildCodecLibrary());
         sidebar.setPreferredSize(new Dimension(UiScale.px(300), UiScale.px(400)));
         sidebar.setMinimumSize(new Dimension(UiScale.px(220), UiScale.px(200)));
 
         editorTabs.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
+        // Card-style file tabs — the familiar code-editor look.
+        editorTabs.putClientProperty("JTabbedPane.tabType", "card");
         editorTabs.putClientProperty("JTabbedPane.tabClosable", true);
         editorTabs.putClientProperty("JTabbedPane.tabCloseToolTipText", "Close (Ctrl+W)");
         editorTabs.putClientProperty("JTabbedPane.tabCloseCallback",
@@ -253,22 +295,33 @@ public final class SwingWorkbench {
         JLabel title = new JLabel("No editors open");
         title.setAlignmentX(Component.CENTER_ALIGNMENT);
         title.setFont(UiScale.deriveFont(title.getFont(), Font.BOLD, 4f));
-        title.setForeground(EditorOps.mutedColor());
         JLabel hint = new JLabel("Open a pack folder and double-click a file, or pick a codec from the library");
         hint.setAlignmentX(Component.CENTER_ALIGNMENT);
         hint.setForeground(EditorOps.mutedColor());
+        JButton open = new JButton("Open Pack…", WorkbenchIcons.folder());
+        open.putClientProperty("JButton.buttonType", "default");
+        open.setAlignmentX(Component.CENTER_ALIGNMENT);
+        open.addActionListener(e -> openPackChooser());
         empty.add(title);
         empty.add(Box.createVerticalStrut(UiScale.med()));
         empty.add(hint);
+        empty.add(Box.createVerticalStrut(UiScale.large()));
+        empty.add(open);
         empty.add(Box.createVerticalGlue());
         return empty;
     }
 
     private JComponent buildStatusBar() {
-        JPanel bar = new JPanel(new BorderLayout());
-        bar.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(1, 0, 0, 0, UIManager.getColor("Component.borderColor")),
-                BorderFactory.createEmptyBorder(UiScale.small(), UiScale.med(), UiScale.small(), UiScale.med())));
+        JPanel bar = new JPanel(new BorderLayout()) {
+            @Override public void updateUI() {
+                super.updateUI();
+                setOpaque(true);
+                setBackground(EditorOps.surface(0.03f));
+                setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createMatteBorder(1, 0, 0, 0, EditorOps.dividerColor()),
+                        BorderFactory.createEmptyBorder(UiScale.small(), UiScale.med(), UiScale.small(), UiScale.med())));
+            }
+        };
         statusLabel.setFont(UiScale.deriveFont(statusLabel.getFont(), Font.PLAIN, -1f));
         infoLabel.setFont(UiScale.deriveFont(infoLabel.getFont(), Font.PLAIN, -1f));
         infoLabel.setForeground(EditorOps.mutedColor());
@@ -286,6 +339,7 @@ public final class SwingWorkbench {
 
         JTextField search = new JTextField();
         search.putClientProperty("JTextField.placeholderText", "Search codecs...");
+        search.putClientProperty("JTextField.leadingIcon", WorkbenchIcons.search());
         search.putClientProperty("JTextField.showClearButton", Boolean.TRUE);
 
         JComboBox<String> sideFilter = new JComboBox<>(new String[]{"All", "Client", "Server"});

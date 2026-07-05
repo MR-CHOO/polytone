@@ -41,13 +41,23 @@ public final class RecordWidget implements SwingWidget {
         }
     }
 
-    private final JPanel panel = new JPanel(new GridBagLayout());
+    // Rounded "card": a subtly elevated surface + hairline outline so a record reads as one
+    // grouped unit — nested records/lists then visibly stack, like a settings panel. Styling
+    // lives in updateUI() so a live light/dark theme switch recomputes the surface colors.
+    // Insets/arc are LOGICAL here; FlatLaf scales them (do not pre-scale with UiScale).
+    private final JPanel panel = new JPanel(new GridBagLayout()) {
+        @Override
+        public void updateUI() {
+            super.updateUI();
+            setOpaque(true);
+            setBackground(EditorOps.surface(0.03f));
+            setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
+                    new java.awt.Insets(10, 12, 10, 12), EditorOps.dividerColor(), 1f, 12));
+        }
+    };
     private final List<FieldEntry> entries = new ArrayList<>();
 
     public RecordWidget(Schema.Record<?> schema) {
-        // Outer padding inside the record so it doesn't crash into the scroll edge.
-        panel.setBorder(BorderFactory.createEmptyBorder(
-                UiScale.small(), UiScale.small(), UiScale.small(), UiScale.small()));
         // Allow horizontal stretch when nested inside another record / list / map row.
         // BoxLayout in particular will only stretch a child up to its maximumSize, so
         // without this nested records stay at their preferred (narrow) width.

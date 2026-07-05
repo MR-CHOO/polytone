@@ -86,4 +86,41 @@ final class EditorOps {
         Color c = UIManager.getColor("Label.disabledForeground");
         return c != null ? c : new Color(0x999999);
     }
+
+    // -------------------- Theme accent + surface layering --------------------
+
+    /**
+     * Single accent color — seeded into FlatLaf via {@code @accentColor} so buttons,
+     * focus rings, selection and the tab underline all share it. Kept here as the one
+     * source of truth; the bootstrap reads {@link #ACCENT_HEX}, widgets read
+     * {@link #accentColor()}.
+     */
+    static final String ACCENT_HEX = "#4C8DF6";
+
+    /** The accent as a {@link Color} for hand-drawn touches (brand text, gutters). */
+    static Color accentColor() {
+        return Color.decode(ACCENT_HEX);
+    }
+
+    /**
+     * Panel background nudged by {@code delta} in HSB brightness (−1..1): positive
+     * lifts a surface (card/header/selected tab), negative sinks it. Gives the flat
+     * dark theme a sense of depth without hard-coding hex values per theme.
+     */
+    static Color surface(float delta) {
+        return shiftBrightness(UIManager.getColor("Panel.background"), delta);
+    }
+
+    /** Subtle divider/border color for the current theme. */
+    static Color dividerColor() {
+        Color c = UIManager.getColor("Component.borderColor");
+        return c != null ? c : surface(0.12f);
+    }
+
+    private static Color shiftBrightness(@Nullable Color base, float delta) {
+        if (base == null) base = new Color(0x3C3F41);
+        float[] hsb = Color.RGBtoHSB(base.getRed(), base.getGreen(), base.getBlue(), null);
+        float b = Math.max(0f, Math.min(1f, hsb[2] + delta));
+        return new Color(Color.HSBtoRGB(hsb[0], hsb[1], b));
+    }
 }

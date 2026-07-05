@@ -18,6 +18,8 @@ dependencies {
     implementation ("org.mvel:mvel2:${mvel_version}")
     // codec_ui Swing editor — needed at runtime
     implementation ("com.formdev:flatlaf:${flatlaf_version}")
+    // SVG icon support for the editor toolbar (pulls jsvg transitively)
+    implementation ("com.formdev:flatlaf-extras:${flatlaf_version}")
     // JSON syntax highlighting in OpaqueWidget
     implementation ("com.fifesoft:rsyntaxtextarea:${rsyntaxtextarea_version}")
 

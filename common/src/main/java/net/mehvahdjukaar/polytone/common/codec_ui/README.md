@@ -227,7 +227,7 @@ Fix: `RecordCodecBuilderInstanceMixin` propagates tags through `map` (copy) and 
 - **Sidebar**: *Files* — lazy file tree of the opened pack (double-click routes a file:
   codec-associated JSON → `EditorPanel`, other text → syntax-highlighted `TextEditorPanel`,
   images → preview tab). *Codecs* — the searchable/side-filterable codec library from
-  `PolytoneEditor` (real content) plus `example/CodecRegistry` demo pages in dev.
+  `PolytoneEditor` (real content) plus `example/ExamplePages` demo pages in dev.
 - **Editor tabs**: closable (Ctrl+W), dirty-dot titles, unsaved-changes confirm on close.
   Each `EditorPanel` is form (left) | live JSON preview (right): read-only RSyntaxTextArea +
   a wrapping status line that re-validates through the codec (registry-aware ops) whenever
@@ -267,5 +267,5 @@ if the full codec library can't even class-load it falls back to pure-DFU demo e
 Swing shell logs through `swing/UiLog` (falls back to a plain log4j logger) precisely so a
 failed `Polytone` class-init can't take the preview down. The codec library exercises the resolver on
 progressively nastier codecs, including migrated real Polytone codecs and vanilla ones
-(`example/VanillaCodecs`). A convenient end-to-end check: open `resourcepacks/sunbathing/`
+(`example/ExamplePages`). A convenient end-to-end check: open `resourcepacks/sunbathing/`
 (in-repo dev pack) as the workspace, edit a colormap, save, hit Reload Resources in-game.

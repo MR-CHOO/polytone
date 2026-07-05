@@ -6,6 +6,7 @@ import com.mojang.serialization.DataResult;
 import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
 import org.jetbrains.annotations.Nullable;
 
+import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
@@ -41,7 +42,7 @@ public final class ListWidget implements SwingWidget {
 
         JPanel addBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         addBar.setAlignmentX(Component.LEFT_ALIGNMENT);
-        JButton add = new JButton("+ Add");
+        JButton add = new JButton("Add", WorkbenchIcons.plusAccent());
         add.putClientProperty("JButton.buttonType", "roundRect");
         add.addActionListener(e -> {
             addRow(null);
@@ -62,10 +63,15 @@ public final class ListWidget implements SwingWidget {
         JPanel row = new JPanel();
         row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        // Thin left rail + indent groups each element with its remove button so the array
+        // reads as a stack of list items rather than a wall of identical widgets.
+        row.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, UiScale.px(2), 0, 0, EditorOps.accentColor()),
+                BorderFactory.createEmptyBorder(0, UiScale.med(), 0, 0)));
         row.add(child.component());
         row.add(Box.createHorizontalStrut(UiScale.small()));
 
-        JButton remove = new JButton("×"); // U+00D7 MULTIPLICATION SIGN
+        JButton remove = new JButton(WorkbenchIcons.trash());
         remove.setToolTipText("Remove");
         remove.putClientProperty("JButton.buttonType", "borderless");
         remove.setMargin(UiScale.insets(0, 4, 0, 4));
