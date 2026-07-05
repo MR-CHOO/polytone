@@ -23,6 +23,7 @@ import net.minecraft.resources.HolderSetCodec;
 import net.minecraft.resources.RegistryFileCodec;
 import net.minecraft.resources.RegistryFixedCodec;
 import net.minecraft.resources.ResourceKey;
+import org.jetbrains.annotations.Nullable;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
@@ -56,37 +57,37 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
 
     // ---- VarHandles for private-field access on DFU codec classes ----
 
-    private static final @org.jetbrains.annotations.Nullable VarHandle PAIR_CODEC_FIRST;
-    private static final @org.jetbrains.annotations.Nullable VarHandle PAIR_CODEC_SECOND;
+    private static final @Nullable VarHandle PAIR_CODEC_FIRST;
+    private static final @Nullable VarHandle PAIR_CODEC_SECOND;
 
-    private static final @org.jetbrains.annotations.Nullable VarHandle OPTIONAL_FIELD_NAME;
-    private static final @org.jetbrains.annotations.Nullable VarHandle OPTIONAL_FIELD_ELEMENT;
-    private static final @org.jetbrains.annotations.Nullable VarHandle OPTIONAL_FIELD_LENIENT;
+    private static final @Nullable VarHandle OPTIONAL_FIELD_NAME;
+    private static final @Nullable VarHandle OPTIONAL_FIELD_ELEMENT;
+    private static final @Nullable VarHandle OPTIONAL_FIELD_LENIENT;
 
-    private static final @org.jetbrains.annotations.Nullable VarHandle PAIR_MAP_FIRST;
-    private static final @org.jetbrains.annotations.Nullable VarHandle PAIR_MAP_SECOND;
+    private static final @Nullable VarHandle PAIR_MAP_FIRST;
+    private static final @Nullable VarHandle PAIR_MAP_SECOND;
 
-    private static final @org.jetbrains.annotations.Nullable VarHandle KEY_DISPATCH_KEYCODEC;
-    private static final @org.jetbrains.annotations.Nullable VarHandle KEY_DISPATCH_TYPE;
-    private static final @org.jetbrains.annotations.Nullable VarHandle KEY_DISPATCH_DECODER;
+    private static final @Nullable VarHandle KEY_DISPATCH_KEYCODEC;
+    private static final @Nullable VarHandle KEY_DISPATCH_TYPE;
+    private static final @Nullable VarHandle KEY_DISPATCH_DECODER;
 
-    private static final @org.jetbrains.annotations.Nullable VarHandle SIMPLE_MAP_KEYCODEC;
-    private static final @org.jetbrains.annotations.Nullable VarHandle SIMPLE_MAP_ELEMENT;
-    private static final @org.jetbrains.annotations.Nullable VarHandle SIMPLE_MAP_KEYS;
+    private static final @Nullable VarHandle SIMPLE_MAP_KEYCODEC;
+    private static final @Nullable VarHandle SIMPLE_MAP_ELEMENT;
+    private static final @Nullable VarHandle SIMPLE_MAP_KEYS;
 
-    private static final @org.jetbrains.annotations.Nullable VarHandle RECURSIVE_WRAPPED;
-    private static final @org.jetbrains.annotations.Nullable Class<?> RECURSIVE_MAP_CLASS;
-    private static final @org.jetbrains.annotations.Nullable VarHandle RECURSIVE_MAP_WRAPPED;
-    private static final @org.jetbrains.annotations.Nullable VarHandle COMPOUND_LIST_KEY;
-    private static final @org.jetbrains.annotations.Nullable VarHandle COMPOUND_LIST_ELEMENT;
-    private static final @org.jetbrains.annotations.Nullable VarHandle EITHER_MAP_FIRST;
-    private static final @org.jetbrains.annotations.Nullable VarHandle EITHER_MAP_SECOND;
+    private static final @Nullable VarHandle RECURSIVE_WRAPPED;
+    private static final @Nullable Class<?> RECURSIVE_MAP_CLASS;
+    private static final @Nullable VarHandle RECURSIVE_MAP_WRAPPED;
+    private static final @Nullable VarHandle COMPOUND_LIST_KEY;
+    private static final @Nullable VarHandle COMPOUND_LIST_ELEMENT;
+    private static final @Nullable VarHandle EITHER_MAP_FIRST;
+    private static final @Nullable VarHandle EITHER_MAP_SECOND;
 
-    private static final @org.jetbrains.annotations.Nullable VarHandle REGISTRY_FILE_KEY;
-    private static final @org.jetbrains.annotations.Nullable VarHandle REGISTRY_FILE_ELEMENT;
-    private static final @org.jetbrains.annotations.Nullable VarHandle REGISTRY_FILE_INLINE;
-    private static final @org.jetbrains.annotations.Nullable VarHandle REGISTRY_FIXED_KEY;
-    private static final @org.jetbrains.annotations.Nullable VarHandle HOLDER_SET_ELEMENT;
+    private static final @Nullable VarHandle REGISTRY_FILE_KEY;
+    private static final @Nullable VarHandle REGISTRY_FILE_ELEMENT;
+    private static final @Nullable VarHandle REGISTRY_FILE_INLINE;
+    private static final @Nullable VarHandle REGISTRY_FIXED_KEY;
+    private static final @Nullable VarHandle HOLDER_SET_ELEMENT;
 
     static {
         VarHandle pf = null, ps = null;
@@ -349,7 +350,7 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
     // The cache placeholder is already in place when these run, so handlers can freely
     // resolve inner codecs through the Resolver view without breaking cycle detection.
 
-    private @org.jetbrains.annotations.Nullable Schema<?> tierCustomHandlers(Object codec, boolean isMapCodec) {
+    private @Nullable Schema<?> tierCustomHandlers(Object codec, boolean isMapCodec) {
         for (SchemaHandler handler : HANDLERS) {
             try {
                 Schema<?> schema = isMapCodec
@@ -557,7 +558,7 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
      * for that codec. Only runs after every exact tier has passed.
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private @org.jetbrains.annotations.Nullable Schema<?> tierThreeReflective(Object codec,
+    private @Nullable Schema<?> tierThreeReflective(Object codec,
                                                                               IdentityHashMap<Object, Schema<?>> cache) {
         java.util.List<Object> inners = new java.util.ArrayList<>();
         java.util.List<String> names = new java.util.ArrayList<>();
@@ -723,7 +724,7 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
      * Returns null on any failure: ClassCastException from a wrong-K hook, error DataResult, etc.
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private static @org.jetbrains.annotations.Nullable MapCodec<?> applyDecoder(Function fn, Object key) {
+    private static @Nullable MapCodec<?> applyDecoder(Function fn, Object key) {
         try {
             Object result = fn.apply(key);
             if (!(result instanceof DataResult<?> dr)) return null;

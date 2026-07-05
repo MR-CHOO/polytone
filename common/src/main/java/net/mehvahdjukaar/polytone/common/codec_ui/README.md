@@ -63,6 +63,49 @@ In priority order (first match wins at resolve time) — all registered via `Sch
 5. **Custom widget** — `MyWidget.DEF.bind(codec)` (Swing backend): bypass schema-driven
    widget selection with a domain editor (see `example/ExampleExpressionWidget`).
 
+## Porting cookbook (for future agents)
+
+**Goal recap:** any codec should open as a real editing GUI. Inference handles most; what it
+can't gets either a declaration-site schema (codecs we own) or a curated registration
+(codecs we don't). Reference ports to copy from: `content/colormap/Colormap.java`,
+`IColorGetter.java`, `common/ColorUtils.java`.
+
+**Porting a codec WE OWN (preferred — declaration site, wire format unchanged):**
+
+1. Record codec: replace `RecordCodecBuilder.create(i -> i.group(...).apply(i, X::new))`
+   with `SchemaRecord.create(X.class, i -> i.group(...).apply(i, X::new))` — same shape;
+   `i.field(name, codec, getter)`, `i.optional(name, codec, default, getter)`, and the
+   `Optional<F>` flavor `i.optional(name, codec, c -> Optional<F>)`. Field type changes
+   `Codec<X>` → `SchemaCodec<X>`; callers unaffected (`SchemaCodec extends Codec`).
+2. Alternatives: `SchemaCodecs.withAlternative(alt("a", A), alt("b", B))` builds
+   `Codec.withAlternative` + labeled picker in one go. If the multi-format codec can't be
+   rebuilt (custom try-each classes, reference-or-direct), keep it and wrap with
+   `SchemaCodecs.labeled(existingCodec, alt("a", A), ...)` — labels only, wire untouched.
+3. Simple override: `SchemaCodec.of(codec, schema)` (e.g. `ColorUtils.COLOR` → `Schema.Color`).
+
+**Rules:**
+- NEVER call `.schema()` or `SchemaCodecs.resolve(...)` in a static initializer — schemas
+  must resolve at editor-open (wrap/DSL/`alt` are already lazy; `SchemaCodec.lazy` is the
+  manual escape hatch).
+- Swing widget bindings (`Schema.Custom` + `SwingWidgetDef`) NEVER go in content code —
+  they're registered at editor bootstrap (`example/PolytoneSchemas`) so production classes
+  stay UI-free.
+- MapCodecs registered into dispatch maps (e.g. `ItemPredicate.TYPES.register`) can't be
+  ported yet: `SchemaMapCodec` does not extend `MapCodec` (known gap). Their dispatch still
+  renders fully via `EnumerableCodec` enumeration.
+
+**Porting a codec we DON'T own (vanilla / other mods):** add an entry to
+`internal/CuratedSchemas.register()` using the public API (`registerCompanion` /
+`registerHandler` / `registerDispatchKeys`), with a comment on WHY inference fails.
+External mods do the same from their own init.
+
+**Client vs server registries (`SchemaEditor.Side`):** datapack registries (biomes, ...)
+have two views — client-synced (what resource-pack files, i.e. ALL polytone content, see)
+and the server's (what datapack files see). A file's pack type decides its side; the editor
+binds the matching registry access for encode/validate ops (fallback outside a world:
+`VanillaRegistries.createLookup()`). The launcher's two top-level tabs (Client | Server)
+are driven by `CodecRegistry.Entry.side`.
+
 ## Architecture
 
 Three layers:
@@ -156,11 +199,16 @@ Fix: `RecordCodecBuilderInstanceMixin` propagates tags through `map` (copy) and 
 - Plain-lambda enums via `Codec.stringResolver` are not enumerable → resolve as `Str`.
 - `MapCodec.Dependent`, `assumeMapUnsafe`, `unit` — no handlers (rare; fall to Opaque).
 - `DispatchedMapCodec` values are opaque (function-typed); keys resolve.
+- `SchemaMapCodec` is a plain wrapper, NOT a `MapCodec` subclass — owned MapCodecs that get
+  registered into dispatch registries can't be declared schema-carrying yet.
 
 ## Testing
 
 `example/ExamplesLauncher` is a standalone Swing app (FlatLaf) exercising the resolver on
 progressively nastier codecs, including migrated real Polytone codecs and vanilla ones
-(`example/VanillaCodecs`). Run it from the IDE with the mod classpath; mixins must be active
+(`example/VanillaCodecs`). Two top-level tabs split entries by `Side`. Each editor page is
+form (left) | live JSON preview (right): read-only RSyntaxTextArea + a wrapping status line
+that re-validates through the codec (registry-aware ops) whenever the produced JSON changes.
+Optional record fields are omitted from output while they equal their declared default. Run it from the IDE with the mod classpath; mixins must be active
 for the construction tags to exist (run via a client run config / dev launch, not plain main,
 when testing mixin-dependent paths).

@@ -23,7 +23,23 @@ import java.util.List;
 
 public final class RecordWidget implements SwingWidget {
 
-    private record FieldEntry(Schema.Field<?, ?> field, SwingWidget widget) {}
+    /**
+     * {@code unsetBaseline} is the JSON the widget produces in its pristine "not set" state
+     * (after the declared default was pre-filled, when representable). An optional field is
+     * omitted from the output while its current JSON still equals this baseline — this is
+     * what makes "matches the default ⇒ don't write it" work for EVERY widget type (bools,
+     * numbers, enums, colors, nested records), not just primitive defaults.
+     */
+    private static final class FieldEntry {
+        final Schema.Field<?, ?> field;
+        final SwingWidget widget;
+        @Nullable JsonElement unsetBaseline;
+
+        FieldEntry(Schema.Field<?, ?> field, SwingWidget widget) {
+            this.field = field;
+            this.widget = widget;
+        }
+    }
 
     private final JPanel panel = new JPanel(new GridBagLayout());
     private final List<FieldEntry> entries = new ArrayList<>();
@@ -44,13 +60,15 @@ public final class RecordWidget implements SwingWidget {
         int row = 0;
         for (Schema.Field<?, ?> field : schema.fields()) {
             SwingWidget child = SwingWidgetFactory.create(field.schema());
-            entries.add(new FieldEntry(field, child));
+            FieldEntry entry = new FieldEntry(field, child);
+            entries.add(entry);
 
             // Optional fields start out showing their declared default (when representable);
-            // currentJson() omits them while they still match it.
+            // snapshot that pristine output as the field's "unset" baseline.
             if (field.optional()) {
                 JsonElement defJson = primitiveToJson(field.defaultValue());
                 if (defJson != null) child.setJson(defJson);
+                entry.unsetBaseline = snapshot(child);
             }
 
             // Right-aligned label column.
@@ -120,9 +138,9 @@ public final class RecordWidget implements SwingWidget {
                 return DataResult.error(() -> "Field '" + name + "': " + msg);
             }
             JsonElement json = r.result().orElseThrow();
-            // Optional field still at its default (or visibly unset) → omit from the output;
-            // the codec's own default applies on load.
-            if (e.field.optional() && isUnsetOrDefault(json, e.field.defaultValue())) {
+            // Optional field still matching its unset/default baseline → omit from the
+            // output; the codec's own default applies on load.
+            if (e.field.optional() && json.equals(e.unsetBaseline)) {
                 continue;
             }
             obj.add(e.field.name(), json);
@@ -149,16 +167,13 @@ public final class RecordWidget implements SwingWidget {
         }
     }
 
-    /**
-     * True when an optional field's value should be treated as "not set": it equals the
-     * declared default, or — for optionals without a representable default — it is still
-     * blank (JSON null / empty string).
-     */
-    private static boolean isUnsetOrDefault(JsonElement json, @Nullable Object defaultValue) {
-        JsonElement defJson = primitiveToJson(defaultValue);
-        if (defJson != null) return defJson.equals(json);
-        return json.isJsonNull()
-                || (json.isJsonPrimitive() && json.getAsJsonPrimitive().isString() && json.getAsString().isEmpty());
+    /** Widget's current JSON, or null when it can't produce one (opaque mid-edit, ...). */
+    private static @Nullable JsonElement snapshot(SwingWidget widget) {
+        try {
+            return widget.currentJson().result().orElse(null);
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     /** JSON form of a primitive default value; null for complex/absent defaults. */

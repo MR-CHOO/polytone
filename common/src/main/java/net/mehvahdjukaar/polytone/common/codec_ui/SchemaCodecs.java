@@ -37,8 +37,6 @@ import java.util.function.Function;
  */
 public final class SchemaCodecs {
 
-    private SchemaCodecs() {}
-
     /**
      * Manually register a schema for a codec we can't (or don't want to) auto-introspect.
      * Use this for codecs that wrap their internals via {@code Codec.of(enc, dec)} or similar
