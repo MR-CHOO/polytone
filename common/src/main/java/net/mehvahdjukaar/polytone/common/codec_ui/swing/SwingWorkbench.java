@@ -3,10 +3,10 @@ package net.mehvahdjukaar.polytone.common.codec_ui.swing;
 import com.formdev.flatlaf.FlatLaf;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
-import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side;
 import net.mehvahdjukaar.polytone.common.codec_ui.workbench.CodecEntry;
+import net.mehvahdjukaar.polytone.common.codec_ui.workbench.GamePaths;
 import net.mehvahdjukaar.polytone.common.codec_ui.workbench.PackReloader;
 import net.mehvahdjukaar.polytone.common.codec_ui.workbench.PackWorkspace;
 import net.mehvahdjukaar.polytone.common.codec_ui.workbench.Workbench;
@@ -367,8 +367,12 @@ public final class SwingWorkbench {
         chooser.setDialogTitle("Open Pack Folder (lenient — any folder works)");
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         Preferences prefs = Preferences.userNodeForPackage(SwingWorkbench.class);
+        // Start at the running game's resourcepacks folder when there is one; otherwise
+        // wherever the user last opened a pack from.
+        Path gamePacks = GamePaths.resourcePackDir();
         String last = prefs.get("lastPackDir", null);
-        if (last != null) chooser.setCurrentDirectory(new File(last));
+        if (gamePacks != null) chooser.setCurrentDirectory(gamePacks.toFile());
+        else if (last != null) chooser.setCurrentDirectory(new File(last));
         if (chooser.showOpenDialog(frame) != JFileChooser.APPROVE_OPTION) return;
         File dir = chooser.getSelectedFile();
         if (dir == null) return;
@@ -433,7 +437,7 @@ public final class SwingWorkbench {
         try {
             panel = new EditorPanel<>((SchemaCodec<A>) codec, label, side);
         } catch (Throwable t) {
-            Polytone.LOGGER.error("[codec_ui] failed to build editor for {}", label, t);
+            UiLog.get().error("[codec_ui] failed to build editor for {}", label, t);
             status("Could not build editor for " + label + ": " + t);
             return;
         }
@@ -493,7 +497,7 @@ public final class SwingWorkbench {
         try {
             panel = new EditorPanel<>(codec, String.valueOf(file.getFileName()), entry.side());
         } catch (Throwable t) {
-            Polytone.LOGGER.error("[codec_ui] failed to build editor for {}", file, t);
+            UiLog.get().error("[codec_ui] failed to build editor for {}", file, t);
             status("Could not build editor (" + t + ") — opening as text");
             return false;
         }
@@ -612,6 +616,6 @@ public final class SwingWorkbench {
 
     private void status(String message) {
         statusLabel.setText(message);
-        Polytone.LOGGER.info("[codec_ui] {}", message);
+        UiLog.get().info("[codec_ui] {}", message);
     }
 }

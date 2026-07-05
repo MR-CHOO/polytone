@@ -3,7 +3,6 @@ package net.mehvahdjukaar.polytone.common.codec_ui.swing;
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLaf;
 import com.google.gson.JsonElement;
-import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor;
 import org.jetbrains.annotations.Nullable;
@@ -121,24 +120,24 @@ public final class SwingSchemaEditor implements SchemaEditor {
     }
 
     private static void logBootstrapDiagnostics() {
-        Polytone.LOGGER.info("[codec_ui] FlatLaf class: {} (dark={})",
+        UiLog.get().info("[codec_ui] FlatLaf class: {} (dark={})",
                 UIManager.getLookAndFeel().getClass().getName(), FlatLaf.isLafDark());
-        Polytone.LOGGER.info("[codec_ui] flatlaf.uiScale (system prop): {}", System.getProperty("flatlaf.uiScale"));
-        Polytone.LOGGER.info("[codec_ui] FlatLaf UIScale.getUserScaleFactor(): {}",
+        UiLog.get().info("[codec_ui] flatlaf.uiScale (system prop): {}", System.getProperty("flatlaf.uiScale"));
+        UiLog.get().info("[codec_ui] FlatLaf UIScale.getUserScaleFactor(): {}",
                 com.formdev.flatlaf.util.UIScale.getUserScaleFactor());
-        Polytone.LOGGER.info("[codec_ui] Toolkit.getScreenResolution(): {}",
+        UiLog.get().info("[codec_ui] Toolkit.getScreenResolution(): {}",
                 Toolkit.getDefaultToolkit().getScreenResolution());
         try {
             var mode = GraphicsEnvironment.getLocalGraphicsEnvironment()
                     .getDefaultScreenDevice().getDisplayMode();
-            Polytone.LOGGER.info("[codec_ui] Display mode: {}x{} @ {}Hz",
+            UiLog.get().info("[codec_ui] Display mode: {}x{} @ {}Hz",
                     mode.getWidth(), mode.getHeight(), mode.getRefreshRate());
         } catch (Throwable t) {
-            Polytone.LOGGER.warn("[codec_ui] Could not read DisplayMode", t);
+            UiLog.get().warn("[codec_ui] Could not read DisplayMode", t);
         }
-        Polytone.LOGGER.info("[codec_ui] Detected initial scale: {}", UiScale.detectInitialScale());
-        Polytone.LOGGER.info("[codec_ui] Default font: {}", UIManager.getFont("defaultFont"));
-        Polytone.LOGGER.info("[codec_ui] GDK_SCALE env: {}, GDK_DPI_SCALE env: {}",
+        UiLog.get().info("[codec_ui] Detected initial scale: {}", UiScale.detectInitialScale());
+        UiLog.get().info("[codec_ui] Default font: {}", UIManager.getFont("defaultFont"));
+        UiLog.get().info("[codec_ui] GDK_SCALE env: {}, GDK_DPI_SCALE env: {}",
                 System.getenv("GDK_SCALE"), System.getenv("GDK_DPI_SCALE"));
     }
 
@@ -159,7 +158,7 @@ public final class SwingSchemaEditor implements SchemaEditor {
             unsafeClass.getMethod("putObject", Object.class, long.class, Object.class)
                     .invoke(unsafe, base, offset, Boolean.FALSE);
         } catch (Throwable t) {
-            Polytone.LOGGER.warn("Could not disable AWT headless mode. Add JVM arg -Djava.awt.headless=false "
+            UiLog.get().warn("Could not disable AWT headless mode. Add JVM arg -Djava.awt.headless=false "
                     + "to your run config if the editor fails to open.", t);
         }
     }

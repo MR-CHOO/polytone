@@ -1,6 +1,7 @@
 package net.mehvahdjukaar.polytone.common.codec_ui.example;
 
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side;
+import net.mehvahdjukaar.polytone.common.codec_ui.workbench.GamePaths;
 import net.mehvahdjukaar.polytone.common.codec_ui.workbench.PackReloader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.MinecraftServer;
@@ -8,10 +9,11 @@ import net.minecraft.server.MinecraftServer;
 import java.util.function.Consumer;
 
 /**
- * Installs the {@link PackReloader} hook backed by the running client: CLIENT_RESOURCES →
+ * Installs the game-backed workbench hooks: the {@link PackReloader} (CLIENT_RESOURCES →
  * {@code Minecraft.reloadResourcePacks()} (F3+T), SERVER_DATA → integrated server
- * {@code reloadResources(...)} ({@code /reload}). Every check is defensive so the workbench
- * keeps working (buttons disabled) when launched without a game.
+ * {@code reloadResources(...)} ({@code /reload})) and the {@link GamePaths} resourcepacks
+ * folder provider. Every check is defensive so the workbench keeps working (buttons
+ * disabled, default folders) when launched without a game.
  */
 public final class GameReloadHooks {
 
@@ -23,6 +25,10 @@ public final class GameReloadHooks {
         if (installed) return;
         installed = true;
         PackReloader.install(new GameReloader());
+        GamePaths.installResourcePackDirProvider(() -> {
+            Minecraft mc = Minecraft.getInstance();
+            return mc != null ? mc.getResourcePackDirectory() : null;
+        });
     }
 
     private static final class GameReloader implements PackReloader {

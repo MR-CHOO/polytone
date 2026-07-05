@@ -4,7 +4,6 @@ import com.formdev.flatlaf.FlatLaf;
 import com.google.gson.JsonElement;
 import com.mojang.serialization.DynamicOps;
 import com.mojang.serialization.JsonOps;
-import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side;
 import org.jetbrains.annotations.Nullable;
 
@@ -53,7 +52,7 @@ final class EditorOps {
             try {
                 return provider.createSerializationContext(JsonOps.INSTANCE);
             } catch (Throwable t) {
-                Polytone.LOGGER.warn("[codec_ui] could not create registry ops, falling back to plain JsonOps", t);
+                UiLog.get().warn("[codec_ui] could not create registry ops, falling back to plain JsonOps", t);
             }
         }
         return JsonOps.INSTANCE;
@@ -68,7 +67,7 @@ final class EditorOps {
                 vanillaLookup = net.minecraft.data.registries.VanillaRegistries.createLookup();
             } catch (Throwable t) {
                 vanillaLookupFailed = true;
-                Polytone.LOGGER.warn("[codec_ui] VanillaRegistries lookup unavailable", t);
+                UiLog.get().warn("[codec_ui] VanillaRegistries lookup unavailable", t);
             }
         }
         return vanillaLookup;

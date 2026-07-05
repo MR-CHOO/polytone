@@ -66,7 +66,9 @@ In priority order (first match wins at resolve time) — all registered via `Sch
 4. **Dispatch keys** — `SchemaCodecs.registerDispatchKeys(keyType, keys, codecOf, nameOf)`
    for `Codec.dispatch` families whose key type you don't control.
 5. **Custom widget** — `MyWidget.DEF.bind(codec)` (Swing backend): bypass schema-driven
-   widget selection with a domain editor (see `example/ExampleExpressionWidget`).
+   widget selection with a domain editor (see `swing/ExpressionWidget` — the big
+   syntax-highlighted expression editor with live compile-check and variable chips,
+   configured per expression dialect in `example/PolytoneSchemas`).
 
 ## Porting cookbook (for future agents)
 
@@ -212,7 +214,9 @@ Fix: `RecordCodecBuilderInstanceMixin` propagates tags through `map` (copy) and 
 `example/ExamplesLauncher.open()` boots `swing/SwingWorkbench` — ONE frame, everything in it:
 
 - **Toolbar**: Open Pack… (lenient folder picker — ANY directory opens, since mods load packs
-  from odd places; `assets/`/`data/`/`pack.mcmeta` only refine the detected kind), plus
+  from odd places; `assets/`/`data/`/`pack.mcmeta` only refine the detected kind; starts at
+  the running game's `resourcepacks` folder via the `workbench/GamePaths` provider hook,
+  falling back to the last-used directory), plus
   Reload Resources / Reload Data buttons driven by the `PackReloader` hook
   (`example/GameReloadHooks` binds them to `Minecraft.reloadResourcePacks()` and the
   integrated server's `reloadResources`; disabled when no game / no server). Reloading is
@@ -239,7 +243,12 @@ a tab in the same window — no separate frames anywhere.
 
 Run `ExamplesLauncher.open()` from the IDE with the mod classpath; mixins must be active
 for the construction tags to exist (run via a client run config / dev launch, not plain main,
-when testing mixin-dependent paths). The codec library exercises the resolver on
+when testing mixin-dependent paths). For pure UI-structure work there is
+`example/UiPreviewLauncher.main()` — a bare-JVM launch with no game: reload buttons are
+disabled, registry codecs validate with errors, RCB records resolve opaque (no mixins), and
+if the full codec library can't even class-load it falls back to pure-DFU demo entries. The
+Swing shell logs through `swing/UiLog` (falls back to a plain log4j logger) precisely so a
+failed `Polytone` class-init can't take the preview down. The codec library exercises the resolver on
 progressively nastier codecs, including migrated real Polytone codecs and vanilla ones
 (`example/VanillaCodecs`). A convenient end-to-end check: open `resourcepacks/sunbathing/`
 (in-repo dev pack) as the workspace, edit a colormap, save, hit Reload Resources in-game.
