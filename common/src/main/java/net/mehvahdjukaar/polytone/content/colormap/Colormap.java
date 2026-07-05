@@ -1,11 +1,14 @@
 package net.mehvahdjukaar.polytone.content.colormap;
 
 import com.mojang.serialization.Codec;
-import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.mehvahdjukaar.polytone.PlatStuff;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.common.ColorUtils;
 import net.mehvahdjukaar.polytone.common.codec.CodecUtils;
+import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
+import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec;
+import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs;
+import net.mehvahdjukaar.polytone.common.codec_ui.SchemaRecord;
 import net.mehvahdjukaar.polytone.common.expressions.impl.IColormapExp;
 import net.mehvahdjukaar.polytone.common.struc.ArrayImage;
 import net.mehvahdjukaar.polytone.content.biome.BiomeIdMapper;
@@ -52,27 +55,40 @@ public final class Colormap implements IColorGetter, ColorResolver {
     private final ThreadLocal<Integer> yHack = new ThreadLocal<>();
     private final ThreadLocal<BlockAndTintGetter> levelHack = new ThreadLocal<>();
 
-    static final Codec<Colormap> DIRECT_CODEC = RecordCodecBuilder.create(i -> i.group(
-            ColorUtils.COLOR.optionalFieldOf("default_color").forGetter(c -> Optional.ofNullable(c.defaultColor)),
-            IColormapExp.CODEC.fieldOf("x_axis").forGetter(c -> c.xGetter),
-            IColormapExp.CODEC.fieldOf("y_axis").forGetter(c -> c.yGetter),
-            Codec.BOOL.optionalFieldOf("triangular", false).forGetter(c -> c.triangular),
-            Codec.BOOL.optionalFieldOf("rounds", true).forGetter(c -> c.rounds),
-            Codec.BOOL.optionalFieldOf("biome_blend").forGetter(c -> Optional.of(c.hasBiomeBlend)),
-            BiomeIdMapper.CODEC.optionalFieldOf("biome_id_mapper").forGetter(c -> Optional.of(c.biomeMapper)),
-            Identifier.CODEC.optionalFieldOf("texture_path").forGetter(c -> Optional.ofNullable(c.explicitTargetTexture)),
-            ColormapColorModulator.CODEC.optionalFieldOf("color_modifier").forGetter(c -> Optional.ofNullable(c.colorMult))
+    // Declared via the SchemaRecord DSL: same wire format as the old RecordCodecBuilder,
+    // plus a Schema so the editor renders real widgets (schema is built lazily at editor open).
+    static final SchemaCodec<Colormap> DIRECT_CODEC = SchemaRecord.create(Colormap.class, i -> i.group(
+            i.optional("default_color", ColorUtils.COLOR, c -> Optional.ofNullable(c.defaultColor)),
+            i.field("x_axis", IColormapExp.CODEC, c -> c.xGetter),
+            i.field("y_axis", IColormapExp.CODEC, c -> c.yGetter),
+            i.optional("triangular", Codec.BOOL, false, c -> c.triangular),
+            i.optional("rounds", Codec.BOOL, true, c -> c.rounds),
+            i.optional("biome_blend", Codec.BOOL, c -> Optional.of(c.hasBiomeBlend)),
+            i.optional("biome_id_mapper", BiomeIdMapper.CODEC, c -> Optional.of(c.biomeMapper)),
+            i.optional("texture_path", Identifier.CODEC, c -> Optional.ofNullable(c.explicitTargetTexture)),
+            i.optional("color_modifier", ColormapColorModulator.CODEC, c -> Optional.ofNullable(c.colorMult))
     ).apply(i, Colormap::new));
 
-    public static final Codec<IColorGetter> REFERENCE_OR_EXPRESSION = Codec.withAlternative(
-            Polytone.COLORMAPS.byNameCodec(), SINGLE_COLOR_OR_EXPRESSION);
+    public static final SchemaCodec<IColorGetter> REFERENCE_OR_EXPRESSION = SchemaCodec.lazy(
+            Codec.withAlternative(Polytone.COLORMAPS.byNameCodec(), SINGLE_COLOR_OR_EXPRESSION),
+            () -> Schema.anyOf(
+                    Schema.option("reference", SchemaCodecs.resolve(Polytone.COLORMAPS.byNameCodec())),
+                    Schema.option("inline", SINGLE_COLOR_OR_EXPRESSION.schema())));
 
 
-    //direct reference or expression
-    public static final Codec<IColorGetter> CODEC = CodecUtils.alternatives(
-            CodecUtils.referenceOrDirect(Polytone.COLORMAPS.byNameCodec(), DIRECT_CODEC),
-            SINGLE_COLOR_OR_EXPRESSION,
-            BiomeCompoundColorGetter.CODEC);
+    // Direct reference, inline definition, color/expression or biome compound. The nested
+    // alternative codecs are unchanged; the lazy AnyOf splices them into ONE labeled picker
+    // (reference / inline colormap / color / expression / biome compound).
+    public static final SchemaCodec<IColorGetter> CODEC = SchemaCodec.lazy(
+            CodecUtils.alternatives(
+                    CodecUtils.referenceOrDirect(Polytone.COLORMAPS.byNameCodec(), DIRECT_CODEC),
+                    SINGLE_COLOR_OR_EXPRESSION,
+                    BiomeCompoundColorGetter.CODEC),
+            () -> Schema.anyOf(
+                    Schema.option("reference", SchemaCodecs.resolve(Polytone.COLORMAPS.byNameCodec())),
+                    Schema.option("inline colormap", DIRECT_CODEC.schema()),
+                    Schema.option("value", SINGLE_COLOR_OR_EXPRESSION.schema()),
+                    Schema.option("biome compound", SchemaCodecs.resolve(BiomeCompoundColorGetter.CODEC))));
 
     private Colormap(Optional<Integer> defaultColor, IColormapExp xGetter, IColormapExp yGetter,
                      boolean triangular, boolean rounds, Optional<Boolean> biomeBlend, Optional<BiomeIdMapper> biomeMapper,

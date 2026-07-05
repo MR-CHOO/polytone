@@ -56,6 +56,18 @@ public final class SchemaRecord {
             return optional(name, SchemaCodec.wrap(codec), defaultValue, getter);
         }
 
+        /** Optional field with NO default — round-trips as {@code Optional<F>}, mirroring
+         *  {@code codec.optionalFieldOf(name).forGetter(...)}. */
+        public <F> FieldRef<A, java.util.Optional<F>> optional(String name, SchemaCodec<F> codec,
+                                                               Function<A, java.util.Optional<F>> getter) {
+            return new FieldRef<>(name, null, true, null, getter, codec.optionalFieldOf(name), codec);
+        }
+
+        public <F> FieldRef<A, java.util.Optional<F>> optional(String name, Codec<F> codec,
+                                                               Function<A, java.util.Optional<F>> getter) {
+            return optional(name, SchemaCodec.wrap(codec), getter);
+        }
+
         public <F1> Group1<A, F1> group(FieldRef<A, F1> f1) {
             return new Group1<>(this, f1);
         }
@@ -108,14 +120,21 @@ public final class SchemaRecord {
     // ---- shared helpers ----
 
     private static <A, F> MapCodec<F> mapCodecFor(FieldRef<A, F> field) {
+        if (field.mapCodecOverride != null) {
+            return field.mapCodecOverride;
+        }
         if (field.optional && field.defaultValue != null) {
             return field.codec.optionalFieldOf(field.name, field.defaultValue);
         }
         return field.codec.fieldOf(field.name);
     }
 
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private static <A, F> Schema.Field<A, F> toSchemaField(FieldRef<A, F> f) {
-        return new Schema.Field<>(f.name, f.codec.schema(), f.optional, f.defaultValue);
+        // Optional<F> fields display their INNER codec's schema (the editor models optionality
+        // via the field flag, not via an Optional wrapper type).
+        Schema<?> schema = f.innerCodec != null ? f.innerCodec.schema() : f.codec.schema();
+        return new Schema.Field<>(f.name, (Schema) schema, f.optional, f.defaultValue);
     }
 
     @SafeVarargs
@@ -161,7 +180,7 @@ public final class SchemaRecord {
         public SchemaCodec<A> build() {
             MapCodec<F1> mc1 = mapCodecFor(f1);
             Codec<A> codec = mc1.xmap(ctor, f1.getter).codec();
-            return SchemaCodec.of(codec, buildSchema(instance.type, f1));
+            return SchemaCodec.lazy(codec, () -> buildSchema(instance.type, f1));
         }
     }
 
@@ -194,7 +213,7 @@ public final class SchemaRecord {
                     RecordCodecBuilder.of(f1.getter, mc1),
                     RecordCodecBuilder.of(f2.getter, mc2)
             ));
-            return SchemaCodec.of(codec, buildSchema(instance.type, f1, f2));
+            return SchemaCodec.lazy(codec, () -> buildSchema(instance.type, f1, f2));
         }
     }
 
@@ -231,7 +250,7 @@ public final class SchemaRecord {
                     RecordCodecBuilder.of(f2.getter, mc2),
                     RecordCodecBuilder.of(f3.getter, mc3)
             ));
-            return SchemaCodec.of(codec, buildSchema(instance.type, f1, f2, f3));
+            return SchemaCodec.lazy(codec, () -> buildSchema(instance.type, f1, f2, f3));
         }
     }
 
@@ -273,7 +292,7 @@ public final class SchemaRecord {
                     RecordCodecBuilder.of(f3.getter, mc3),
                     RecordCodecBuilder.of(f4.getter, mc4)
             ));
-            return SchemaCodec.of(codec, buildSchema(instance.type, f1, f2, f3, f4));
+            return SchemaCodec.lazy(codec, () -> buildSchema(instance.type, f1, f2, f3, f4));
         }
     }
 
@@ -319,7 +338,7 @@ public final class SchemaRecord {
                     RecordCodecBuilder.of(f4.getter, mc4),
                     RecordCodecBuilder.of(f5.getter, mc5)
             ));
-            return SchemaCodec.of(codec, buildSchema(instance.type, f1, f2, f3, f4, f5));
+            return SchemaCodec.lazy(codec, () -> buildSchema(instance.type, f1, f2, f3, f4, f5));
         }
     }
 
@@ -369,7 +388,7 @@ public final class SchemaRecord {
                     RecordCodecBuilder.of(f5.getter, mc5),
                     RecordCodecBuilder.of(f6.getter, mc6)
             ));
-            return SchemaCodec.of(codec, buildSchema(instance.type, f1, f2, f3, f4, f5, f6));
+            return SchemaCodec.lazy(codec, () -> buildSchema(instance.type, f1, f2, f3, f4, f5, f6));
         }
     }
 
@@ -424,7 +443,7 @@ public final class SchemaRecord {
                     RecordCodecBuilder.of(f6.getter, mc6),
                     RecordCodecBuilder.of(f7.getter, mc7)
             ));
-            return SchemaCodec.of(codec, buildSchema(instance.type, f1, f2, f3, f4, f5, f6, f7));
+            return SchemaCodec.lazy(codec, () -> buildSchema(instance.type, f1, f2, f3, f4, f5, f6, f7));
         }
     }
 
@@ -484,7 +503,7 @@ public final class SchemaRecord {
                     RecordCodecBuilder.of(f7.getter, mc7),
                     RecordCodecBuilder.of(f8.getter, mc8)
             ));
-            return SchemaCodec.of(codec, buildSchema(instance.type, f1, f2, f3, f4, f5, f6, f7, f8));
+            return SchemaCodec.lazy(codec, () -> buildSchema(instance.type, f1, f2, f3, f4, f5, f6, f7, f8));
         }
     }
 
@@ -549,11 +568,23 @@ public final class SchemaRecord {
                     RecordCodecBuilder.of(f8.getter, mc8),
                     RecordCodecBuilder.of(f9.getter, mc9)
             ));
-            return SchemaCodec.of(codec, buildSchema(instance.type, f1, f2, f3, f4, f5, f6, f7, f8, f9));
+            return SchemaCodec.lazy(codec, () -> buildSchema(instance.type, f1, f2, f3, f4, f5, f6, f7, f8, f9));
         }
     }
 
-    /** Single field declaration produced by {@link Instance#field}/{@link Instance#optional}. */
-    public record FieldRef<A, F>(String name, SchemaCodec<F> codec, boolean optional,
-                                 @Nullable F defaultValue, Function<A, F> getter) {}
+    /**
+     * Single field declaration produced by {@link Instance#field}/{@link Instance#optional}.
+     * The last two components are only set by the {@code Optional<F>} flavor of
+     * {@code optional(...)}: a prebuilt {@code optionalFieldOf(name)} map codec, plus the
+     * inner element codec whose schema the editor should display.
+     */
+    public record FieldRef<A, F>(String name, @Nullable SchemaCodec<F> codec, boolean optional,
+                                 @Nullable F defaultValue, Function<A, F> getter,
+                                 @Nullable MapCodec<F> mapCodecOverride,
+                                 @Nullable SchemaCodec<?> innerCodec) {
+        public FieldRef(String name, SchemaCodec<F> codec, boolean optional,
+                        @Nullable F defaultValue, Function<A, F> getter) {
+            this(name, codec, optional, defaultValue, getter, null, null);
+        }
+    }
 }

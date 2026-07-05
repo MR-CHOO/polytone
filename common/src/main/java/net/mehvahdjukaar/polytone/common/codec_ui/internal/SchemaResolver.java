@@ -199,9 +199,9 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
     }
 
     // Per-call cache; new IdentityHashMap each resolve() so it doesn't leak codecs.
-    // Recursion is handled by inserting a placeholder Opaque on entry; if a recursive
-    // lookup hits the in-progress entry it gets the Opaque fallback. We then replace
-    // it with the real schema on exit.
+    // Recursion is handled by inserting a Schema.Ref placeholder on entry; a recursive
+    // lookup that hits the in-progress entry gets the Ref, which is bound to the real
+    // schema on exit (lazy sub-editor in the UI).
     private static final ThreadLocal<IdentityHashMap<Object, Schema<?>>>  CACHE = ThreadLocal.withInitial(IdentityHashMap::new);
 
     private SchemaResolver() {}
@@ -248,16 +248,19 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
             return (Schema<A>) innerSchema;
         }
 
-        // Insert opaque placeholder so cycles short-circuit.
-        Schema.Opaque<A> placeholder = new Schema.Opaque<>(codec, null);
-        cache.put(codec, placeholder);
+        // Insert a Ref placeholder so cycles short-circuit: a recursive lookup gets the Ref,
+        // which we bind to the finished schema below — recursive fields render as lazily
+        // expanded sub-editors instead of raw JSON.
+        Schema.Ref<A> ref = new Schema.Ref<>();
+        cache.put(codec, ref);
 
         Schema<A> result = (Schema<A>) tierCustomHandlers(codec, false);
         if (result == null) result = (Schema<A>) tierOnePrimitive(codec);
         if (result == null) result = (Schema<A>) tierTwoStructural(codec, cache);
         if (result == null) result = (Schema<A>) tierThreeReflective(codec, cache);
-        if (result == null) result = placeholder;
+        if (result == null) result = (Schema<A>) new Schema.Opaque<>(codec, null);
 
+        ref.bind(result);
         cache.put(codec, result);
         return result;
     }
@@ -327,15 +330,16 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
             return (Schema<A>) innerSchema;
         }
 
-        // For MapCodec we fall back to Opaque over its codec() form.
-        Schema.Opaque<A> placeholder = new Schema.Opaque<>(codec.codec(), null);
-        cache.put(codec, placeholder);
+        // Ref placeholder for cycles (see resolveCodec). Fallback is Opaque over codec() form.
+        Schema.Ref<A> ref = new Schema.Ref<>();
+        cache.put(codec, ref);
 
         Schema<A> result = (Schema<A>) tierCustomHandlers(codec, true);
         if (result == null) result = (Schema<A>) tierTwoMapStructural(codec, cache);
         if (result == null) result = (Schema<A>) tierThreeReflective(codec, cache);
-        if (result == null) result = placeholder;
+        if (result == null) result = (Schema<A>) new Schema.Opaque<>(codec.codec(), null);
 
+        ref.bind(result);
         cache.put(codec, result);
         return result;
     }
@@ -378,6 +382,11 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Schema<?> tierTwoStructural(Codec<?> codec, IdentityHashMap<Object, Schema<?>> cache) {
+        // Authored schema-carrying codecs know their own schema. (Lazy variants re-enter the
+        // resolver for inner codecs — the placeholder already in the cache guards cycles.)
+        if (codec instanceof net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec<?> sc) {
+            return sc.schema();
+        }
         // MapCodec.codec() returns a MapCodecCodec record wrapping the underlying MapCodec.
         // Promote to the inner MapCodec resolution so dispatch codecs (KeyDispatchCodec, RCB.build
         // outputs) reach the MapCodec tier-2 path.

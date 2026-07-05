@@ -51,6 +51,7 @@ public final class CodecRegistry {
     }
 
     private static List<Entry> build() {
+        PolytoneSchemas.bootstrap();
         List<Entry> list = new ArrayList<>();
 
         // ----- Demo / migration examples -----
@@ -108,6 +109,12 @@ public final class CodecRegistry {
         list.add(new Entry("Vector3f (float x3)",                  g4, SchemaCodec.wrap(ExtraCodecs.VECTOR3F)));
         list.add(new Entry("UUID (string form)",                   g4, SchemaCodec.wrap(UUIDUtil.STRING_CODEC)));
         list.add(new Entry("Identifier (id widget)",               g4, SchemaCodec.wrap(net.minecraft.resources.Identifier.CODEC)));
+
+        // ----- Ported polytone codecs (PolytoneSchemas) — the "convert our own" showcase -----
+        String g5 = "Ported polytone codecs";
+        list.add(new Entry("ColorUtils.COLOR (hex color)",         g5, SchemaCodec.wrap(net.mehvahdjukaar.polytone.common.ColorUtils.COLOR)));
+        list.add(new Entry("ISimpleExp (constant|expression)",     g5, SchemaCodec.wrap(net.mehvahdjukaar.polytone.common.expressions.impl.ISimpleExp.CODEC)));
+        list.add(new Entry("ColormapExpression (widget)",          g5, SchemaCodec.wrap(net.mehvahdjukaar.polytone.content.colormap.ColormapExpressionProvider.CODEC)));
         return list;
     };
 }

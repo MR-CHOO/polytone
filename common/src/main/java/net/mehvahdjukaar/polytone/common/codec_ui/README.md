@@ -33,6 +33,17 @@ first place to add vanilla/DFU codecs that resolve wrong or opaque, and it doubl
 reference example for how external mods register their own weird codecs (they call the same
 `SchemaCodecs` methods from their own init).
 
+**For codecs YOU own, don't register anything** — declare codec + schema in one go:
+`static final SchemaCodec<X> CODEC = SchemaRecord.create(X.class, i -> i.group(...).apply(i, X::new))`
+(drop-in: `SchemaCodec extends Codec`). For alternative-style codecs use
+`SchemaCodec.lazy(codec, () -> Schema.anyOf(Schema.option("name", ...), ...))` — the lazy
+supplier runs at editor-open, so late-bound widget companions and registry content are
+picked up (never call `.schema()` or `SchemaCodecs.resolve` at class-init). See
+`content/colormap/Colormap.java` for the reference port: its 3-layer nested alternatives
+render as ONE picker (reference / inline colormap / color / expression / biome compound).
+The registration mechanisms below are for codecs you DON'T own (vanilla, other mods) —
+plus `Schema.Custom` widget bindings, which stay out of content code.
+
 In priority order (first match wins at resolve time) — all registered via `SchemaCodecs`:
 
 1. **Companion** — `SchemaCodecs.registerCompanion(codec, schema)`: hand-crafted schema for
@@ -91,9 +102,10 @@ Three layers:
    bodies via the decoder, large ones stay name-only with opaque bodies. If everything comes
    up empty the dispatch renders as raw JSON instead of a dead empty picker.
 
-   Recursion: a per-resolve `IdentityHashMap` cache; an `Opaque` placeholder is inserted
-   before descending, so self-references (e.g. `Codec.recursive`) terminate and render as
-   raw-JSON sub-editors.
+   Recursion: a per-resolve `IdentityHashMap` cache; a `Schema.Ref` placeholder is inserted
+   before descending and bound to the finished schema on exit, so self-references (e.g.
+   `Codec.recursive`, dispatch variants embedding the dispatch) become lazily-expanded
+   sub-editors (`RefWidget`) instead of raw JSON.
 
 3. **Construction mixins** (`mixins/codec_ui/`) — because `xmap`/`RecordCodecBuilder`
    capture their inner codecs in lambdas, the only general way to see them is to record
@@ -130,9 +142,9 @@ Fix: `RecordCodecBuilderInstanceMixin` propagates tags through `map` (copy) and 
   opaque by nature (tier 3 finds no codec-typed fields in the lambdas); needs a companion.
 - Registry-backed dispatches over **large** registries (>128 entries, e.g. Block) keep
   opaque variant bodies; only the key dropdown is populated.
-- Recursive self-references (a dispatch variant embedding the dispatch codec itself, e.g.
-  an "and" predicate holding a list of predicates) render as raw-JSON sub-editors — the
-  in-progress placeholder short-circuits them. Needs a future `Schema.Ref`.
+- Recursive self-references resolve to `Schema.Ref` (bound after the outer resolve
+  completes) and render as lazily-expanded sub-editors — expand-on-click or on data load.
+  Unexpanded required recursive fields surface as codec validation errors on save.
 - Tier 3 is a guess: a hand-rolled codec whose two codec fields are *not* alternatives
   (and not a key/value pair) gets a wrong `AnyOf` surface. Override with a companion.
 - `xmap`s that genuinely change shape (string ↔ parsed tree) show the on-disk (inner)

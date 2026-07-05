@@ -23,6 +23,21 @@ public interface RegistryByNameCodecMixin<T> {
     @SuppressWarnings({"unchecked", "rawtypes"})
     @ModifyReturnValue(method = "byNameCodec", at = @At("RETURN"))
     private Codec<T> polytone$tagByNameCodec(Codec<T> wrapped) {
+        polytone$tagWithKey(wrapped);
+        return wrapped;
+    }
+
+    // Holder<T>-typed twin (MobEffect.CODEC, etc.) — same id-string on-disk form.
+    @SuppressWarnings("rawtypes")
+    @ModifyReturnValue(method = "holderByNameCodec", at = @At("RETURN"))
+    private Codec polytone$tagHolderByNameCodec(Codec wrapped) {
+        polytone$tagWithKey(wrapped);
+        return wrapped;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    @org.spongepowered.asm.mixin.Unique
+    private void polytone$tagWithKey(Codec<?> wrapped) {
         try {
             ResourceKey<? extends Registry<T>> key = ((Registry<T>) this).key();
             Schema.ResourceId schema = new Schema.ResourceId(key);
@@ -30,6 +45,5 @@ public interface RegistryByNameCodecMixin<T> {
         } catch (Throwable ignored) {
             // Best-effort.
         }
-        return wrapped;
     }
 }

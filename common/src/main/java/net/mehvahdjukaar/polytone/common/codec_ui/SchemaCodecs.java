@@ -69,6 +69,15 @@ public final class SchemaCodecs {
     }
 
     /**
+     * Resolve any codec's schema through the full inference pipeline (companions and
+     * handlers included). Meant for {@link SchemaCodec#lazy} suppliers that label or
+     * compose other codecs' schemas — call it INSIDE the supplier, never at class-init.
+     */
+    public static <A> Schema<A> resolve(Codec<A> codec) {
+        return SchemaResolver.get().resolve(codec);
+    }
+
+    /**
      * Register the key set of a {@code Codec.dispatch(...)} family whose key type can't
      * implement {@link EnumerableCodec} (vanilla or third-party K). The resolver applies a
      * dispatch's decoder to each supplied key; keys the dispatch accepts become entries in
@@ -153,6 +162,28 @@ public final class SchemaCodecs {
         List<Schema.Field<Object, ?>> fields = List.of(field);
         Schema<A> schema = (Schema<A>) (Schema) new Schema.Record<>(Object.class, fields);
         return SchemaMapCodec.of(mapCodec, schema);
+    }
+
+    /**
+     * Labeled alternatives over a codec you own. The codec must already accept every
+     * alternative form (built with {@code withAlternative}, {@code CodecUtils.alternatives},
+     * a custom multi-format codec, ...); this pairs it with a flat {@link Schema.AnyOf} so
+     * the editor shows ONE named picker with the exact widget per alternative, instead of
+     * whatever inference guessed.
+     *
+     * <pre>{@code
+     * // a color field that is either a packed int or an MVEL expression string:
+     * SchemaCodecs.alternatives(MY_COLOR_OR_EXPR_CODEC,
+     *         Schema.option("color", Schema.colorArgb()),
+     *         Schema.option("expression", new Schema.Custom<>(ExpressionWidget.DEF)));
+     * }</pre>
+     *
+     * <p>Same idea as {@link #registerCompanion(Codec, Schema)} with
+     * {@code Schema.anyOf(...)} — use this form when declaring a {@link SchemaCodec} inline,
+     * the companion form when annotating an existing static codec from bootstrap code.</p>
+     */
+    public static <A> SchemaCodec<A> alternatives(Codec<A> codec, Schema.AnyOf.Option... options) {
+        return SchemaCodec.of(codec, Schema.anyOf(options));
     }
 
     public static <L, R> SchemaCodec<Either<L, R>> either(SchemaCodec<L> left, SchemaCodec<R> right) {

@@ -2,6 +2,9 @@ package net.mehvahdjukaar.polytone.content.colormap;
 
 import com.mojang.serialization.Codec;
 import net.mehvahdjukaar.polytone.common.ColorUtils;
+import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
+import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec;
+import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs;
 import net.mehvahdjukaar.polytone.common.expressions.impl.IBlockExp;
 import net.mehvahdjukaar.polytone.content.item.BarColor;
 import net.minecraft.client.Minecraft;
@@ -160,7 +163,7 @@ public interface IColorGetter extends BlockColor, BarColor {
     }
 
 
-    Codec<IColorGetter> SINGLE_COLOR_CODEC = ColorUtils.COLOR.xmap(
+    SchemaCodec<IColorGetter> SINGLE_COLOR_CODEC = SchemaCodecs.xmap(ColorUtils.COLOR,
             IColorGetter.StaticColor::new, g -> g instanceof StaticColor(int color) ? color : 0
     );
 
@@ -169,6 +172,11 @@ public interface IColorGetter extends BlockColor, BarColor {
             g -> g instanceof ExpressionColor(IBlockExp exp) ? exp : IBlockExp.ZERO
     );
 
-    Codec<IColorGetter> SINGLE_COLOR_OR_EXPRESSION = Codec.withAlternative(
-            SINGLE_COLOR_CODEC, EXPRESSION_CODEC);
+    // One labeled picker: a color, or an MVEL expression. Schema is LAZY so the expression
+    // editor widget (registered at editor bootstrap) is picked up.
+    SchemaCodec<IColorGetter> SINGLE_COLOR_OR_EXPRESSION = SchemaCodec.lazy(
+            Codec.withAlternative(SINGLE_COLOR_CODEC, EXPRESSION_CODEC),
+            () -> Schema.anyOf(
+                    Schema.option("color", SINGLE_COLOR_CODEC.schema()),
+                    Schema.option("expression", SchemaCodecs.resolve(EXPRESSION_CODEC))));
 }

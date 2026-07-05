@@ -64,6 +64,9 @@ public final class SwingWidgetFactory {
         if (schema instanceof Schema.AnyOf<?> anyOf) {
             return new AnyOfWidget(anyOf);
         }
+        if (schema instanceof Schema.Ref<?> ref) {
+            return new RefWidget(ref);
+        }
         // Opaque, or Custom with a non-Swing widgetDef — opaque JSON fallback.
         return new OpaqueWidget();
     }

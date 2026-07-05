@@ -61,6 +61,29 @@ public sealed interface Schema<A> {
 
     record OneOf<A>(String typeField, Map<String, Schema<? extends A>> variants) implements Schema<A> {}
 
+    /**
+     * Recursive back-reference: produced by the resolver when a codec's schema refers to a
+     * codec that is still being resolved (self-recursive types like text components,
+     * "not"/"and" predicates, {@code hidden_effect}). The resolver {@link #bind}s the target
+     * once the outer resolve completes, so by the time an editor walks the schema the ref is
+     * bound. UI backends MUST materialize the target lazily (on expand / on data load) —
+     * eager materialization of a cyclic schema would recurse forever.
+     */
+    final class Ref<A> implements Schema<A> {
+        private volatile @Nullable Schema<?> target;
+
+        public @Nullable Schema<?> target() {
+            return target;
+        }
+
+        /** First bind wins; self-binding ignored. Called by the resolver only. */
+        public void bind(Schema<?> resolved) {
+            if (this.target == null && resolved != this) {
+                this.target = resolved;
+            }
+        }
+    }
+
     // Escape hatches
     record Opaque<A>(Codec<A> codec, @Nullable A example) implements Schema<A> {}
 
@@ -145,6 +168,10 @@ public sealed interface Schema<A> {
             case PairOf<?, ?> ignored -> "pair";
             case OneOf<?> ignored -> "typed object";
             case AnyOf<?> ignored -> "alternatives";
+            case Ref<?> ref -> {
+                Schema<?> t = ref.target();
+                yield (t == null || t instanceof Ref<?>) ? "recursive" : kindName(t);
+            }
             case Opaque<?> ignored -> "raw";
             case Custom<?> ignored -> "custom";
         };
