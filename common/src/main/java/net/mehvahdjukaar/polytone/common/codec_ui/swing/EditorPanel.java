@@ -73,7 +73,7 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         @Override public void updateUI() {
             super.updateUI();
             setForeground(EditorOps.accentColor());
-            setFont(UiScale.deriveFont(getFont(), Font.BOLD, -1f));
+            setFont(UiScale.labelFont(Font.BOLD, -1f));
             setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
                     new java.awt.Insets(2, 8, 2, 8),
                     EditorOps.mix(EditorOps.dividerColor(), EditorOps.accentColor(), 0.5f), 1f, 999));
@@ -108,9 +108,13 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         kindHeader.setLayout(new BoxLayout(kindHeader, BoxLayout.X_AXIS));
         kindHeader.setOpaque(false);
         JLabel sideLabel = new JLabel(side == Side.SERVER_DATA
-                ? "datapack side" : "resource pack side");
-        sideLabel.setForeground(EditorOps.mutedColor());
-        sideLabel.setFont(UiScale.deriveFont(sideLabel.getFont(), Font.PLAIN, -1f));
+                ? "datapack side" : "resource pack side") {
+            @Override public void updateUI() {
+                super.updateUI();
+                setFont(UiScale.labelFont(Font.PLAIN, -1f));
+                setForeground(EditorOps.mutedColor());
+            }
+        };
         kindHeader.add(kindChip);
         kindHeader.add(Box.createHorizontalStrut(UiScale.med()));
         kindHeader.add(sideLabel);
@@ -123,7 +127,9 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         scrollHost.add(rootWidget.component(), BorderLayout.CENTER);
 
         JScrollPane scroll = new JScrollPane(scrollHost);
-        scroll.setBorder(BorderFactory.createLineBorder(UIManager.getColor("Component.borderColor")));
+        // No border of its own: the root widget's rounded card is the form's visual edge —
+        // a second (square) box around it read as double-wrapping.
+        scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.getVerticalScrollBar().setUnitIncrement(UiScale.px(16));
         scroll.getViewport().setOpaque(false);
         scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);

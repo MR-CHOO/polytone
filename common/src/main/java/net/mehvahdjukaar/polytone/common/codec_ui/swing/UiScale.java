@@ -139,4 +139,17 @@ public final class UiScale {
         Font f = UIManager.getFont(key);
         return f != null ? f : UIManager.getFont("Label.font");
     }
+
+    /**
+     * L&amp;F label font with a style/size tweak, derived FRESH from UIManager. This is the
+     * only safe base inside {@code updateUI()} overrides: deriving from {@code getFont()}
+     * there compounds the delta on every theme switch / zoom, because a derived font is not
+     * a UIResource and {@code super.updateUI()} never replaces it.
+     */
+    public static Font labelFont(int style, float sizeDeltaLogical) {
+        Font base = UIManager.getFont("Label.font");
+        if (base == null) base = UIManager.getFont("defaultFont");
+        if (base == null) base = new Font(Font.SANS_SERIF, Font.PLAIN, 13);
+        return deriveFont(base, style, sizeDeltaLogical);
+    }
 }

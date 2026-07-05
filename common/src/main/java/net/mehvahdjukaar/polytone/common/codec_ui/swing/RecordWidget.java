@@ -100,7 +100,7 @@ public final class RecordWidget implements SwingWidget {
                 JLabel opt = new JLabel("opt") {
                     @Override public void updateUI() {
                         super.updateUI();
-                        setFont(UiScale.deriveFont(getFont(), Font.PLAIN, -3f));
+                        setFont(UiScale.labelFont(Font.PLAIN, -3f));
                         setForeground(EditorOps.mutedColor());
                         setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
                                 new java.awt.Insets(1, 6, 1, 6), EditorOps.dividerColor(), 1f, 999));

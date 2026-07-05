@@ -21,7 +21,16 @@ import java.util.List;
 public final class ListWidget implements SwingWidget {
 
     private final Schema<?> elementSchema;
-    private final JPanel root = new JPanel();
+    // ONE rounded hairline container wraps the whole list — rows, empty hint AND add
+    // button — so empty and filled lists read as the same bounded thing (like AnyOf).
+    private final JPanel root = new JPanel() {
+        @Override public void updateUI() {
+            super.updateUI();
+            setOpaque(false);
+            setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
+                    new java.awt.Insets(8, 10, 8, 10), EditorOps.dividerColor(), 1f, 10));
+        }
+    };
     private final JPanel rowsHost = new JPanel();
     private final javax.swing.JLabel emptyHint = new javax.swing.JLabel("(empty)");
     // Minimal "+" — contextual label goes in the tooltip via setItemLabel.
@@ -45,7 +54,7 @@ public final class ListWidget implements SwingWidget {
         emptyHint.setFont(UiScale.deriveFont(emptyHint.getFont(), java.awt.Font.ITALIC, -1f));
         emptyHint.setForeground(EditorOps.mutedColor());
         emptyHint.setAlignmentX(Component.LEFT_ALIGNMENT);
-        emptyHint.setBorder(BorderFactory.createEmptyBorder(0, UiScale.med(), UiScale.small(), 0));
+        emptyHint.setBorder(BorderFactory.createEmptyBorder(0, 0, UiScale.small(), 0));
         root.add(emptyHint);
 
         JPanel addBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
@@ -93,13 +102,10 @@ public final class ListWidget implements SwingWidget {
         row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        // Rounded hairline item container — the ONE grouping style shared with AnyOf and
-        // expanded collapsibles. The empty bottom border replaces the old inter-row struts
-        // (which leaked in rowsHost when a row was removed).
-        row.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createEmptyBorder(0, 0, UiScale.med(), 0),
-                new com.formdev.flatlaf.ui.FlatLineBorder(
-                        new java.awt.Insets(8, 10, 8, 10), EditorOps.dividerColor(), 1f, 10)));
+        // No per-row box — the widget's outer container is the single frame; rows are
+        // separated by spacing + the index column. (Bottom border instead of inter-row
+        // struts, which leaked in rowsHost when a row was removed.)
+        row.setBorder(BorderFactory.createEmptyBorder(0, 0, UiScale.med(), 0));
 
         // Everything top-aligned: with tall children (records, pickers) a centered remove
         // button floats in the middle of the row, which is what made lists feel off.

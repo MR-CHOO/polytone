@@ -2,9 +2,12 @@ package net.mehvahdjukaar.polytone.content.config;
 
 import com.google.common.collect.Multimap;
 import com.google.common.collect.MultimapBuilder;
+import net.mehvahdjukaar.polytone.Polytone;
+import net.mehvahdjukaar.polytone.editor.PolytoneEditor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.OptionInstance;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.SpriteIconButton;
 import net.minecraft.client.gui.layouts.LinearLayout;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.options.OptionsSubScreen;
@@ -89,6 +92,14 @@ public class ConfigScreen extends OptionsSubScreen {
                             remakeScreen();
                         })
                 .width(width)
+                .build());
+        linearLayout.addChild(SpriteIconButton.builder(
+                        Component.translatable("screen.polytone.configs.codec_editor"),
+                        b -> PolytoneEditor.open(),
+                        true)
+                .size(20, 20)
+                .sprite(Polytone.res("codec_editor"), 12, 12)
+                .withTootip()
                 .build());
         linearLayout.addChild(Button.builder(CommonComponents.GUI_DONE,
                         b -> this.minecraft.setScreen(this.lastScreen))

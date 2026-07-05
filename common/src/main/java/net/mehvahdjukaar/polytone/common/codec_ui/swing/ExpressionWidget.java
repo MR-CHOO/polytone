@@ -6,7 +6,6 @@ import com.google.gson.JsonPrimitive;
 import com.mojang.serialization.DataResult;
 import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
-import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import org.fife.ui.rsyntaxtextarea.Theme;
 import org.fife.ui.rtextarea.RTextScrollPane;
 import org.jetbrains.annotations.Nullable;
@@ -108,9 +107,10 @@ public final class ExpressionWidget implements SwingWidget, CollapsibleWidget {
         root.setAlignmentX(Component.LEFT_ALIGNMENT);
         root.setOpaque(false);
 
-        // ---- Code area: expression dialects are C-like enough that the JS lexer gives
-        // useful coloring (numbers, operators, strings, parens) without a custom TokenMaker.
-        area.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_JAVASCRIPT);
+        // ---- Code area: dedicated MVEL lexer — distinguishes variables, .property access,
+        // method/function calls and MVEL keywords (the JS lexer flattened them all).
+        MvelTokenMaker.register();
+        area.setSyntaxEditingStyle(MvelTokenMaker.SYNTAX_STYLE);
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
         area.setHighlightCurrentLine(false);
@@ -122,6 +122,7 @@ public final class ExpressionWidget implements SwingWidget, CollapsibleWidget {
             // Theme is cosmetic only.
         }
         area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UiScale.px(15)));
+        applyExpressionPalette(area);
 
         RTextScrollPane scroll = new RTextScrollPane(area);
         scroll.setLineNumbersEnabled(false);
@@ -187,6 +188,37 @@ public final class ExpressionWidget implements SwingWidget, CollapsibleWidget {
         if (shown.length() > 60) shown = shown.substring(0, 57) + "…";
         boolean error = lastError != null && !text.isEmpty();
         section.setSummary(error ? "✗ " + shown : shown, error);
+    }
+
+    /**
+     * MVEL-tuned palette matched to {@link MvelTokenMaker}'s token classes:
+     * {@code player.getRed() + g.x} reads as blue-var, teal-property, purple-call,
+     * with magenta keywords and amber literals. Theme-branched for light/dark.
+     */
+    private static void applyExpressionPalette(RSyntaxTextArea area) {
+        boolean dark = FlatLaf.isLafDark();
+        var scheme = area.getSyntaxScheme();
+        java.awt.Color identifier = dark ? new java.awt.Color(0x9CDCFE) : new java.awt.Color(0x1750EB);
+        java.awt.Color property = dark ? new java.awt.Color(0x4EC9B0) : new java.awt.Color(0x0F7B6C);
+        java.awt.Color number = dark ? new java.awt.Color(0xE8AF5E) : new java.awt.Color(0xB35C00);
+        java.awt.Color keyword = dark ? new java.awt.Color(0xC586C0) : new java.awt.Color(0xA626A4);
+        java.awt.Color function = EditorOps.accentColor();
+        setTokenColor(scheme, org.fife.ui.rsyntaxtextarea.Token.IDENTIFIER, identifier);
+        setTokenColor(scheme, org.fife.ui.rsyntaxtextarea.Token.VARIABLE, property);
+        setTokenColor(scheme, org.fife.ui.rsyntaxtextarea.Token.FUNCTION, function);
+        setTokenColor(scheme, org.fife.ui.rsyntaxtextarea.Token.RESERVED_WORD, keyword);
+        setTokenColor(scheme, org.fife.ui.rsyntaxtextarea.Token.RESERVED_WORD_2, keyword);
+        setTokenColor(scheme, org.fife.ui.rsyntaxtextarea.Token.LITERAL_NUMBER_DECIMAL_INT, number);
+        setTokenColor(scheme, org.fife.ui.rsyntaxtextarea.Token.LITERAL_NUMBER_FLOAT, number);
+        setTokenColor(scheme, org.fife.ui.rsyntaxtextarea.Token.LITERAL_NUMBER_HEXADECIMAL, number);
+        setTokenColor(scheme, org.fife.ui.rsyntaxtextarea.Token.LITERAL_BOOLEAN, number);
+        area.repaint();
+    }
+
+    private static void setTokenColor(org.fife.ui.rsyntaxtextarea.SyntaxScheme scheme,
+                                      int token, java.awt.Color color) {
+        var style = scheme.getStyle(token);
+        if (style != null) style.foreground = color;
     }
 
     private JComponent buildChipStrip() {

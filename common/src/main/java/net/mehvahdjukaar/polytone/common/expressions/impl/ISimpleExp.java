@@ -5,14 +5,15 @@ import net.mehvahdjukaar.polytone.common.codec.CodecUtils;
 
 public interface ISimpleExp {
 
-    Codec<ISimpleExp> CODEC = Codec.lazyInitialized(() -> (
-            CodecUtils.alternatives(
-                    Codec.DOUBLE.xmap(
-                            aDouble -> () -> aDouble,
-                            iBlockExp -> 0.0
-                    ),
-                    SimpleExp.TYPE.codec()
-            )));
+    Codec<ISimpleExp> CONSTANT_CODEC = Codec.DOUBLE.xmap(
+            aDouble -> () -> aDouble,
+            iBlockExp -> 0.0);
+
+    // Same wire codec; labels name the editor's picker options.
+    Codec<ISimpleExp> CODEC = Codec.lazyInitialized(() -> net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs.labeled(
+            CodecUtils.alternatives(CONSTANT_CODEC, SimpleExp.TYPE.codec()),
+            net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs.alt("constant", CONSTANT_CODEC),
+            net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs.alt("expression", SimpleExp.TYPE.codec())));
 
     double evaluate();
 

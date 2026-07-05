@@ -6,20 +6,23 @@ import com.mojang.serialization.JsonOps;
 import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs;
 import net.mehvahdjukaar.polytone.common.codec_ui.swing.ExpressionWidget;
-import net.mehvahdjukaar.polytone.common.expressions.impl.IBlockExp;
-import net.mehvahdjukaar.polytone.common.expressions.impl.ISimpleExp;
+import net.mehvahdjukaar.polytone.common.exp.impl.BlockContextExpression;
+import net.mehvahdjukaar.polytone.common.expressions.PolyExpType;
+import net.mehvahdjukaar.polytone.common.expressions.impl.BlockExp;
+import net.mehvahdjukaar.polytone.common.expressions.impl.ColormapExp;
+import net.mehvahdjukaar.polytone.common.expressions.impl.SimpleExp;
 import net.mehvahdjukaar.polytone.content.colormap.ColormapExpressionProvider;
 
 /**
- * Polytone's schema companions and Swing widget bindings for codecs that can't carry their
- * schema at the declaration site — widget bindings must never leak into content code, so
- * they live here and are registered once at editor bootstrap. When no widget is involved,
- * the preferred home for a schema remains the codec's own declaration
- * (SchemaRecord / SchemaCodecs.alt).
+ * Polytone's schema companions + Swing widget bindings for codecs that can't carry their
+ * schema at the declaration site (widget bindings must never leak into content code).
+ * Registered once at editor bootstrap; the long-term home for a registration is still the
+ * codec's own declaration (SchemaRecord / SchemaCodecs.alt) whenever no widget is involved.
  *
- * <p>Colormap itself is deliberately NOT converted here (huge); its leaf codecs are —
- * which already fixes its worst spots, since companions apply wherever the codec appears
- * as a field.</p>
+ * <p>Union codecs (IColormapExp / IBlockExp / ISimpleExp) are labeled at their declaration
+ * sites; here we only bind the big expression editor to the LEAF codecs — the MVEL
+ * {@code PolyExpType} codecs (chips from their declared inputs, compile-check through the
+ * real parser) and the legacy exp4j ones.</p>
  */
 public final class PolytoneSchemas {
 
@@ -41,32 +44,33 @@ public final class PolytoneSchemas {
         if (bootstrapped) return;
         bootstrapped = true;
 
-        // NOTE: ColorUtils.COLOR is no longer registered here — it's now DECLARED as a
-        // SchemaCodec with a Color schema at its definition site (owned codec, owned schema).
-        // This class only keeps the Swing WIDGET bindings, which must not leak into content code.
+        // ---- MVEL expressions (the current system): one binding per PolyExpType leaf.
+        // Chips come from the type's declared inputs; validation IS the MVEL compiler.
+        SchemaCodecs.registerCompanion(ColormapExp.TYPE.codec(),
+                (Schema) new Schema.Custom<>(mvelEditor(ColormapExp.TYPE)));
+        SchemaCodecs.registerCompanion(BlockExp.TYPE.codec(),
+                (Schema) new Schema.Custom<>(mvelEditor(BlockExp.TYPE)));
+        SchemaCodecs.registerCompanion(SimpleExp.TYPE.codec(),
+                (Schema) new Schema.Custom<>(mvelEditor(SimpleExp.TYPE)));
 
-        // ColormapExpressionProvider: STRING.flatXmap into a compiled expression — inference
-        // can only say "text". Bind the big expression editor, validated by the real codec
-        // (i.e. the actual expression compiler), with this dialect's variable/function chips.
+        // ---- Legacy exp4j expressions: same editor, exp4j variable chips.
         SchemaCodecs.registerCompanion(ColormapExpressionProvider.CODEC,
                 (Schema) new Schema.Custom<>(ExpressionWidget.define()
                         .variables(POLYTONE_EXP_VARS)
                         .variables("BIOME_VALUE", "DAMAGE")
                         .functions("state_prop")
                         .validator(compileCheck(ColormapExpressionProvider.CODEC))));
-
-        // IBlockExp (expressions/ MVEL system): variable set differs per context and isn't
-        // enumerable from here — no chips, but the compile check is still exact.
-        SchemaCodecs.registerCompanion(IBlockExp.CODEC,
+        SchemaCodecs.registerCompanion(BlockContextExpression.CODEC,
                 (Schema) new Schema.Custom<>(ExpressionWidget.define()
-                        .validator(compileCheck(IBlockExp.CODEC))));
+                        .variables(POLYTONE_EXP_VARS)
+                        .validator(compileCheck(BlockContextExpression.CODEC))));
+    }
 
-        // ISimpleExp (shader uniforms etc.): constant number or expression. Inference yields
-        // AnyOf("#1 number", "#2 text"); name the options and use the right widgets.
-        SchemaCodecs.registerCompanion(ISimpleExp.CODEC, (Schema) Schema.anyOf(
-                Schema.option("constant", Schema.doubleRange(-Double.MAX_VALUE, Double.MAX_VALUE)),
-                Schema.option("expression", new Schema.Custom<>(ExpressionWidget.define()
-                        .validator(compileCheck(ISimpleExp.CODEC))))));
+    /** Expression editor for an MVEL {@link PolyExpType}: input chips + real compile check. */
+    private static ExpressionWidget.Def mvelEditor(PolyExpType<?> type) {
+        return ExpressionWidget.define()
+                .variables(type.inputNames().toArray(String[]::new))
+                .validator(compileCheck(type.codec()));
     }
 
     /** Widget validator that parses the raw text through the expression codec itself. */

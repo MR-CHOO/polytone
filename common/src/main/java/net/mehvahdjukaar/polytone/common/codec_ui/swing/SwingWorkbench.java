@@ -94,10 +94,32 @@ public final class SwingWorkbench {
     private final CardLayout centerCards = new CardLayout();
     private final JPanel centerHost = new JPanel(centerCards);
     private final PackTreePanel treePanel;
-    private final JLabel packLabel = new JLabel("No pack opened");
-    private final JLabel packKindLabel = new JLabel();
-    private final JLabel statusLabel = new JLabel(" ");
-    private final JLabel infoLabel = new JLabel();
+    private final JLabel packLabel = new JLabel("No pack opened") {
+        @Override public void updateUI() {
+            super.updateUI();
+            setForeground(EditorOps.mutedColor());
+        }
+    };
+    private final JLabel packKindLabel = new JLabel() {
+        @Override public void updateUI() {
+            super.updateUI();
+            setFont(UiScale.labelFont(Font.PLAIN, -1f));
+            setForeground(EditorOps.accentColor());
+        }
+    };
+    private final JLabel statusLabel = new JLabel(" ") {
+        @Override public void updateUI() {
+            super.updateUI();
+            setFont(UiScale.labelFont(Font.PLAIN, -1f));
+        }
+    };
+    private final JLabel infoLabel = new JLabel() {
+        @Override public void updateUI() {
+            super.updateUI();
+            setFont(UiScale.labelFont(Font.PLAIN, -1f));
+            setForeground(EditorOps.mutedColor());
+        }
+    };
     private final JButton newContentButton = new JButton("New Content…");
     private final JButton reloadResourcesButton = new JButton("Reload Resources");
     private final JButton reloadDataButton = new JButton("Reload Data");
@@ -193,9 +215,13 @@ public final class SwingWorkbench {
         bar.setFloatable(false);
 
         // Accent brand mark, left-aligned like an app title bar.
-        JLabel brand = new JLabel("Polytone");
-        brand.setFont(UiScale.deriveFont(brand.getFont(), Font.BOLD, 2f));
-        brand.setForeground(EditorOps.accentColor());
+        JLabel brand = new JLabel("Polytone") {
+            @Override public void updateUI() {
+                super.updateUI();
+                setFont(UiScale.labelFont(Font.BOLD, 2f));
+                setForeground(EditorOps.accentColor());
+            }
+        };
         brand.setBorder(BorderFactory.createEmptyBorder(0, UiScale.small(), 0, UiScale.large()));
         bar.add(brand);
 
@@ -226,7 +252,6 @@ public final class SwingWorkbench {
         bar.add(toolbarSeparator());
         bar.add(Box.createHorizontalStrut(UiScale.med()));
 
-        packLabel.setForeground(EditorOps.mutedColor());
         bar.add(buildPackChip());
 
         bar.add(Box.createHorizontalGlue());
@@ -304,8 +329,6 @@ public final class SwingWorkbench {
         chip.add(Box.createHorizontalStrut(UiScale.small()));
         chip.add(packLabel);
         chip.add(Box.createHorizontalStrut(UiScale.med()));
-        packKindLabel.setForeground(EditorOps.accentColor());
-        packKindLabel.setFont(UiScale.deriveFont(packKindLabel.getFont(), Font.PLAIN, -1f));
         chip.add(packKindLabel);
         chip.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
         chip.setToolTipText("Click to open a different pack");
@@ -379,7 +402,16 @@ public final class SwingWorkbench {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) { adjustZoom(0); }
         });
 
-        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebar, centerHost);
+        // Hairline seam so the sidebar reads as a distinct panel from the editor area.
+        JPanel sidebarHost = new JPanel(new BorderLayout()) {
+            @Override public void updateUI() {
+                super.updateUI();
+                setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, EditorOps.dividerColor()));
+            }
+        };
+        sidebarHost.add(sidebar, BorderLayout.CENTER);
+
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebarHost, centerHost);
         split.setResizeWeight(0);
         split.setContinuousLayout(true);
         split.setDividerLocation(UiScale.px(300));
@@ -426,9 +458,6 @@ public final class SwingWorkbench {
                         BorderFactory.createEmptyBorder(UiScale.small(), UiScale.med(), UiScale.small(), UiScale.med())));
             }
         };
-        statusLabel.setFont(UiScale.deriveFont(statusLabel.getFont(), Font.PLAIN, -1f));
-        infoLabel.setFont(UiScale.deriveFont(infoLabel.getFont(), Font.PLAIN, -1f));
-        infoLabel.setForeground(EditorOps.mutedColor());
         bar.add(statusLabel, BorderLayout.CENTER);
         bar.add(infoLabel, BorderLayout.EAST);
         return bar;

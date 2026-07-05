@@ -10,23 +10,36 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.BoxLayout;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
-import javax.swing.JLabel;
 import javax.swing.JPanel;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Editor for {@link Schema.OneOf} (type-dispatched variants). Styled EXACTLY like
+ * {@link AnyOfWidget} — one rounded hairline container holding a compact variant combo
+ * above the active variant's editor. The dispatch key name stays out of the UI (it's
+ * wire format, shown in the combo tooltip instead).
+ */
 public final class OneOfWidget implements SwingWidget {
 
     private final String typeField;
     private final Map<String, Schema<?>> variants;
     private final List<String> variantKeys = new ArrayList<>();
     private final JComboBox<String> combo;
-    private final JPanel root = new JPanel();
+    // Insets/arc are LOGICAL — FlatLaf scales them (same convention as AnyOfWidget).
+    private final JPanel root = new JPanel() {
+        @Override
+        public void updateUI() {
+            super.updateUI();
+            setOpaque(false);
+            setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
+                    new java.awt.Insets(8, 10, 10, 10), EditorOps.dividerColor(), 1f, 10));
+        }
+    };
     private final JPanel subHost = new JPanel(new BorderLayout());
     private @Nullable SwingWidget currentSub;
     private @Nullable String currentKey;
@@ -42,13 +55,14 @@ public final class OneOfWidget implements SwingWidget {
         // Stretch in parent so the active variant sub-widget fills the form width.
         root.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
-        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, UiScale.small(), 0));
-        top.setAlignmentX(Component.LEFT_ALIGNMENT);
-        top.add(new JLabel(typeField + ":"));
         combo = new JComboBox<>(variantKeys.toArray(new String[0]));
-        top.add(combo);
-        root.add(top);
-        root.add(javax.swing.Box.createVerticalStrut(UiScale.small()));
+        combo.setAlignmentX(Component.LEFT_ALIGNMENT);
+        // Compact selector sized to its options; the dispatch key is tooltip metadata.
+        combo.setMaximumSize(combo.getPreferredSize());
+        combo.setToolTipText("Selects \"" + typeField + "\"");
+        root.add(combo);
+        root.add(javax.swing.Box.createVerticalStrut(UiScale.med()));
+        subHost.setOpaque(false);
         subHost.setAlignmentX(Component.LEFT_ALIGNMENT);
         root.add(subHost);
 

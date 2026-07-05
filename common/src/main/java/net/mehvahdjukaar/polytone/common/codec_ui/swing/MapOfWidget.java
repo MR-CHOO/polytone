@@ -7,23 +7,41 @@ import com.mojang.serialization.DataResult;
 import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
 import org.jetbrains.annotations.Nullable;
 
+import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JComponent;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Font;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Editor for {@link Schema.MapOf}: key → value rows. Styled EXACTLY like {@link ListWidget}
+ * (rounded hairline row containers, top-aligned trash button, accent "+" add with tooltip,
+ * "(empty)" hint, live row heights) so maps and lists read as the same kind of thing.
+ */
 public final class MapOfWidget implements SwingWidget {
 
     private final Schema<?> keySchema;
     private final Schema<?> valueSchema;
-    private final JPanel root = new JPanel();
+    // Same single-container structure as ListWidget: one rounded box around everything.
+    private final JPanel root = new JPanel() {
+        @Override public void updateUI() {
+            super.updateUI();
+            setOpaque(false);
+            setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
+                    new java.awt.Insets(8, 10, 8, 10), EditorOps.dividerColor(), 1f, 10));
+        }
+    };
     private final JPanel rowsHost = new JPanel();
+    private final JLabel emptyHint = new JLabel("(empty)");
+    private final JButton addButton = new JButton(WorkbenchIcons.plusAccent());
     private final List<SwingWidget> keyWidgets = new ArrayList<>();
     private final List<SwingWidget> valueWidgets = new ArrayList<>();
     private final List<JPanel> rowPanels = new ArrayList<>();
@@ -40,18 +58,23 @@ public final class MapOfWidget implements SwingWidget {
         rowsHost.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
         root.add(rowsHost);
 
-        root.add(Box.createVerticalStrut(UiScale.small()));
+        emptyHint.setFont(UiScale.deriveFont(emptyHint.getFont(), Font.ITALIC, -1f));
+        emptyHint.setForeground(EditorOps.mutedColor());
+        emptyHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        emptyHint.setBorder(BorderFactory.createEmptyBorder(0, 0, UiScale.small(), 0));
+        root.add(emptyHint);
 
         JPanel addBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        addBar.setOpaque(false);
         addBar.setAlignmentX(Component.LEFT_ALIGNMENT);
-        JButton add = new JButton("+ Add");
-        add.putClientProperty("JButton.buttonType", "roundRect");
-        add.addActionListener(e -> {
+        addButton.putClientProperty("JButton.buttonType", "roundRect");
+        addButton.setToolTipText("Add entry");
+        addButton.addActionListener(e -> {
             addRow(null, null);
             root.revalidate();
             root.repaint();
         });
-        addBar.add(add);
+        addBar.add(addButton);
         root.add(addBar);
     }
 
@@ -63,18 +86,34 @@ public final class MapOfWidget implements SwingWidget {
         keyWidgets.add(keyWidget);
         valueWidgets.add(valueWidget);
 
-        JPanel row = new JPanel();
+        // Live max height so children that grow later (collapsibles) re-flow.
+        JPanel row = new JPanel() {
+            @Override public Dimension getMaximumSize() {
+                return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+            }
+        };
         row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+        row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.add(keyWidget.component());
-        row.add(Box.createHorizontalStrut(UiScale.small()));
-        row.add(valueWidget.component());
-        row.add(Box.createHorizontalStrut(UiScale.small()));
+        // No per-row box — the widget's outer container is the single frame; the bottom
+        // border spaces rows without leakable struts.
+        row.setBorder(BorderFactory.createEmptyBorder(0, 0, UiScale.med(), 0));
 
-        JButton remove = new JButton("×");
+        JComponent keyComp = keyWidget.component();
+        keyComp.setAlignmentY(Component.TOP_ALIGNMENT);
+        row.add(keyComp);
+        row.add(topAlignedStrut());
+
+        JComponent valueComp = valueWidget.component();
+        valueComp.setAlignmentY(Component.TOP_ALIGNMENT);
+        row.add(valueComp);
+        row.add(topAlignedStrut());
+
+        JButton remove = new JButton(WorkbenchIcons.trash());
         remove.setToolTipText("Remove");
         remove.putClientProperty("JButton.buttonType", "borderless");
         remove.setMargin(UiScale.insets(0, 4, 0, 4));
+        remove.setAlignmentY(Component.TOP_ALIGNMENT);
         remove.addActionListener(e -> {
             int idx = rowPanels.indexOf(row);
             if (idx >= 0) {
@@ -82,18 +121,22 @@ public final class MapOfWidget implements SwingWidget {
                 rowPanels.remove(idx);
                 keyWidgets.remove(idx);
                 valueWidgets.remove(idx);
+                emptyHint.setVisible(keyWidgets.isEmpty());
                 root.revalidate();
                 root.repaint();
             }
         });
         row.add(remove);
 
-        Dimension pref = row.getPreferredSize();
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
-
         rowPanels.add(row);
         rowsHost.add(row);
-        rowsHost.add(Box.createVerticalStrut(UiScale.med()));
+        emptyHint.setVisible(false);
+    }
+
+    private Component topAlignedStrut() {
+        Component strut = Box.createHorizontalStrut(UiScale.small());
+        ((JComponent) strut).setAlignmentY(Component.TOP_ALIGNMENT);
+        return strut;
     }
 
     @Override
@@ -151,6 +194,7 @@ public final class MapOfWidget implements SwingWidget {
                 addRow(new JsonPrimitive(entry.getKey()), entry.getValue());
             }
         }
+        emptyHint.setVisible(keyWidgets.isEmpty());
         root.revalidate();
         root.repaint();
     }

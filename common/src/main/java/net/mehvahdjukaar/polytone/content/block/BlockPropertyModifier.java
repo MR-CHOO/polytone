@@ -200,7 +200,13 @@ public record BlockPropertyModifier(
                 false, Targets.EMPTY, false);
     }
 
-    public static final Codec<ChunkSectionLayer> SECTION_LAYER_CODEC = Codec.STRING.xmap(s -> ChunkSectionLayer.valueOf(s.toUpperCase(Locale.ROOT)), ChunkSectionLayer::label);
+    // Declaration-site schema: enum dropdown over the layer labels — inference only sees
+    // STRING.xmap and would render plain text.
+    public static final Codec<ChunkSectionLayer> SECTION_LAYER_CODEC =
+            net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec.of(
+                    Codec.STRING.xmap(s -> ChunkSectionLayer.valueOf(s.toUpperCase(Locale.ROOT)), ChunkSectionLayer::label),
+                    new net.mehvahdjukaar.polytone.common.codec_ui.Schema.Enum<>(
+                            List.of(ChunkSectionLayer.values()), ChunkSectionLayer::label));
 
     public static final Decoder<BlockPropertyModifier> CODEC = RecordCodecBuilder.create(instance ->
             instance.group(

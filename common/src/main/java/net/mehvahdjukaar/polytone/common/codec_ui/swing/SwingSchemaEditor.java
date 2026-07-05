@@ -147,7 +147,7 @@ public final class SwingSchemaEditor implements SchemaEditor {
      */
     static void adjustZoom(int deltaPt) {
         fontPt = deltaPt == 0 ? DEFAULT_FONT_PT
-                : Math.max(12, Math.min(32, fontPt + deltaPt));
+                : Math.max(8, Math.min(40, fontPt + deltaPt)); // 40%..200% of the 20pt base
         PREFS.putInt(FONT_PREF_KEY, fontPt);
         UIManager.put("defaultFont", new FontUIResource(Font.SANS_SERIF, Font.PLAIN, fontPt));
         FlatLaf.updateUI();

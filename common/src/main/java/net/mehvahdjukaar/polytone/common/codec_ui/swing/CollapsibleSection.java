@@ -54,8 +54,7 @@ final class CollapsibleSection extends JPanel {
         setOpaque(false);
         setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel titleLabel = new JLabel(title);
-        titleLabel.setFont(UiScale.deriveFont(titleLabel.getFont(), Font.PLAIN, 0f));
+        JLabel titleLabel = new JLabel(title); // default L&F font — follows zoom
 
         summary.setForeground(EditorOps.mutedColor());
         summary.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UiScale.px(13)));

@@ -5,7 +5,6 @@ import com.mojang.serialization.Decoder;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side;
-import net.mehvahdjukaar.polytone.common.codec_ui.example.ExamplePages;
 import net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWorkbench;
 import net.mehvahdjukaar.polytone.common.codec_ui.workbench.CodecEntry;
 import net.mehvahdjukaar.polytone.common.codec_ui.workbench.Workbench;
@@ -46,9 +45,7 @@ public final class PolytoneEditor {
         PolytoneSchemas.bootstrap();
         GameReloadHooks.install();
 
-        List<CodecEntry> entries = new ArrayList<>(contentEntries());
-        if (includeDevExamples) entries.addAll(ExamplePages.all());
-        return entries;
+        return new ArrayList<>(contentEntries());
     }
 
     /**
