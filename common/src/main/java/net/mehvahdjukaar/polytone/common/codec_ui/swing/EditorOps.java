@@ -87,6 +87,18 @@ final class EditorOps {
         return c != null ? c : new Color(0x999999);
     }
 
+    /** Positive / "synced with the game" green (reload actions). */
+    static Color successColor() {
+        Color c = UIManager.getColor("Actions.Green");
+        return c != null ? c : new Color(0x59A869);
+    }
+
+    /** Pending-changes amber — the unsaved-tab dot. */
+    static Color warningColor() {
+        Color c = UIManager.getColor("Actions.Yellow");
+        return c != null ? c : new Color(0xE8AF3B);
+    }
+
     // -------------------- Theme accent + surface layering --------------------
 
     /**

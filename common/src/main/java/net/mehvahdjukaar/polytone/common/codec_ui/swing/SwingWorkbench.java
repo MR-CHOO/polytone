@@ -204,22 +204,29 @@ public final class SwingWorkbench {
         bar.add(openPack);
         bar.add(Box.createHorizontalStrut(UiScale.small()));
 
+        // THE primary action of the tool — filled accent so it reads as the main button.
         newContentButton.setIcon(WorkbenchIcons.filePlus());
+        newContentButton.putClientProperty("JButton.buttonType", "default");
         newContentButton.setToolTipText(
                 "Add content to the pack — the file lands in its correct folder automatically");
         newContentButton.addActionListener(e -> openNewContentDialog());
         bar.add(newContentButton);
+
+        // Hairline separates the action group from the pack breadcrumb chip.
+        bar.add(Box.createHorizontalStrut(UiScale.med()));
+        bar.add(toolbarSeparator());
         bar.add(Box.createHorizontalStrut(UiScale.med()));
 
         packLabel.setForeground(EditorOps.mutedColor());
-        bar.add(packLabel);
+        bar.add(buildPackChip());
 
         bar.add(Box.createHorizontalGlue());
 
-        reloadResourcesButton.setIcon(WorkbenchIcons.refresh());
+        // Game-sync pair: green-tinted icons — "this talks to the running game".
+        reloadResourcesButton.setIcon(WorkbenchIcons.refreshTinted());
         reloadResourcesButton.setToolTipText("Reload the game's resource packs (F3+T) so saved files take effect");
         reloadResourcesButton.addActionListener(e -> triggerReload(Side.CLIENT_RESOURCES, reloadResourcesButton));
-        reloadDataButton.setIcon(WorkbenchIcons.database());
+        reloadDataButton.setIcon(WorkbenchIcons.databaseTinted());
         reloadDataButton.setToolTipText("Reload the integrated server's datapacks (/reload)");
         reloadDataButton.addActionListener(e -> triggerReload(Side.SERVER_DATA, reloadDataButton));
         bar.add(reloadResourcesButton);
@@ -227,8 +234,51 @@ public final class SwingWorkbench {
         bar.add(reloadDataButton);
 
         bar.add(Box.createHorizontalStrut(UiScale.med()));
+        bar.add(toolbarSeparator());
+        bar.add(Box.createHorizontalStrut(UiScale.small()));
         bar.add(buildThemeToggle());
         return bar;
+    }
+
+    /** Vertical hairline dividing toolbar groups (actions | breadcrumb | game sync | theme). */
+    private JComponent toolbarSeparator() {
+        return new JSeparator(SwingConstants.VERTICAL) {
+            @Override public Dimension getMaximumSize() {
+                return new Dimension(UiScale.px(1), UiScale.px(24));
+            }
+        };
+    }
+
+    /**
+     * Rounded breadcrumb chip showing the opened pack (folder glyph + name — kind); clicking
+     * it opens another pack. A contained pill, so the current-location readout is visually
+     * separate from the action buttons around it.
+     */
+    private JComponent buildPackChip() {
+        JPanel chip = new JPanel() {
+            @Override public void updateUI() {
+                super.updateUI();
+                setOpaque(true);
+                setBackground(EditorOps.surface(0.06f));
+                setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
+                        new java.awt.Insets(4, 10, 4, 10), EditorOps.dividerColor(), 1f, 999));
+            }
+            @Override public Dimension getMaximumSize() {
+                return getPreferredSize(); // hug the label — never stretch into a bar
+            }
+        };
+        chip.setLayout(new BoxLayout(chip, BoxLayout.X_AXIS));
+        JLabel icon = new JLabel(WorkbenchIcons.folder());
+        icon.setForeground(EditorOps.mutedColor());
+        chip.add(icon);
+        chip.add(Box.createHorizontalStrut(UiScale.small()));
+        chip.add(packLabel);
+        chip.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+        chip.setToolTipText("Click to open a different pack");
+        chip.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override public void mouseClicked(java.awt.event.MouseEvent e) { openPackChooser(); }
+        });
+        return chip;
     }
 
     /** Sun/moon button flipping the whole workbench between the light and dark FlatLaf themes. */
@@ -292,6 +342,11 @@ public final class SwingWorkbench {
         JPanel empty = new JPanel();
         empty.setLayout(new BoxLayout(empty, BoxLayout.Y_AXIS));
         empty.add(Box.createVerticalGlue());
+        JLabel art = new JLabel(WorkbenchIcons.sized("layers", 48));
+        art.setAlignmentX(Component.CENTER_ALIGNMENT);
+        art.setForeground(EditorOps.mutedColor()); // themed icon follows this
+        empty.add(art);
+        empty.add(Box.createVerticalStrut(UiScale.med()));
         JLabel title = new JLabel("No editors open");
         title.setAlignmentX(Component.CENTER_ALIGNMENT);
         title.setFont(UiScale.deriveFont(title.getFont(), Font.BOLD, 4f));
@@ -441,7 +496,7 @@ public final class SwingWorkbench {
             model.openWorkspace(dir.toPath());
             prefs.put("lastPackDir", dir.getAbsolutePath());
         } catch (Exception ex) {
-            status("Could not open pack: " + ex.getMessage());
+            statusError("Could not open pack: " + ex.getMessage());
         }
     }
 
@@ -478,8 +533,8 @@ public final class SwingWorkbench {
         status(side == Side.CLIENT_RESOURCES ? "Reloading resource packs…" : "Reloading datapacks…");
         PackReloader.get().reload(side, error -> SwingUtilities.invokeLater(() -> {
             updateReloadButtons();
-            status(error == null ? "Reload complete — new files are now referenceable"
-                    : "Reload failed: " + error);
+            if (error == null) statusSuccess("Reload complete — new files are now referenceable");
+            else statusError("Reload failed: " + error);
         }));
     }
 
@@ -501,7 +556,7 @@ public final class SwingWorkbench {
                     created.entry().side());
         } catch (Throwable t) {
             UiLog.get().error("[codec_ui] failed to build editor for {}", created.entry().label(), t);
-            status("Could not build editor for " + created.entry().label() + ": " + t);
+            statusError("Could not build editor for " + created.entry().label() + ": " + t);
             return;
         }
         // Bound but not yet on disk: the file (and its namespace/container folders) are
@@ -509,7 +564,7 @@ public final class SwingWorkbench {
         panel.bindFile(created.file());
         panel.setDefaultDir(created.file().getParent());
         panel.setOnSavedToFile(saved -> {
-            status("Saved " + ws.relativize(saved));
+            statusSuccess("Saved " + ws.relativize(saved));
             treePanel.refresh();
         });
         addTab(key, panel, created.entry().label());
@@ -535,14 +590,14 @@ public final class SwingWorkbench {
             panel = new EditorPanel<>((SchemaCodec<A>) codec, label, side);
         } catch (Throwable t) {
             UiLog.get().error("[codec_ui] failed to build editor for {}", label, t);
-            status("Could not build editor for " + label + ": " + t);
+            statusError("Could not build editor for " + label + ": " + t);
             return;
         }
         panel.setDefaultDir(defaultDir);
         if (onSave != null) panel.setOnSave(onSave);
         panel.setOnSavedToFile(file -> {
             PackWorkspace ws = model.workspace();
-            status("Saved " + (ws != null ? ws.relativize(file) : file.toString()));
+            statusSuccess("Saved " + (ws != null ? ws.relativize(file) : file.toString()));
             treePanel.refresh();
         });
         if (initialJson != null) panel.loadJson(initialJson);
@@ -570,12 +625,12 @@ public final class SwingWorkbench {
         }
         try {
             if (Files.size(abs) > TEXT_FALLBACK_MAX_BYTES) {
-                status("File too large for the text editor: " + abs.getFileName());
+                statusError("File too large for the text editor: " + abs.getFileName());
                 return;
             }
             addTab(key, new TextEditorPanel(abs), null);
         } catch (Exception ex) {
-            status("Could not open " + abs.getFileName() + ": " + ex.getMessage());
+            statusError("Could not open " + abs.getFileName() + ": " + ex.getMessage());
         }
     }
 
@@ -585,7 +640,7 @@ public final class SwingWorkbench {
         try {
             json = JsonParser.parseString(Files.readString(file));
         } catch (Exception ex) {
-            status("Not parseable as JSON (" + ex.getMessage() + ") — opening as text");
+            statusError("Not parseable as JSON (" + ex.getMessage() + ") — opening as text");
             return false;
         }
         @SuppressWarnings("unchecked")
@@ -595,14 +650,14 @@ public final class SwingWorkbench {
             panel = new EditorPanel<>(codec, String.valueOf(file.getFileName()), entry.side());
         } catch (Throwable t) {
             UiLog.get().error("[codec_ui] failed to build editor for {}", file, t);
-            status("Could not build editor (" + t + ") — opening as text");
+            statusError("Could not build editor (" + t + ") — opening as text");
             return false;
         }
         panel.bindFile(file);
         panel.setDefaultDir(file.getParent());
         panel.setOnSavedToFile(saved -> {
             PackWorkspace ws = model.workspace();
-            status("Saved " + (ws != null ? ws.relativize(saved) : saved.toString()));
+            statusSuccess("Saved " + (ws != null ? ws.relativize(saved) : saved.toString()));
         });
         panel.loadJson(json);
         addTab(key, panel, entry.label());
@@ -614,11 +669,11 @@ public final class SwingWorkbench {
         try {
             image = ImageIO.read(file.toFile());
         } catch (Exception ex) {
-            status("Could not read image: " + ex.getMessage());
+            statusError("Could not read image: " + ex.getMessage());
             return;
         }
         if (image == null) {
-            status("Unsupported image format: " + file.getFileName());
+            statusError("Unsupported image format: " + file.getFileName());
             return;
         }
         // Nearest-neighbor upscale for the typical tiny MC texture, so it's actually visible.
@@ -663,7 +718,11 @@ public final class SwingWorkbench {
         keysByComponent.put(comp, key);
         tab.setStateListener(() -> SwingUtilities.invokeLater(() -> {
             int index = editorTabs.indexOfComponent(comp);
-            if (index >= 0) editorTabs.setTitleAt(index, tab.title());
+            if (index >= 0) {
+                editorTabs.setTitleAt(index, tab.title());
+                // Amber dot = unsaved changes; icon slot stays empty on clean tabs.
+                editorTabs.setIconAt(index, tab.isDirty() ? WorkbenchIcons.dirtyDot() : null);
+            }
         }));
         editorTabs.addTab(tab.title(), comp);
         int index = editorTabs.indexOfComponent(comp);
@@ -680,7 +739,7 @@ public final class SwingWorkbench {
         WorkbenchTab tab = key != null ? tabsByKey.get(key) : null;
         if (tab != null && tab.isDirty()) {
             int choice = JOptionPane.showConfirmDialog(frame,
-                    "Save changes to \"" + tab.title().replace("• ", "") + "\"?",
+                    "Save changes to \"" + tab.title() + "\"?",
                     "Unsaved changes", JOptionPane.YES_NO_CANCEL_OPTION);
             if (choice == JOptionPane.CANCEL_OPTION || choice == JOptionPane.CLOSED_OPTION) return;
             if (choice == JOptionPane.YES_OPTION && !tab.save()) return;
@@ -712,6 +771,20 @@ public final class SwingWorkbench {
     }
 
     private void status(String message) {
+        statusMessage(message, null);
+    }
+
+    private void statusSuccess(String message) {
+        statusMessage(message, EditorOps.successColor());
+    }
+
+    private void statusError(String message) {
+        statusMessage(message, EditorOps.errorColor());
+    }
+
+    private void statusMessage(String message, java.awt.@Nullable Color color) {
+        statusLabel.setForeground(color != null ? color
+                : UIManager.getColor("Label.foreground"));
         statusLabel.setText(message);
         UiLog.get().info("[codec_ui] {}", message);
     }

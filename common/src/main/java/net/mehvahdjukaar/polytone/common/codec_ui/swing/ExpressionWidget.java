@@ -46,7 +46,7 @@ import java.util.List;
  * The widget itself knows nothing about any expression engine — the validator carries
  * that knowledge, keeping this class reusable across polytone's expression systems.</p>
  */
-public final class ExpressionWidget implements SwingWidget {
+public final class ExpressionWidget implements SwingWidget, CollapsibleWidget {
 
     /** Returns a human-readable error for the expression text, or null when it compiles. */
     @FunctionalInterface
@@ -96,8 +96,10 @@ public final class ExpressionWidget implements SwingWidget {
     private final Def def;
     private final JPanel root = new JPanel();
     private final RSyntaxTextArea area = new RSyntaxTextArea();
+    private final CollapsibleSection section;
     private final @Nullable JTextArea status;
     private final javax.swing.Timer validateTimer;
+    private @Nullable String lastError;
 
     private ExpressionWidget(Def def) {
         this.def = def;
@@ -161,6 +163,29 @@ public final class ExpressionWidget implements SwingWidget {
             status = null;
             validateTimer = null;
         }
+
+        // Collapsed by default: the header summary (text + validity) carries the value, so
+        // records with several expression fields stay one line each until actually edited.
+        section = new CollapsibleSection("expression", root, true);
+        area.getDocument().addDocumentListener(new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent e) { updateSummary(); }
+            @Override public void removeUpdate(DocumentEvent e) { updateSummary(); }
+            @Override public void changedUpdate(DocumentEvent e) { updateSummary(); }
+        });
+        updateSummary();
+    }
+
+    @Override
+    public void setCollapsed(boolean collapsed) {
+        section.setCollapsed(collapsed);
+    }
+
+    private void updateSummary() {
+        String text = area.getText().trim();
+        String shown = text.isEmpty() ? "(empty)" : text.replaceAll("\\s+", " ");
+        if (shown.length() > 60) shown = shown.substring(0, 57) + "…";
+        boolean error = lastError != null && !text.isEmpty();
+        section.setSummary(error ? "✗ " + shown : shown, error);
     }
 
     private JComponent buildChipStrip() {
@@ -212,13 +237,15 @@ public final class ExpressionWidget implements SwingWidget {
         }
         status.setText(error == null ? "✓ compiles" : "✗ " + error);
         status.setForeground(error == null ? EditorOps.mutedColor() : EditorOps.errorColor());
+        lastError = error;
+        updateSummary();
     }
 
     // -------------------- SwingWidget --------------------
 
     @Override
     public JComponent component() {
-        return root;
+        return section;
     }
 
     @Override

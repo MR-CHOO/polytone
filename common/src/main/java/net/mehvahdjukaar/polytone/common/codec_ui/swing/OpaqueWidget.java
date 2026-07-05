@@ -4,7 +4,6 @@ import com.formdev.flatlaf.FlatLaf;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 import com.mojang.serialization.DataResult;
-import net.mehvahdjukaar.polytone.Polytone;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.BorderFactory;
@@ -26,13 +25,16 @@ import java.awt.Font;
 
 /**
  * Free-form JSON editor used as fallback when no schema is available for a value.
+ * Rendered as a {@link CollapsibleSection} ("Raw JSON"), collapsed by default — the
+ * summary line shows the current value / validity, so forms with several opaque fields
+ * stay one line each instead of a wall of text boxes.
  *
  * <p>Uses {@code RSyntaxTextArea} for JSON syntax highlighting and folding when available.
  * Falls back to a plain {@link JTextArea} (with a {@code WARN} log) if RSyntaxTextArea is
  * not on the classpath. The fallback is deliberately loud because losing highlighting
  * means a production-jar bundling regression we want flagged.</p>
  */
-public final class OpaqueWidget implements SwingWidget {
+public final class OpaqueWidget implements SwingWidget, CollapsibleWidget {
 
     private static final Color ERROR_COLOR = new Color(0xC0392B);
 
@@ -40,6 +42,7 @@ public final class OpaqueWidget implements SwingWidget {
     private final JScrollPane scroll;
     private final JLabel errorLabel = new JLabel(" ");
     private final JPanel root = new JPanel();
+    private final CollapsibleSection section;
     private final Border defaultBorder;
     private final Border errorBorder;
 
@@ -75,10 +78,10 @@ public final class OpaqueWidget implements SwingWidget {
                 if (is != null) {
                     org.fife.ui.rsyntaxtextarea.Theme.load(is).apply(rsta);
                 } else {
-                    Polytone.LOGGER.warn("[codec_ui] RSyntaxTextArea theme resource not found: {}", resourcePath);
+                    UiLog.get().warn("[codec_ui] RSyntaxTextArea theme resource not found: {}", resourcePath);
                 }
             } catch (Throwable themeError) {
-                Polytone.LOGGER.warn("[codec_ui] Could not apply RSyntaxTextArea theme {}", themeName, themeError);
+                UiLog.get().warn("[codec_ui] Could not apply RSyntaxTextArea theme {}", themeName, themeError);
             }
 
             // Match the L&F base font SIZE so highlighting text sits at the same scale
@@ -93,7 +96,7 @@ public final class OpaqueWidget implements SwingWidget {
             setter = rsta::setText;
             docAttach = (listener) -> rsta.getDocument().addDocumentListener(listener);
         } catch (Throwable t) {
-            Polytone.LOGGER.warn(
+            UiLog.get().warn(
                 "[codec_ui] RSyntaxTextArea unavailable — falling back to plain JTextArea " +
                 "for raw-JSON editor. JSON highlighting will be missing. " +
                 "Check that com.fifesoft:rsyntaxtextarea is bundled in the production jar.",
@@ -149,12 +152,31 @@ public final class OpaqueWidget implements SwingWidget {
         root.add(scroll);
         root.add(errorLabel);
 
+        section = new CollapsibleSection("Raw JSON", root, true);
+
         // Live syntax validation, on whichever Document we bound.
         docAttach.attach(new DocumentListener() {
             @Override public void insertUpdate(DocumentEvent e) { validate(); }
             @Override public void removeUpdate(DocumentEvent e) { validate(); }
             @Override public void changedUpdate(DocumentEvent e) { validate(); }
         });
+        updateSummary();
+    }
+
+    @Override
+    public void setCollapsed(boolean collapsed) {
+        section.setCollapsed(collapsed);
+    }
+
+    private void updateSummary() {
+        String text = textGetter.get().trim();
+        if (text.isEmpty()) {
+            section.setSummary("(empty)", false);
+            return;
+        }
+        String oneLine = text.replaceAll("\\s+", " ");
+        if (oneLine.length() > 60) oneLine = oneLine.substring(0, 57) + "…";
+        section.setSummary(oneLine, false);
     }
 
     private void validate() {
@@ -176,17 +198,19 @@ public final class OpaqueWidget implements SwingWidget {
             scroll.setBorder(defaultBorder);
             errorLabel.setText(" ");
             errorLabel.setVisible(false);
+            updateSummary();
         } else {
             scroll.setBorder(errorBorder);
             errorLabel.setText("Invalid JSON: " + msg);
             errorLabel.setVisible(true);
+            section.setSummary("✗ invalid JSON", true);
         }
         root.revalidate();
     }
 
     @Override
     public JComponent component() {
-        return root;
+        return section;
     }
 
     @Override

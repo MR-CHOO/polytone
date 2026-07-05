@@ -84,6 +84,9 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         this.label = label;
         this.ops = EditorOps.buildOps(side);
         this.rootWidget = SwingWidgetFactory.create(codec.schema());
+        // A collapsible (raw JSON / expression) as the ENTIRE page starts expanded —
+        // collapsing exists to keep big forms scannable, not to hide the only editor.
+        if (rootWidget instanceof CollapsibleWidget collapsible) collapsible.setCollapsed(false);
 
         setBorder(BorderFactory.createEmptyBorder(
                 UiScale.med(), UiScale.med(), UiScale.med(), UiScale.med()));
@@ -216,7 +219,7 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
 
     @Override
     public String title() {
-        return (dirty ? "• " : "") + label;
+        return label; // dirty state is the shell's amber tab dot, not a text prefix
     }
 
     @Override

@@ -1,0 +1,111 @@
+package net.mehvahdjukaar.polytone.common.codec_ui.swing;
+
+import org.jetbrains.annotations.Nullable;
+
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.Icon;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.UIManager;
+import java.awt.Component;
+import java.awt.Cursor;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+
+/**
+ * Disclosure container for bulky inline editors (raw JSON, expressions): a one-line header
+ * (chevron + title + live summary) that expands to the real editor on click. Collapsed is
+ * the default so records full of these fields stay scannable — the summary line carries
+ * the current value / validity so collapsing loses visibility, not information.
+ *
+ * <p>Reports a dynamic maximum size (preferred height) so BoxLayout parents track the
+ * expand/collapse height change instead of pinning the built-time height.</p>
+ */
+final class CollapsibleSection extends JPanel {
+
+    private final JLabel chevron = new JLabel();
+    private final JLabel summary = new JLabel();
+    private final JPanel contentHost = new JPanel(new java.awt.BorderLayout());
+    private boolean collapsed = true;
+    private boolean summaryError;
+
+    CollapsibleSection(String title, JComponent content, boolean collapsedByDefault) {
+        setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
+        setOpaque(false);
+        setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(UiScale.deriveFont(titleLabel.getFont(), Font.PLAIN, 0f));
+
+        summary.setForeground(EditorOps.mutedColor());
+        summary.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UiScale.px(13)));
+
+        JPanel header = new JPanel();
+        header.setLayout(new BoxLayout(header, BoxLayout.X_AXIS));
+        header.setOpaque(false);
+        header.setAlignmentX(Component.LEFT_ALIGNMENT);
+        header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        header.setToolTipText("Click to expand / collapse");
+        header.add(chevron);
+        header.add(Box.createHorizontalStrut(UiScale.small()));
+        header.add(titleLabel);
+        header.add(Box.createHorizontalStrut(UiScale.med()));
+        header.add(summary);
+        header.add(Box.createHorizontalGlue());
+        int headerH = Math.max(header.getPreferredSize().height, UiScale.px(24));
+        header.setMaximumSize(new Dimension(Integer.MAX_VALUE, headerH));
+        header.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) { setCollapsed(!collapsed); }
+        });
+
+        // Content aligned under the title (indented past the chevron), with a hairline rail
+        // tying it back to its header — same grouping language as list rows.
+        contentHost.setOpaque(false);
+        contentHost.setAlignmentX(Component.LEFT_ALIGNMENT);
+        contentHost.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createEmptyBorder(UiScale.small(), UiScale.px(7), 0, 0),
+                BorderFactory.createCompoundBorder(
+                        BorderFactory.createMatteBorder(0, UiScale.px(2), 0, 0, EditorOps.dividerColor()),
+                        BorderFactory.createEmptyBorder(0, UiScale.med(), 0, 0))));
+        contentHost.add(content, java.awt.BorderLayout.CENTER);
+
+        add(header);
+        add(contentHost);
+        setCollapsed(collapsedByDefault);
+    }
+
+    void setCollapsed(boolean value) {
+        collapsed = value;
+        Icon icon = UIManager.getIcon(collapsed ? "Tree.collapsedIcon" : "Tree.expandedIcon");
+        chevron.setIcon(icon);
+        if (icon == null) chevron.setText(collapsed ? "▸" : "▾"); // L&F without tree icons
+        contentHost.setVisible(!collapsed);
+        summary.setVisible(collapsed);
+        revalidate();
+        repaint();
+    }
+
+    boolean isCollapsed() {
+        return collapsed;
+    }
+
+    /** One-line value/validity readout shown while collapsed; {@code error} paints it red. */
+    void setSummary(@Nullable String text, boolean error) {
+        summary.setText(text == null ? "" : text);
+        if (error != summaryError) {
+            summaryError = error;
+            summary.setForeground(error ? EditorOps.errorColor() : EditorOps.mutedColor());
+        }
+    }
+
+    /** Collapse/expand must re-flow BoxLayout parents — never pin the built-time height. */
+    @Override
+    public Dimension getMaximumSize() {
+        return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+    }
+}

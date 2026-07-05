@@ -119,7 +119,7 @@ final class TextEditorPanel extends JPanel implements WorkbenchTab {
 
     @Override
     public String title() {
-        return (dirty ? "• " : "") + name;
+        return name; // dirty state is the shell's amber tab dot, not a text prefix
     }
 
     @Override

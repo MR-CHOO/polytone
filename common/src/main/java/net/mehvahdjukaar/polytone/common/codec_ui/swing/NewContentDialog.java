@@ -112,6 +112,8 @@ final class NewContentDialog extends JDialog {
 
         JButton cancel = new JButton("Cancel");
         cancel.addActionListener(e -> dispose());
+        createButton.setIcon(WorkbenchIcons.filePlus());
+        createButton.putClientProperty("JButton.buttonType", "default");
         createButton.addActionListener(e -> onCreate());
         Box buttons = Box.createHorizontalBox();
         buttons.setBorder(BorderFactory.createEmptyBorder(0, UiScale.large(), UiScale.large(), UiScale.large()));

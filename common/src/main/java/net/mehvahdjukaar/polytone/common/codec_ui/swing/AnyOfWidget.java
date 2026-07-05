@@ -12,7 +12,6 @@ import javax.swing.JPanel;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,12 +19,26 @@ import java.util.List;
  * One flat picker over N alternative shapes ({@link Schema.AnyOf}). The AnyOf factory
  * already spliced nested alternatives, so however deep the original either-chain was,
  * the user sees a single combo of labeled options with the active option's editor below.
+ *
+ * <p>Selector and body live inside ONE rounded hairline container so the pair reads as a
+ * single grouped unit — outline-only (no surface tint) to stay distinguishable from the
+ * tinted record cards that often sit inside it. Both are flush-left: the old floating
+ * combo-above-offset-box arrangement is what made these rows look broken.</p>
  */
 public final class AnyOfWidget implements SwingWidget {
 
     private final List<SwingWidget> widgets = new ArrayList<>();
     private final JComboBox<String> combo;
-    private final JPanel root = new JPanel();
+    // Insets/arc are LOGICAL — FlatLaf scales them (same convention as RecordWidget).
+    private final JPanel root = new JPanel() {
+        @Override
+        public void updateUI() {
+            super.updateUI();
+            setOpaque(false);
+            setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
+                    new java.awt.Insets(8, 10, 10, 10), EditorOps.dividerColor(), 1f, 10));
+        }
+    };
     private final JPanel subHost = new JPanel(new BorderLayout());
     private int selected = 0;
 
@@ -42,12 +55,13 @@ public final class AnyOfWidget implements SwingWidget {
         // Stretch in parent so the active sub-widget can fill the form width.
         root.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
-        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, UiScale.small(), 0));
-        top.setAlignmentX(Component.LEFT_ALIGNMENT);
         combo = new JComboBox<>(labels);
-        top.add(combo);
-        root.add(top);
-        root.add(javax.swing.Box.createVerticalStrut(UiScale.small()));
+        combo.setAlignmentX(Component.LEFT_ALIGNMENT);
+        // Compact selector: size to its longest option instead of stretching form-wide.
+        combo.setMaximumSize(combo.getPreferredSize());
+        root.add(combo);
+        root.add(javax.swing.Box.createVerticalStrut(UiScale.med()));
+        subHost.setOpaque(false);
         subHost.setAlignmentX(Component.LEFT_ALIGNMENT);
         root.add(subHost);
 
