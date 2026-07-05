@@ -8,7 +8,9 @@
  * (the tiered codec→schema walker) and the weak-identity side-channel tag stores written
  * by the mixins ({@code SchemaTags}, {@code XmapTags}, {@code FieldOfTags},
  * {@code RecordFieldTags}), plus dispatch key enumeration ({@code DispatchRegistry},
- * {@code VanillaDispatches}).</p>
+ * {@code VanillaDispatches}) and {@code CuratedSchemas} — the hand-maintained list of
+ * registrations for codecs inference can't handle (kept strictly separate from the
+ * inference code; entries use only the public {@code SchemaCodecs} API).</p>
  *
  * <p>Invariant that must hold everywhere in this package: tags recorded at codec
  * construction time must be LAZY (store the inner codec, resolve at lookup), never an

@@ -32,6 +32,7 @@ import java.awt.Graphics;
 public final class ColorWidget implements SwingWidget {
 
     private final boolean hasAlpha;
+    private final boolean hexString;
     private final JPanel root;
     private final Swatch swatch = new Swatch();
     private final JTextField hexField = new JTextField(8);
@@ -44,6 +45,7 @@ public final class ColorWidget implements SwingWidget {
 
     public ColorWidget(Schema.Color schema) {
         this.hasAlpha = schema.hasAlpha();
+        this.hexString = schema.hexString();
         // Initialize to opaque black so RGB and ARGB defaults are both sensible.
         this.value = 0xFF000000;
 
@@ -147,18 +149,22 @@ public final class ColorWidget implements SwingWidget {
 
     @Override
     public DataResult<JsonElement> currentJson() {
+        if (hexString) {
+            return DataResult.success(new JsonPrimitive(formatHex(value, hasAlpha)));
+        }
         int out = hasAlpha ? value : (value & 0xFFFFFF);
         return DataResult.success(new JsonPrimitive(out));
     }
 
     @Override
     public void setJson(@Nullable JsonElement value) {
-        int v;
-        if (value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isNumber()) {
-            v = value.getAsInt();
-        } else {
-            v = hasAlpha ? 0xFF000000 : 0;
+        Integer v = null;
+        if (value != null && value.isJsonPrimitive()) {
+            JsonPrimitive prim = value.getAsJsonPrimitive();
+            if (prim.isNumber()) v = prim.getAsInt();
+            else if (prim.isString()) v = parseHex(prim.getAsString());
         }
+        if (v == null) v = hasAlpha ? 0xFF000000 : 0;
         this.value = hasAlpha ? v : (v & 0xFFFFFF) | 0xFF000000;
         applyValueToUi();
     }

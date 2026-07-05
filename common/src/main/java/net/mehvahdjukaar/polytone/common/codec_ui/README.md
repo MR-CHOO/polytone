@@ -26,6 +26,13 @@ Dependency direction: `example → swing → api ← internal ← mixins`. Each 
 
 ## Extending: making an unparseable codec editable
 
+The design intent: **infer as much as possible; hand-curate the rest.** The in-repo curated
+list is `internal/CuratedSchemas.java` — one bootstrap class whose entries use only the
+public registration API below, each with a comment on WHY inference fails for it. It is the
+first place to add vanilla/DFU codecs that resolve wrong or opaque, and it doubles as the
+reference example for how external mods register their own weird codecs (they call the same
+`SchemaCodecs` methods from their own init).
+
 In priority order (first match wins at resolve time) — all registered via `SchemaCodecs`:
 
 1. **Companion** — `SchemaCodecs.registerCompanion(codec, schema)`: hand-crafted schema for
@@ -47,7 +54,7 @@ In priority order (first match wins at resolve time) — all registered via `Sch
 Three layers:
 
 1. **`Schema<A>`** — sealed ADT describing the *edit surface* of a codec (Bool, IntRange,
-   Str, ResourceId, Enum, Record, ListOf, MapOf, EitherOf, PairOf, OneOf, …). Escape
+   Str, ResourceId, Enum, Record, ListOf, MapOf, AnyOf, PairOf, OneOf, …). Escape
    hatches: `Opaque` (raw JSON editor live-validated by the codec) and `Custom` (bound
    widget). UI-backend-agnostic; the Swing backend is in `swing/`.
 
@@ -65,14 +72,14 @@ Three layers:
      SimpleMapCodec, CompoundListCodec, DispatchedMapCodec, RecursiveCodec,
      MapCodecCodec, OptionalFieldCodec, PairMapCodec, EitherMapCodec, RecursiveMapCodec,
      KeyDispatchCodec, and MC's registry-element codecs: `RegistryFileCodec`
-     (id-or-inline → `EitherOf(ResourceId, inline)`), `RegistryFixedCodec` (→ `ResourceId`),
+     (id-or-inline → `AnyOf(reference, inline)`), `RegistryFixedCodec` (→ `ResourceId`),
      `HolderSetCodec` (tag-string / single / list). Codecs implementing the
      **`EnumerableCodec`** SPI (e.g. `MapRegistry`) resolve to an `Enum` dropdown of their
      registered names.
    - **Tier 3 (heuristic)**: reflective last resort for unknown hand-rolled codec classes —
      scans instance fields for inner `Codec`/`MapCodec`/`Codec[]` values: one inner →
      inherit (wrapper assumption); a (key, element/value) pair → `MapOf`; several →
-     right-nested `EitherOf` in declaration order ("try each" alternatives assumption).
+     a flat `AnyOf` picker in declaration order ("try each" alternatives assumption).
      Covers reference-or-inline codecs, multi-format unions, etc. A wrong guess is
      overridden by a tier-0 companion.
    - **Fallback**: `Schema.Opaque`.
@@ -127,7 +134,7 @@ Fix: `RecordCodecBuilderInstanceMixin` propagates tags through `map` (copy) and 
   an "and" predicate holding a list of predicates) render as raw-JSON sub-editors — the
   in-progress placeholder short-circuits them. Needs a future `Schema.Ref`.
 - Tier 3 is a guess: a hand-rolled codec whose two codec fields are *not* alternatives
-  (and not a key/value pair) gets a wrong `EitherOf` surface. Override with a companion.
+  (and not a key/value pair) gets a wrong `AnyOf` surface. Override with a companion.
 - `xmap`s that genuinely change shape (string ↔ parsed tree) show the on-disk (inner)
   shape — correct JSON, but no structured editor for the runtime form. Override with a
   companion/`SwingWidgetDef.bind` when a domain widget is wanted (see the expression widget).

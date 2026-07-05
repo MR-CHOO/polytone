@@ -13,22 +13,29 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.util.ArrayList;
+import java.util.List;
 
-public final class EitherOfWidget implements SwingWidget {
+/**
+ * One flat picker over N alternative shapes ({@link Schema.AnyOf}). The AnyOf factory
+ * already spliced nested alternatives, so however deep the original either-chain was,
+ * the user sees a single combo of labeled options with the active option's editor below.
+ */
+public final class AnyOfWidget implements SwingWidget {
 
-    private static final String LEFT = "Left";
-    private static final String RIGHT = "Right";
-
-    private final SwingWidget leftWidget;
-    private final SwingWidget rightWidget;
+    private final List<SwingWidget> widgets = new ArrayList<>();
     private final JComboBox<String> combo;
     private final JPanel root = new JPanel();
     private final JPanel subHost = new JPanel(new BorderLayout());
-    private String selected = LEFT;
+    private int selected = 0;
 
-    public EitherOfWidget(Schema.EitherOf<?, ?> schema) {
-        this.leftWidget = SwingWidgetFactory.create(schema.left());
-        this.rightWidget = SwingWidgetFactory.create(schema.right());
+    public AnyOfWidget(Schema.AnyOf<?> schema) {
+        String[] labels = new String[schema.options().size()];
+        for (int i = 0; i < schema.options().size(); i++) {
+            Schema.AnyOf.Option option = schema.options().get(i);
+            widgets.add(SwingWidgetFactory.create(option.schema()));
+            labels[i] = option.label() != null ? option.label() : "#" + (i + 1);
+        }
 
         root.setLayout(new BoxLayout(root, BoxLayout.Y_AXIS));
         root.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -37,7 +44,7 @@ public final class EitherOfWidget implements SwingWidget {
 
         JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, UiScale.small(), 0));
         top.setAlignmentX(Component.LEFT_ALIGNMENT);
-        combo = new JComboBox<>(new String[]{LEFT, RIGHT});
+        combo = new JComboBox<>(labels);
         top.add(combo);
         root.add(top);
         root.add(javax.swing.Box.createVerticalStrut(UiScale.small()));
@@ -45,18 +52,17 @@ public final class EitherOfWidget implements SwingWidget {
         root.add(subHost);
 
         combo.addActionListener(e -> {
-            String sel = (String) combo.getSelectedItem();
-            if (sel != null) swapSub(sel);
+            int idx = combo.getSelectedIndex();
+            if (idx >= 0) swapSub(idx);
         });
 
-        swapSub(LEFT);
+        swapSub(0);
     }
 
-    private void swapSub(String which) {
-        selected = which;
+    private void swapSub(int index) {
+        selected = index;
         subHost.removeAll();
-        SwingWidget active = which.equals(LEFT) ? leftWidget : rightWidget;
-        subHost.add(active.component(), BorderLayout.CENTER);
+        subHost.add(widgets.get(index).component(), BorderLayout.CENTER);
         subHost.revalidate();
         subHost.repaint();
     }
@@ -68,8 +74,7 @@ public final class EitherOfWidget implements SwingWidget {
 
     @Override
     public DataResult<JsonElement> currentJson() {
-        SwingWidget active = selected.equals(LEFT) ? leftWidget : rightWidget;
-        return active.currentJson();
+        return widgets.get(selected).currentJson();
     }
 
     @Override
@@ -77,18 +82,14 @@ public final class EitherOfWidget implements SwingWidget {
         if (value == null) {
             return;
         }
-        // Pragmatic: try left first, then right. Both setJson calls are best-effort.
-        boolean leftOk = trySet(leftWidget, value);
-        if (leftOk) {
-            combo.setSelectedItem(LEFT);
-            return;
+        // Pragmatic: first option that accepts the value wins (mirrors decode-try-each order).
+        for (int i = 0; i < widgets.size(); i++) {
+            if (trySet(widgets.get(i), value)) {
+                combo.setSelectedIndex(i);
+                return;
+            }
         }
-        boolean rightOk = trySet(rightWidget, value);
-        if (rightOk) {
-            combo.setSelectedItem(RIGHT);
-            return;
-        }
-        combo.setSelectedItem(LEFT);
+        combo.setSelectedIndex(0);
     }
 
     private static boolean trySet(SwingWidget widget, JsonElement value) {

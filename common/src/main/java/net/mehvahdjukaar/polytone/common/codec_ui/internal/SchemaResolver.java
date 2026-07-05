@@ -207,6 +207,7 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
     private SchemaResolver() {}
 
     public <A> Schema<A> resolve(Codec<A> codec) {
+        CuratedSchemas.bootstrap();
         IdentityHashMap<Object, Schema<?>> cache = CACHE.get();
         boolean owner = cache.isEmpty();
         try {
@@ -217,6 +218,7 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
     }
 
     public <A> Schema<A> resolveMap(MapCodec<A> codec) {
+        CuratedSchemas.bootstrap();
         IdentityHashMap<Object, Schema<?>> cache = CACHE.get();
         boolean owner = cache.isEmpty();
         try {
@@ -389,7 +391,7 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
         if (codec instanceof EitherCodec<?, ?> either) {
             Schema<?> l = resolveCodec(either.first(), cache);
             Schema<?> r = resolveCodec(either.second(), cache);
-            return new Schema.EitherOf(l, r);
+            return Schema.anyOf(Schema.option(l), Schema.option(r));
         }
         if (codec instanceof UnboundedMapCodec<?, ?> map) {
             Schema<?> k = resolveCodec(map.keyCodec(), cache);
@@ -406,7 +408,7 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
         if (codec instanceof XorCodec<?, ?> xor) {
             Schema<?> l = resolveCodec(xor.first(), cache);
             Schema<?> r = resolveCodec(xor.second(), cache);
-            return new Schema.EitherOf(l, r);
+            return Schema.anyOf(Schema.option(l), Schema.option(r));
         }
         // Codec.recursive / Codec.lazyInitialized. Forcing the memoized supplier is safe:
         // the placeholder already inserted for this codec short-circuits self-references,
@@ -438,7 +440,7 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
             Schema<?> id = new Schema.ResourceId(key);
             if ((boolean) REGISTRY_FILE_INLINE.get(rfc)) {
                 Schema<?> inline = resolveCodec((Codec<?>) REGISTRY_FILE_ELEMENT.get(rfc), cache);
-                return new Schema.EitherOf(id, inline);
+                return Schema.anyOf(Schema.option("reference", id), Schema.option("inline", inline));
             }
             return id;
         }
@@ -450,8 +452,10 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
         if (codec instanceof HolderSetCodec<?> hs && HOLDER_SET_ELEMENT != null) {
             Schema<?> element = resolveCodec((Codec<?>) HOLDER_SET_ELEMENT.get(hs), cache);
             Schema<?> tagOrId = new Schema.Str(0, Integer.MAX_VALUE, null);
-            return new Schema.EitherOf(tagOrId,
-                    new Schema.EitherOf(element, new Schema.ListOf(element, 0, Integer.MAX_VALUE)));
+            return Schema.anyOf(
+                    Schema.option("#tag or id", tagOrId),
+                    Schema.option("single", element),
+                    Schema.option("list", new Schema.ListOf(element, 0, Integer.MAX_VALUE)));
         }
         // Custom registries etc. that expose their value set — a dropdown of registered names.
         if (codec instanceof EnumerableCodec en) {
@@ -512,7 +516,7 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
         if (codec instanceof EitherMapCodec<?, ?> em && EITHER_MAP_FIRST != null && EITHER_MAP_SECOND != null) {
             Schema<?> f = resolveMapCodec((MapCodec<?>) EITHER_MAP_FIRST.get(em), cache);
             Schema<?> s = resolveMapCodec((MapCodec<?>) EITHER_MAP_SECOND.get(em), cache);
-            return new Schema.EitherOf(f, s);
+            return Schema.anyOf(Schema.option(f), Schema.option(s));
         }
         // MapCodec.recursive — mirror of the RecursiveCodec handler above.
         if (RECURSIVE_MAP_CLASS != null && RECURSIVE_MAP_WRAPPED != null && RECURSIVE_MAP_CLASS.isInstance(codec)) {
@@ -538,7 +542,7 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
      *   <li>a (key, element/value) field pair → assume a map codec, produce {@code MapOf};</li>
      *   <li>several inner codecs → assume "try each in order" alternatives (the dominant
      *       hand-rolled pattern: reference-or-inline, multi-format unions) and produce a
-     *       right-nested {@code EitherOf} in declaration order.</li>
+     *       flat {@code AnyOf} picker in declaration order.</li>
      * </ul>
      * Heuristic by design — a wrong guess is overridden by registering a tier-0 companion
      * for that codec. Only runs after every exact tier has passed.
@@ -595,11 +599,12 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
             if (aKey && bVal) return new Schema.MapOf(resolveAny(inners.get(0), cache), resolveAny(inners.get(1), cache));
             if (bKey && aVal) return new Schema.MapOf(resolveAny(inners.get(1), cache), resolveAny(inners.get(0), cache));
         }
-        Schema<?> result = resolveAny(inners.get(inners.size() - 1), cache);
-        for (int i = inners.size() - 2; i >= 0; i--) {
-            result = new Schema.EitherOf(resolveAny(inners.get(i), cache), result);
+        // "Try each in order" alternatives — one flat picker, auto "#N kind" labels.
+        java.util.List<Schema.AnyOf.Option> options = new java.util.ArrayList<>(inners.size());
+        for (Object inner : inners) {
+            options.add(Schema.option(resolveAny(inner, cache)));
         }
-        return result;
+        return Schema.anyOf(options);
     }
 
     private Schema<?> resolveAny(Object inner, IdentityHashMap<Object, Schema<?>> cache) {

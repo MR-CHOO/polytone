@@ -61,8 +61,8 @@ public final class SwingWidgetFactory {
         if (schema instanceof Schema.PairOf<?, ?> pair) {
             return new PairOfWidget(pair);
         }
-        if (schema instanceof Schema.EitherOf<?, ?> either) {
-            return new EitherOfWidget(either);
+        if (schema instanceof Schema.AnyOf<?> anyOf) {
+            return new AnyOfWidget(anyOf);
         }
         // Opaque, or Custom with a non-Swing widgetDef — opaque JSON fallback.
         return new OpaqueWidget();

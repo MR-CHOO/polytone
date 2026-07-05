@@ -157,7 +157,8 @@ public final class SchemaCodecs {
 
     public static <L, R> SchemaCodec<Either<L, R>> either(SchemaCodec<L> left, SchemaCodec<R> right) {
         Codec<Either<L, R>> codec = Codec.either(left, right);
-        Schema<Either<L, R>> schema = new Schema.EitherOf<>(left.schema(), right.schema());
+        Schema<Either<L, R>> schema = Schema.anyOf(
+                Schema.option(left.schema()), Schema.option(right.schema()));
         return SchemaCodec.of(codec, schema);
     }
 

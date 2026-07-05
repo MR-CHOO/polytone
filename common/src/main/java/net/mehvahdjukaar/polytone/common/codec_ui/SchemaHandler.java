@@ -24,7 +24,9 @@ import org.jetbrains.annotations.Nullable;
  * SchemaCodecs.registerHandler((codec, resolver) -> {
  *     if (!(codec instanceof MySingleOrListCodec<?> sol)) return null;
  *     Schema<?> element = resolver.resolve(sol.elementCodec());
- *     return new Schema.EitherOf<>(element, new Schema.ListOf<>(element, 0, Integer.MAX_VALUE));
+ *     return Schema.anyOf(
+ *             Schema.option("single", element),
+ *             Schema.option("list", new Schema.ListOf<>(element, 0, Integer.MAX_VALUE)));
  * });
  * }</pre>
  *

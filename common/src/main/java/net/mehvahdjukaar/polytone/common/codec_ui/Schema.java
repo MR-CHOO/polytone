@@ -1,6 +1,5 @@
 package net.mehvahdjukaar.polytone.common.codec_ui;
 
-import com.mojang.datafixers.util.Either;
 import com.mojang.datafixers.util.Pair;
 import com.mojang.serialization.Codec;
 import net.minecraft.core.Registry;
@@ -19,7 +18,13 @@ public sealed interface Schema<A> {
 
     record IntRange(int min, int max) implements Schema<Integer> {}
 
-    record Color(boolean hasAlpha) implements Schema<Integer> {}
+    /** {@code hexString}: the codec's on-disk form is a {@code "#RRGGBB"}-style string
+     *  (e.g. {@code ExtraCodecs.STRING_RGB_COLOR}) instead of a packed integer. */
+    record Color(boolean hasAlpha, boolean hexString) implements Schema<Integer> {
+        public Color(boolean hasAlpha) {
+            this(hasAlpha, false);
+        }
+    }
 
     record LongRange(long min, long max) implements Schema<Long> {}
 
@@ -41,7 +46,16 @@ public sealed interface Schema<A> {
 
     record MapOf<K, V>(Schema<K> key, Schema<V> value) implements Schema<Map<K, V>> {}
 
-    record EitherOf<L, R>(Schema<L> left, Schema<R> right) implements Schema<Either<L, R>> {}
+    /**
+     * A flat N-way "one of these alternative shapes" choice — for codecs that try several
+     * formats in order ({@code Codec.either}/{@code withAlternative} chains, hand-rolled
+     * alternative codecs, reference-or-inline). Always build via {@link #anyOf}: it splices
+     * nested AnyOf options flat and auto-labels unlabeled ones ({@code "#N kind"}), so the
+     * UI shows a single picker no matter how deep the underlying either-chain was.
+     */
+    record AnyOf<A>(List<Option> options) implements Schema<A> {
+        public record Option(@Nullable String label, Schema<?> schema) {}
+    }
 
     record PairOf<F, S>(Schema<F> first, Schema<S> second) implements Schema<Pair<F, S>> {}
 
@@ -75,4 +89,64 @@ public sealed interface Schema<A> {
     static Color colorRgb()  { return new Color(false); }
 
     static Color colorArgb() { return new Color(true); }
+
+    // ---- AnyOf construction ----
+
+    /** Unlabeled alternative — receives an auto {@code "#N kind"} label in {@link #anyOf}. */
+    static AnyOf.Option option(Schema<?> schema) {
+        return new AnyOf.Option(null, schema);
+    }
+
+    static AnyOf.Option option(String label, Schema<?> schema) {
+        return new AnyOf.Option(label, schema);
+    }
+
+    static <A> Schema<A> anyOf(AnyOf.Option... options) {
+        return anyOf(java.util.Arrays.asList(options));
+    }
+
+    /**
+     * Flattening factory for {@link AnyOf}: options that are themselves AnyOf are spliced
+     * in-place (their more-specific labels survive), a single surviving option collapses to
+     * its own schema, and unlabeled options get {@code "#N kind"} labels.
+     */
+    @SuppressWarnings("unchecked")
+    static <A> Schema<A> anyOf(List<AnyOf.Option> options) {
+        java.util.ArrayList<AnyOf.Option> flat = new java.util.ArrayList<>(options.size());
+        for (AnyOf.Option o : options) {
+            if (o.schema() instanceof AnyOf<?> nested) flat.addAll(nested.options());
+            else flat.add(o);
+        }
+        if (flat.size() == 1) return (Schema<A>) flat.get(0).schema();
+        for (int i = 0; i < flat.size(); i++) {
+            AnyOf.Option o = flat.get(i);
+            if (o.label() == null) {
+                flat.set(i, new AnyOf.Option("#" + (i + 1) + " " + kindName(o.schema()), o.schema()));
+            }
+        }
+        return new AnyOf<>(List.copyOf(flat));
+    }
+
+    /** Short human word for a schema's kind; used for auto-labels in {@link #anyOf}. */
+    static String kindName(Schema<?> schema) {
+        return switch (schema) {
+            case Bool ignored -> "boolean";
+            case IntRange ignored -> "integer";
+            case LongRange ignored -> "integer";
+            case FloatRange ignored -> "number";
+            case DoubleRange ignored -> "number";
+            case Color ignored -> "color";
+            case Str ignored -> "text";
+            case ResourceId ignored -> "id";
+            case Enum<?> ignored -> "choice";
+            case Record<?> ignored -> "object";
+            case ListOf<?> ignored -> "list";
+            case MapOf<?, ?> ignored -> "map";
+            case PairOf<?, ?> ignored -> "pair";
+            case OneOf<?> ignored -> "typed object";
+            case AnyOf<?> ignored -> "alternatives";
+            case Opaque<?> ignored -> "raw";
+            case Custom<?> ignored -> "custom";
+        };
+    }
 }

@@ -10,11 +10,21 @@ import net.mehvahdjukaar.polytone.content.dimension.DimensionEffectsModifier;
 import net.mehvahdjukaar.polytone.content.fluid.FluidPropertyModifier;
 import net.mehvahdjukaar.polytone.content.shaders.ExpressionUniformBuffers;
 import net.mehvahdjukaar.polytone.content.tabs.ItemPredicate;
+import net.mehvahdjukaar.polytone.content.tabs.CreativeTabModifier;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.UUIDUtil;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.ComponentSerialization;
 import net.minecraft.sounds.SoundEvent;
+import net.minecraft.util.ExtraCodecs;
+import net.minecraft.util.valueproviders.IntProvider;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.level.biome.BiomeSpecialEffects;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.levelgen.structure.templatesystem.BlockStateMatchTest;
 import net.minecraft.world.level.levelgen.structure.templatesystem.RuleTest;
@@ -67,6 +77,37 @@ public final class CodecRegistry {
         list.add(new Entry("raw sound event.CODEC",                   g, SchemaCodec.wrap(SoundEvent.CODEC)));
         list.add(new Entry("raw itempreciate.CODEC",                   g, SchemaCodec.wrap(ItemPredicate.CODEC)));
         list.add(new Entry("raw Expressiontype.CODEC",                   g, SchemaCodec.wrap(ExpressionUniformBuffers.CODEC)));
+
+        // ----- Auto-introspected: one entry per inference path we claim to cover -----
+        String g2 = "Auto (coverage checks)";
+        // either(INT, dispatch-record).xmap → flat AnyOf(number, typed object)
+        list.add(new Entry("IntProvider (constant or object)",     g2, SchemaCodec.wrap(IntProvider.CODEC)));
+        // registry dispatch, ~100 entries → real variant bodies via the decoder
+        list.add(new Entry("ParticleOptions (registry dispatch)",  g2, SchemaCodec.wrap(ParticleTypes.CODEC)));
+        // plain RCB record: id + double + StringRepresentable enum
+        list.add(new Entry("AttributeModifier (record + enum)",    g2, SchemaCodec.wrap(AttributeModifier.CODEC)));
+        // HolderSetCodec → AnyOf(#tag or id, single, list)
+        list.add(new Entry("Ingredient (holder set)",              g2, SchemaCodec.wrap(Ingredient.CODEC)));
+        // hex-string colors (curated Color) + optionals + enum dropdown
+        list.add(new Entry("BiomeSpecialEffects (colors)",         g2, SchemaCodec.wrap(BiomeSpecialEffects.CODEC)));
+        // real polytone target codec
+        list.add(new Entry("CreativeTabModifier",                  g2, SchemaCodec.wrap(CreativeTabModifier.CODEC)));
+
+        // ----- Stress tests: partial coverage expected -----
+        String g3 = "Stress (partial expected)";
+        // deeply recursive sum type — self-references degrade to raw JSON sub-editors
+        list.add(new Entry("Text Component (recursive)",           g3, SchemaCodec.wrap(ComponentSerialization.CODEC)));
+        // registry dispatch over ~1000 blocks — name dropdown only, opaque bodies (>128 gate)
+        list.add(new Entry("BlockState (huge dispatch)",           g3, SchemaCodec.wrap(BlockState.CODEC)));
+
+        // ----- Curated entries (internal/CuratedSchemas) — verify each shows its widget -----
+        String g4 = "Curated (CuratedSchemas)";
+        list.add(new Entry("RGB color (int)",                      g4, SchemaCodec.wrap(ExtraCodecs.RGB_COLOR_CODEC)));
+        list.add(new Entry("ARGB color (hex string)",              g4, SchemaCodec.wrap(ExtraCodecs.STRING_ARGB_COLOR)));
+        list.add(new Entry("BlockPos (int x3)",                    g4, SchemaCodec.wrap(BlockPos.CODEC)));
+        list.add(new Entry("Vector3f (float x3)",                  g4, SchemaCodec.wrap(ExtraCodecs.VECTOR3F)));
+        list.add(new Entry("UUID (string form)",                   g4, SchemaCodec.wrap(UUIDUtil.STRING_CODEC)));
+        list.add(new Entry("Identifier (id widget)",               g4, SchemaCodec.wrap(net.minecraft.resources.Identifier.CODEC)));
         return list;
     };
 }
