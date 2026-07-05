@@ -2,9 +2,14 @@ package net.mehvahdjukaar.polytone.common.codec_ui.swing;
 
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLaf;
+import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
+import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
+import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
+import org.fife.ui.rsyntaxtextarea.Theme;
+import org.fife.ui.rtextarea.RTextScrollPane;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.JsonOps;
 import net.mehvahdjukaar.polytone.Polytone;
@@ -22,6 +27,7 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
 import javax.swing.KeyStroke;
 import javax.swing.Scrollable;
 import javax.swing.ScrollPaneConstants;
@@ -62,9 +68,15 @@ public final class SwingSchemaEditor implements SchemaEditor {
      * interface.
      */
     public <A> void open(SchemaCodec<A> codec, String label, @Nullable A initial, Consumer<A> onSave) {
+        open(codec, label, Side.CLIENT_RESOURCES, initial, onSave);
+    }
+
+    /** Full overload: {@code side} selects the registry view (see {@link Side}) used for
+     *  encoding/validation ops — required for codecs touching datapack registries. */
+    public <A> void open(SchemaCodec<A> codec, String label, Side side, @Nullable A initial, Consumer<A> onSave) {
         setupSwingDefaults();
         forceNonHeadless();
-        SwingUtilities.invokeLater(() -> openOnEdt(codec, label, initial, onSave));
+        SwingUtilities.invokeLater(() -> openOnEdt(codec, label, side, initial, onSave));
     }
 
     private static volatile boolean swingSetupDone = false;
@@ -185,7 +197,62 @@ public final class SwingSchemaEditor implements SchemaEditor {
         }
     }
 
-    private <A> void openOnEdt(SchemaCodec<A> codec, String label, @Nullable A initial, Consumer<A> onSave) {
+    /**
+     * Registry-aware JSON ops for the given side. Codecs over datapack registries
+     * ({@code worldgen/biome}, dimension types, ...) fail with plain JsonOps
+     * ("Can't access registry ..."); we bind the best available registry view:
+     * <ol>
+     *   <li>SERVER_DATA with an integrated server running → the server's registries;</li>
+     *   <li>CLIENT_RESOURCES (or no server) in a world → the client-synced registries —
+     *       this is what polytone's own resource-pack-side files see;</li>
+     *   <li>no world at all (bare launcher) → {@code VanillaRegistries.createLookup()},
+     *       the full vanilla worldgen content (built once, cached — it's expensive);</li>
+     *   <li>if even that fails → plain JsonOps (registry codecs will show their error).</li>
+     * </ol>
+     */
+    private static com.mojang.serialization.DynamicOps<JsonElement> buildOps(Side side) {
+        net.minecraft.core.HolderLookup.Provider provider = null;
+        try {
+            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc != null) {
+                if (side == Side.SERVER_DATA && mc.getSingleplayerServer() != null) {
+                    provider = mc.getSingleplayerServer().registryAccess();
+                } else if (mc.level != null) {
+                    provider = mc.level.registryAccess();
+                } else if (mc.getConnection() != null) {
+                    provider = mc.getConnection().registryAccess();
+                }
+            }
+        } catch (Throwable ignored) {
+            // Not in a client environment (bare launcher main) — fall through.
+        }
+        if (provider == null) provider = vanillaLookup();
+        if (provider != null) {
+            try {
+                return provider.createSerializationContext(JsonOps.INSTANCE);
+            } catch (Throwable t) {
+                Polytone.LOGGER.warn("[codec_ui] could not create registry ops, falling back to plain JsonOps", t);
+            }
+        }
+        return JsonOps.INSTANCE;
+    }
+
+    private static net.minecraft.core.HolderLookup.@Nullable Provider vanillaLookup;
+    private static boolean vanillaLookupFailed;
+
+    private static net.minecraft.core.HolderLookup.@Nullable Provider vanillaLookup() {
+        if (vanillaLookup == null && !vanillaLookupFailed) {
+            try {
+                vanillaLookup = net.minecraft.data.registries.VanillaRegistries.createLookup();
+            } catch (Throwable t) {
+                vanillaLookupFailed = true;
+                Polytone.LOGGER.warn("[codec_ui] VanillaRegistries lookup unavailable", t);
+            }
+        }
+        return vanillaLookup;
+    }
+
+    private <A> void openOnEdt(SchemaCodec<A> codec, String label, Side side, @Nullable A initial, Consumer<A> onSave) {
         // Single-window invariant: reuse the static sharedFrame across every open() call.
         // Only bootstrap the L&F once — re-running FlatLaf.setup() per click is wasteful and
         // can drift the UI defaults underneath an already-realized frame.
@@ -205,10 +272,13 @@ public final class SwingSchemaEditor implements SchemaEditor {
         final JFrame f = frame;
         f.setTitle("Edit: " + label);
 
+        // Registry-aware ops for this codec's logical side; used by every encode/parse below.
+        com.mojang.serialization.DynamicOps<JsonElement> ops = buildOps(side);
+
         SwingWidget rootWidget = SwingWidgetFactory.create(codec.schema());
 
         if (initial != null) {
-            DataResult<JsonElement> encoded = codec.encodeStart(JsonOps.INSTANCE, initial);
+            DataResult<JsonElement> encoded = codec.encodeStart(ops, initial);
             encoded.result().ifPresent(rootWidget::setJson);
         }
 
@@ -239,7 +309,14 @@ public final class SwingSchemaEditor implements SchemaEditor {
         // Content should always wrap to the form width — never show a horizontal bar.
         scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
-        content.add(scroll, BorderLayout.CENTER);
+
+        // ---- Center split: form (left) | live JSON output preview (right) ----
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
+                scroll, buildJsonPreview(codec, rootWidget, ops));
+        split.setResizeWeight(0.6);
+        split.setContinuousLayout(true);
+        split.setBorder(null);
+        content.add(split, BorderLayout.CENTER);
 
         // ---- Footer: error label above right-aligned action row, separated from form ----
         JLabel errorLabel = new JLabel(" ");
@@ -295,13 +372,13 @@ public final class SwingSchemaEditor implements SchemaEditor {
                 errorLabel.setText("JSON parse error: " + ex.getMessage());
                 return;
             }
-            DataResult<A> decoded = codec.parse(JsonOps.INSTANCE, parsedJson);
+            DataResult<A> decoded = codec.parse(ops, parsedJson);
             if (decoded.error().isPresent()) {
                 errorLabel.setText("Schema parse error: " + decoded.error().get().message());
                 return;
             }
             A value = decoded.result().orElseThrow();
-            DataResult<JsonElement> reEncoded = codec.encodeStart(JsonOps.INSTANCE, value);
+            DataResult<JsonElement> reEncoded = codec.encodeStart(ops, value);
             if (reEncoded.error().isPresent()) {
                 errorLabel.setText("Re-encode error: " + reEncoded.error().get().message());
                 return;
@@ -313,14 +390,15 @@ public final class SwingSchemaEditor implements SchemaEditor {
             errorLabel.setText(" ");
             DataResult<JsonElement> jsonResult = rootWidget.currentJson();
             if (jsonResult.error().isPresent()) {
-                errorLabel.setText("Build error: " + jsonResult.error().get().message());
+                // Full message lives in the output panel's status line — don't duplicate it here.
+                errorLabel.setText("Can't save: fix the error shown in the output panel.");
                 return;
             }
             JsonElement json = jsonResult.result().orElseThrow();
 
-            DataResult<A> parsed = codec.parse(JsonOps.INSTANCE, json);
+            DataResult<A> parsed = codec.parse(ops, json);
             if (parsed.error().isPresent()) {
-                errorLabel.setText("Parse error: " + parsed.error().get().message());
+                errorLabel.setText("Can't save: fix the error shown in the output panel.");
                 return;
             }
             A value = parsed.result().orElseThrow();
@@ -375,17 +453,17 @@ public final class SwingSchemaEditor implements SchemaEditor {
         f.getRootPane().setDefaultButton(save);
 
         if (firstOpen) {
-            // Generous logical-px baselines: 720x800 at 1x becomes 1440x1600 at 2x,
-            // plenty of room on a 4K display. Min width 560.
+            // Wide baseline to fit the preview | form split: 1280x800 logical px (scaled by
+            // UiScale), capped to 90% of the screen. Min width raised accordingly.
             f.pack();
             Dimension screen = Toolkit.getDefaultToolkit().getScreenSize();
-            int targetW = (int) Math.min(UiScale.px(720), screen.getWidth() * 0.85);
-            int targetH = (int) Math.min(UiScale.px(800), screen.getHeight() * 0.85);
+            int targetW = (int) Math.min(UiScale.px(1280), screen.getWidth() * 0.9);
+            int targetH = (int) Math.min(UiScale.px(800), screen.getHeight() * 0.9);
             Dimension pref = f.getSize();
             int w = Math.max(pref.width, targetW);
             int h = Math.max(pref.height, targetH);
-            f.setSize(Math.max(w, UiScale.px(560)), Math.max(h, UiScale.px(480)));
-            f.setMinimumSize(new Dimension(UiScale.px(560), UiScale.px(480)));
+            f.setSize(Math.max(w, UiScale.px(900)), Math.max(h, UiScale.px(480)));
+            f.setMinimumSize(new Dimension(UiScale.px(900), UiScale.px(480)));
             f.setLocationRelativeTo(null);
 
             // Returning focus to the launcher window when this hides is automatic —
@@ -399,6 +477,102 @@ public final class SwingSchemaEditor implements SchemaEditor {
         f.setVisible(true);
         f.toFront();
         f.requestFocus();
+    }
+
+    // One preview refresher at a time — the shared frame hosts a single editor page, so the
+    // previous page's timer is stopped whenever a new page is built.
+    private static @Nullable javax.swing.Timer previewTimer;
+
+    /**
+     * Read-only, syntax-highlighted live view of the JSON the form currently produces,
+     * with a validity line on top (the JSON is re-parsed through the codec on every
+     * refresh). Poll-based (400ms): widgets have no change-listener plumbing, and a
+     * cheap dirty-check keeps idle refreshes free.
+     */
+    private static <A> JComponent buildJsonPreview(SchemaCodec<A> codec, SwingWidget rootWidget,
+                                                   com.mojang.serialization.DynamicOps<JsonElement> ops) {
+        RSyntaxTextArea area = new RSyntaxTextArea();
+        area.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_JSON);
+        area.setEditable(false);
+        area.setHighlightCurrentLine(false);
+        try (var in = Theme.class.getResourceAsStream(
+                "/org/fife/ui/rsyntaxtextarea/themes/" + (FlatLaf.isLafDark() ? "dark.xml" : "default.xml"))) {
+            if (in != null) Theme.load(in).apply(area);
+        } catch (Throwable ignored) {
+            // Theme is cosmetic only.
+        }
+        area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UiScale.px(15)));
+
+        RTextScrollPane areaScroll = new RTextScrollPane(area);
+        areaScroll.setLineNumbersEnabled(false);
+        areaScroll.setBorder(BorderFactory.createLineBorder(UIManager.getColor("Component.borderColor")));
+
+        // Wrapping, read-only status line — validation errors show IN FULL, never elided.
+        javax.swing.JTextArea status = new javax.swing.JTextArea("Output");
+        status.setEditable(false);
+        status.setFocusable(false);
+        status.setLineWrap(true);
+        status.setWrapStyleWord(true);
+        status.setOpaque(false);
+        status.setFont(UIManager.getFont("Label.font"));
+        status.setBorder(BorderFactory.createEmptyBorder(0, 0, UiScale.small(), 0));
+        Color okColor = UIManager.getColor("Label.foreground");
+
+        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+        // Dirty-gate: validation (codec.parse) only runs when the produced JSON actually
+        // changed. Parsing every poll tick re-decodes registry lookups and spams the log
+        // (lenient codecs log their own failures).
+        String[] lastValidated = {null};
+        Runnable refresh = () -> {
+            if (!area.isShowing()) return;
+            String text = "";
+            String buildError = null;
+            JsonElement json = null;
+            try {
+                DataResult<JsonElement> res = rootWidget.currentJson();
+                if (res.error().isPresent()) {
+                    buildError = res.error().get().message();
+                } else {
+                    json = res.result().orElseThrow();
+                    text = gson.toJson(json);
+                }
+            } catch (Throwable t) {
+                buildError = String.valueOf(t);
+            }
+            String key = buildError != null ? "!" + buildError : text;
+            if (key.equals(lastValidated[0])) return; // nothing changed — no re-parse, no repaint
+            lastValidated[0] = key;
+
+            boolean ok = false;
+            String state;
+            if (buildError != null) {
+                state = "✗ " + buildError;
+            } else {
+                try {
+                    DataResult<A> parsed = codec.parse(ops, json);
+                    ok = parsed.error().isEmpty();
+                    state = ok ? "✓ valid" : "✗ " + parsed.error().get().message();
+                } catch (Throwable t) {
+                    state = "✗ " + t;
+                }
+            }
+            area.setText(text);
+            area.setCaretPosition(0);
+            status.setText(state);
+            status.setForeground(ok ? okColor : errorColor());
+        };
+
+        if (previewTimer != null) previewTimer.stop();
+        previewTimer = new javax.swing.Timer(400, e -> refresh.run());
+        previewTimer.start();
+        SwingUtilities.invokeLater(refresh);
+
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.add(status, BorderLayout.NORTH);
+        panel.add(areaScroll, BorderLayout.CENTER);
+        panel.setPreferredSize(new Dimension(UiScale.px(460), UiScale.px(400)));
+        panel.setMinimumSize(new Dimension(UiScale.px(280), UiScale.px(200)));
+        return panel;
     }
 
     /** Error/warning color that reads on both light and dark themes. */

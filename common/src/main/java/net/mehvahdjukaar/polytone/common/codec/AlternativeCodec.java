@@ -46,13 +46,17 @@ public record AlternativeCodec<A>(Codec<? extends A> ...codecs) implements Codec
             result.error().ifPresent(e -> errors.add("[" + finalI + "]: " + e.message()));
         }
 
-        // Return last partial if available
-        if (lastPartial != null) {
-            return lastPartial;
-        }
-
         // Combine all errors with index
         String combined = String.join("; ", errors);
+
+        // Return last partial if available, but carry the FULL context: reporting only the
+        // partial's own message (e.g. "No key y_axis" from an inline-colormap attempt) hides
+        // that other alternatives were tried and why they failed too.
+        if (lastPartial != null) {
+            return lastPartial.mapError(msg ->
+                    "No alternative matched (partial from one attempt: " + msg + "). All errors: " + combined);
+        }
+
         return DataResult.error(() -> "Failed to parse any alternative codec. Errors: " + combined);
     }
 

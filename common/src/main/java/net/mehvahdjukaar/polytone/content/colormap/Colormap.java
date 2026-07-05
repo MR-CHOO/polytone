@@ -69,26 +69,23 @@ public final class Colormap implements IColorGetter, ColorResolver {
             i.optional("color_modifier", ColormapColorModulator.CODEC, c -> Optional.ofNullable(c.colorMult))
     ).apply(i, Colormap::new));
 
-    public static final SchemaCodec<IColorGetter> REFERENCE_OR_EXPRESSION = SchemaCodec.lazy(
-            Codec.withAlternative(Polytone.COLORMAPS.byNameCodec(), SINGLE_COLOR_OR_EXPRESSION),
-            () -> Schema.anyOf(
-                    Schema.option("reference", SchemaCodecs.resolve(Polytone.COLORMAPS.byNameCodec())),
-                    Schema.option("inline", SINGLE_COLOR_OR_EXPRESSION.schema())));
+    public static final SchemaCodec<IColorGetter> REFERENCE_OR_EXPRESSION = SchemaCodecs.withAlternative(
+            SchemaCodecs.alt("reference", Polytone.COLORMAPS.byNameCodec()),
+            SchemaCodecs.alt("inline", SINGLE_COLOR_OR_EXPRESSION));
 
 
-    // Direct reference, inline definition, color/expression or biome compound. The nested
-    // alternative codecs are unchanged; the lazy AnyOf splices them into ONE labeled picker
+    // Direct reference, inline definition, color/expression or biome compound. The wire codec
+    // is unchanged; the labeled parts splice into ONE flat picker
     // (reference / inline colormap / color / expression / biome compound).
-    public static final SchemaCodec<IColorGetter> CODEC = SchemaCodec.lazy(
+    public static final SchemaCodec<IColorGetter> CODEC = SchemaCodecs.labeled(
             CodecUtils.alternatives(
                     CodecUtils.referenceOrDirect(Polytone.COLORMAPS.byNameCodec(), DIRECT_CODEC),
                     SINGLE_COLOR_OR_EXPRESSION,
                     BiomeCompoundColorGetter.CODEC),
-            () -> Schema.anyOf(
-                    Schema.option("reference", SchemaCodecs.resolve(Polytone.COLORMAPS.byNameCodec())),
-                    Schema.option("inline colormap", DIRECT_CODEC.schema()),
-                    Schema.option("value", SINGLE_COLOR_OR_EXPRESSION.schema()),
-                    Schema.option("biome compound", SchemaCodecs.resolve(BiomeCompoundColorGetter.CODEC))));
+            SchemaCodecs.alt("reference", Polytone.COLORMAPS.byNameCodec()),
+            SchemaCodecs.alt("inline colormap", DIRECT_CODEC),
+            SchemaCodecs.alt("value", SINGLE_COLOR_OR_EXPRESSION),
+            SchemaCodecs.alt("biome compound", BiomeCompoundColorGetter.CODEC));
 
     private Colormap(Optional<Integer> defaultColor, IColormapExp xGetter, IColormapExp yGetter,
                      boolean triangular, boolean rounds, Optional<Boolean> biomeBlend, Optional<BiomeIdMapper> biomeMapper,

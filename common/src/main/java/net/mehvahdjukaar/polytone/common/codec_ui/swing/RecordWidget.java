@@ -2,6 +2,7 @@ package net.mehvahdjukaar.polytone.common.codec_ui.swing;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import com.mojang.serialization.DataResult;
 import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
 import org.jetbrains.annotations.Nullable;
@@ -44,6 +45,13 @@ public final class RecordWidget implements SwingWidget {
         for (Schema.Field<?, ?> field : schema.fields()) {
             SwingWidget child = SwingWidgetFactory.create(field.schema());
             entries.add(new FieldEntry(field, child));
+
+            // Optional fields start out showing their declared default (when representable);
+            // currentJson() omits them while they still match it.
+            if (field.optional()) {
+                JsonElement defJson = primitiveToJson(field.defaultValue());
+                if (defJson != null) child.setJson(defJson);
+            }
 
             // Right-aligned label column.
             JLabel name = new JLabel(field.name());
@@ -111,7 +119,13 @@ public final class RecordWidget implements SwingWidget {
                 String msg = error.get().message();
                 return DataResult.error(() -> "Field '" + name + "': " + msg);
             }
-            r.result().ifPresent(json -> obj.add(e.field.name(), json));
+            JsonElement json = r.result().orElseThrow();
+            // Optional field still at its default (or visibly unset) → omit from the output;
+            // the codec's own default applies on load.
+            if (e.field.optional() && isUnsetOrDefault(json, e.field.defaultValue())) {
+                continue;
+            }
+            obj.add(e.field.name(), json);
         }
         return DataResult.success(obj);
     }
@@ -120,14 +134,38 @@ public final class RecordWidget implements SwingWidget {
     public void setJson(@Nullable JsonElement value) {
         if (value == null || !value.isJsonObject()) {
             for (FieldEntry e : entries) {
-                e.widget.setJson(null);
+                e.widget.setJson(e.field.optional() ? primitiveToJson(e.field.defaultValue()) : null);
             }
             return;
         }
         JsonObject obj = value.getAsJsonObject();
         for (FieldEntry e : entries) {
             JsonElement sub = obj.get(e.field.name());
+            if (sub == null && e.field.optional()) {
+                // Missing optional key: show the declared default so output stays omitted.
+                sub = primitiveToJson(e.field.defaultValue());
+            }
             e.widget.setJson(sub);
         }
+    }
+
+    /**
+     * True when an optional field's value should be treated as "not set": it equals the
+     * declared default, or — for optionals without a representable default — it is still
+     * blank (JSON null / empty string).
+     */
+    private static boolean isUnsetOrDefault(JsonElement json, @Nullable Object defaultValue) {
+        JsonElement defJson = primitiveToJson(defaultValue);
+        if (defJson != null) return defJson.equals(json);
+        return json.isJsonNull()
+                || (json.isJsonPrimitive() && json.getAsJsonPrimitive().isString() && json.getAsString().isEmpty());
+    }
+
+    /** JSON form of a primitive default value; null for complex/absent defaults. */
+    private static @Nullable JsonElement primitiveToJson(@Nullable Object def) {
+        if (def instanceof Boolean b) return new JsonPrimitive(b);
+        if (def instanceof Number n) return new JsonPrimitive(n);
+        if (def instanceof String s) return new JsonPrimitive(s);
+        return null;
     }
 }

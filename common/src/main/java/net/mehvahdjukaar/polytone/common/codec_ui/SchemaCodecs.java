@@ -164,26 +164,49 @@ public final class SchemaCodecs {
         return SchemaMapCodec.of(mapCodec, schema);
     }
 
+    // ---- labeled alternatives: state each alternative ONCE (label + codec together) ----
+
+    /** A labeled alternative for {@link #withAlternative} / {@link #labeled}. */
+    public record Alt<A>(String label, Codec<A> codec) {}
+
+    public static <A> Alt<A> alt(String label, Codec<A> codec) {
+        return new Alt<>(label, codec);
+    }
+
     /**
-     * Labeled alternatives over a codec you own. The codec must already accept every
-     * alternative form (built with {@code withAlternative}, {@code CodecUtils.alternatives},
-     * a custom multi-format codec, ...); this pairs it with a flat {@link Schema.AnyOf} so
-     * the editor shows ONE named picker with the exact widget per alternative, instead of
-     * whatever inference guessed.
+     * Labeled {@link Codec#withAlternative}: builds the codec AND a lazy {@link Schema.AnyOf}
+     * from the same two declarations — each alternative stated once. Schemas resolve at
+     * editor-open, so late-bound widget companions and registry content are picked up.
      *
      * <pre>{@code
-     * // a color field that is either a packed int or an MVEL expression string:
-     * SchemaCodecs.alternatives(MY_COLOR_OR_EXPR_CODEC,
-     *         Schema.option("color", Schema.colorArgb()),
-     *         Schema.option("expression", new Schema.Custom<>(ExpressionWidget.DEF)));
+     * SchemaCodec<IColorGetter> C = SchemaCodecs.withAlternative(
+     *         alt("reference", COLORMAPS.byNameCodec()),
+     *         alt("inline", SINGLE_COLOR_OR_EXPRESSION));
      * }</pre>
-     *
-     * <p>Same idea as {@link #registerCompanion(Codec, Schema)} with
-     * {@code Schema.anyOf(...)} — use this form when declaring a {@link SchemaCodec} inline,
-     * the companion form when annotating an existing static codec from bootstrap code.</p>
      */
-    public static <A> SchemaCodec<A> alternatives(Codec<A> codec, Schema.AnyOf.Option... options) {
-        return SchemaCodec.of(codec, Schema.anyOf(options));
+    public static <A> SchemaCodec<A> withAlternative(Alt<A> primary, Alt<? extends A> secondary) {
+        return SchemaCodec.lazy(Codec.withAlternative(primary.codec(), secondary.codec()),
+                () -> Schema.anyOf(
+                        Schema.option(primary.label(), resolve(primary.codec())),
+                        Schema.option(secondary.label(), resolve(secondary.codec()))));
+    }
+
+    /**
+     * Labeled view over an EXISTING multi-format codec whose alternative structure can't be
+     * rebuilt here (custom alternative codecs, reference-or-direct wrappers, ...): the wire
+     * codec is passed through untouched, and the editor surface is a lazy flat AnyOf over
+     * the given labeled parts. Alternatives that are themselves AnyOf splice flat, keeping
+     * their own (more specific) labels.
+     */
+    @SafeVarargs
+    public static <A> SchemaCodec<A> labeled(Codec<A> codec, Alt<?>... alternatives) {
+        return SchemaCodec.lazy(codec, () -> {
+            List<Schema.AnyOf.Option> options = new java.util.ArrayList<>(alternatives.length);
+            for (Alt<?> alt : alternatives) {
+                options.add(Schema.option(alt.label(), resolve(alt.codec())));
+            }
+            return Schema.anyOf(options);
+        });
     }
 
     public static <L, R> SchemaCodec<Either<L, R>> either(SchemaCodec<L> left, SchemaCodec<R> right) {

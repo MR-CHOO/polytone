@@ -35,10 +35,13 @@ reference example for how external mods register their own weird codecs (they ca
 
 **For codecs YOU own, don't register anything** — declare codec + schema in one go:
 `static final SchemaCodec<X> CODEC = SchemaRecord.create(X.class, i -> i.group(...).apply(i, X::new))`
-(drop-in: `SchemaCodec extends Codec`). For alternative-style codecs use
-`SchemaCodec.lazy(codec, () -> Schema.anyOf(Schema.option("name", ...), ...))` — the lazy
-supplier runs at editor-open, so late-bound widget companions and registry content are
-picked up (never call `.schema()` or `SchemaCodecs.resolve` at class-init). See
+(drop-in: `SchemaCodec extends Codec`). For alternative-style codecs, state each
+alternative ONCE as `SchemaCodecs.alt(label, codec)`:
+`SchemaCodecs.withAlternative(alt("reference", A), alt("inline", B))` builds codec + schema
+together; `SchemaCodecs.labeled(existingCodec, alt(...), ...)` labels a multi-format codec
+you can't rebuild. Schemas resolve lazily at editor-open (never call `.schema()` or
+`SchemaCodecs.resolve` at class-init — `SchemaCodec.lazy(codec, supplier)` is the manual
+escape hatch). See
 `content/colormap/Colormap.java` for the reference port: its 3-layer nested alternatives
 render as ONE picker (reference / inline colormap / color / expression / biome compound).
 The registration mechanisms below are for codecs you DON'T own (vanilla, other mods) —

@@ -87,22 +87,37 @@ public final class ExamplesLauncher {
 
             content.add(north, BorderLayout.NORTH);
 
-            // ----- Center: grouped button column -----
-            JPanel buttonColumn = new JPanel();
-            buttonColumn.setLayout(new BoxLayout(buttonColumn, BoxLayout.Y_AXIS));
-            buttonColumn.setBorder(BorderFactory.createEmptyBorder(
-                    UiScale.small(), 0, UiScale.small(), 0));
+            // ----- Center: two top-level pages, one per logical side -----
+            // Force-load VanillaCodecs to guarantee companion registration runs before any
+            // schema is resolved.
+            VanillaCodecs.bootstrap();
 
-            List<GroupBlock> groups = buildGroupedButtons(buttonColumn);
-            buttonColumn.add(Box.createVerticalGlue());
+            javax.swing.JTabbedPane tabs = new javax.swing.JTabbedPane();
+            List<GroupBlock> groups = new ArrayList<>();
+            for (var page : List.of(
+                    java.util.Map.entry("Client (resource packs)",
+                            net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side.CLIENT_RESOURCES),
+                    java.util.Map.entry("Server (datapacks)",
+                            net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side.SERVER_DATA))) {
+                JPanel buttonColumn = new JPanel();
+                buttonColumn.setLayout(new BoxLayout(buttonColumn, BoxLayout.Y_AXIS));
+                buttonColumn.setBorder(BorderFactory.createEmptyBorder(
+                        UiScale.small(), 0, UiScale.small(), 0));
 
-            JScrollPane scroll = new JScrollPane(buttonColumn);
-            scroll.setBorder(BorderFactory.createEmptyBorder());
-            scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
-            scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-            scroll.getVerticalScrollBar().setUnitIncrement(UiScale.px(16));
-            scroll.getViewport().setOpaque(false);
-            content.add(scroll, BorderLayout.CENTER);
+                List<CodecRegistry.Entry> pageEntries = CodecRegistry.all().stream()
+                        .filter(en -> en.side() == page.getValue()).toList();
+                groups.addAll(buildGroupedButtons(buttonColumn, pageEntries));
+                buttonColumn.add(Box.createVerticalGlue());
+
+                JScrollPane scroll = new JScrollPane(buttonColumn);
+                scroll.setBorder(BorderFactory.createEmptyBorder());
+                scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+                scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+                scroll.getVerticalScrollBar().setUnitIncrement(UiScale.px(16));
+                scroll.getViewport().setOpaque(false);
+                tabs.addTab(page.getKey(), scroll);
+            }
+            content.add(tabs, BorderLayout.CENTER);
 
             // ----- South: auto-scale footer -----
             JLabel footer = new JLabel("Auto-scaled: " + UiScale.scaleAsPercent()
@@ -118,7 +133,7 @@ public final class ExamplesLauncher {
                 @Override public void removeUpdate(DocumentEvent e) { applyFilter(); }
                 @Override public void changedUpdate(DocumentEvent e) { applyFilter(); }
                 private void applyFilter() {
-                    filter(groups, searchField.getText(), buttonColumn);
+                    filter(groups, searchField.getText(), tabs);
                 }
             });
 
@@ -179,16 +194,10 @@ public final class ExamplesLauncher {
         }
     }
 
-    private static List<GroupBlock> buildGroupedButtons(JPanel buttonColumn) {
-        // Force-load VanillaCodecs to guarantee companion registration runs before any
-        // schema is resolved. Static-init via static-final-field access has been unreliable
-        // in some loader configurations.
-        VanillaCodecs.bootstrap();
-        System.out.println("[codec_ui] >>> ExamplesLauncher: CodecRegistry.all() about to fire <<<");
-
+    private static List<GroupBlock> buildGroupedButtons(JPanel buttonColumn, List<CodecRegistry.Entry> entries) {
         // Bucket entries by group in first-appearance order.
         Map<String, List<CodecRegistry.Entry>> buckets = new LinkedHashMap<>();
-        for (CodecRegistry.Entry entry : CodecRegistry.all()) {
+        for (CodecRegistry.Entry entry : entries) {
             buckets.computeIfAbsent(entry.group(), g -> new ArrayList<>()).add(entry);
         }
 
@@ -246,7 +255,8 @@ public final class ExamplesLauncher {
         button.addActionListener(e -> {
             // Use the labeled overload so the editor's title bar reads "Edit: <label>".
             // The editor reuses one persistent JFrame across calls (see SwingSchemaEditor).
-            new SwingSchemaEditor().open(codec, label, null, onSave);
+            // The entry's side picks the registry view used for validation ops.
+            new SwingSchemaEditor().open(codec, label, entry.side(), null, onSave);
         });
         return button;
     }
@@ -272,7 +282,7 @@ public final class ExamplesLauncher {
 
     // -------------------- Filtering --------------------
 
-    private static void filter(List<GroupBlock> groups, String query, JPanel container) {
+    private static void filter(List<GroupBlock> groups, String query, JComponent container) {
         String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         boolean empty = q.isEmpty();
 

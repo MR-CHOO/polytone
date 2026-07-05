@@ -172,11 +172,8 @@ public interface IColorGetter extends BlockColor, BarColor {
             g -> g instanceof ExpressionColor(IBlockExp exp) ? exp : IBlockExp.ZERO
     );
 
-    // One labeled picker: a color, or an MVEL expression. Schema is LAZY so the expression
-    // editor widget (registered at editor bootstrap) is picked up.
-    SchemaCodec<IColorGetter> SINGLE_COLOR_OR_EXPRESSION = SchemaCodec.lazy(
-            Codec.withAlternative(SINGLE_COLOR_CODEC, EXPRESSION_CODEC),
-            () -> Schema.anyOf(
-                    Schema.option("color", SINGLE_COLOR_CODEC.schema()),
-                    Schema.option("expression", SchemaCodecs.resolve(EXPRESSION_CODEC))));
+    // One labeled picker: a color, or an MVEL expression.
+    SchemaCodec<IColorGetter> SINGLE_COLOR_OR_EXPRESSION = SchemaCodecs.withAlternative(
+            SchemaCodecs.alt("color", SINGLE_COLOR_CODEC),
+            SchemaCodecs.alt("expression", EXPRESSION_CODEC));
 }

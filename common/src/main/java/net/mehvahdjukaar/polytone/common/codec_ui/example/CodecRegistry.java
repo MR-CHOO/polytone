@@ -42,7 +42,21 @@ public final class CodecRegistry {
 
     private CodecRegistry() {}
 
-    public record Entry(String label, String group, SchemaCodec<?> codec) {}
+    /**
+     * {@code side} picks the registry view the editor validates against (see
+     * {@link net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side}): polytone's own
+     * files are resource-pack side (client-synced registries); vanilla datapack content
+     * (rule tests, dimension types, recipes...) is server side.
+     */
+    public record Entry(String label, String group, SchemaCodec<?> codec,
+                        net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side side) {
+        public Entry(String label, String group, SchemaCodec<?> codec) {
+            this(label, group, codec, net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side.CLIENT_RESOURCES);
+        }
+    }
+
+    private static final net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side SERVER =
+            net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side.SERVER_DATA;
 
     private static final List<Entry> ENTRIES = build();
 
@@ -71,8 +85,8 @@ public final class CodecRegistry {
         list.add(new Entry("raw Direction.CODEC",                  g, SchemaCodec.wrap(Direction.CODEC)));
         list.add(new Entry("raw MobEffectInstance.CODEC",          g, SchemaCodec.wrap(MobEffectInstance.CODEC)));
         list.add(new Entry("raw ItemStack.CODEC",                  g, SchemaCodec.wrap(ItemStack.CODEC)));
-        list.add(new Entry("raw RuleTest.CODEC",                   g, SchemaCodec.wrap(RuleTest.CODEC)));
-        list.add(new Entry("raw dimensitonType.CODEC",                   g, SchemaCodec.wrap(DimensionType.DIRECT_CODEC)));
+        list.add(new Entry("raw RuleTest.CODEC",                   g, SchemaCodec.wrap(RuleTest.CODEC), SERVER));
+        list.add(new Entry("raw dimensitonType.CODEC",                   g, SchemaCodec.wrap(DimensionType.DIRECT_CODEC), SERVER));
         list.add(new Entry("raw colormap.CODEC",                   g, SchemaCodec.wrap(Colormap.CODEC)));
         list.add(new Entry("raw dimensionmod.CODEC",                   g, SchemaCodec.wrap(DimensionEffectsModifier.CODEC)));
         list.add(new Entry("raw sound event.CODEC",                   g, SchemaCodec.wrap(SoundEvent.CODEC)));
@@ -88,9 +102,9 @@ public final class CodecRegistry {
         // plain RCB record: id + double + StringRepresentable enum
         list.add(new Entry("AttributeModifier (record + enum)",    g2, SchemaCodec.wrap(AttributeModifier.CODEC)));
         // HolderSetCodec → AnyOf(#tag or id, single, list)
-        list.add(new Entry("Ingredient (holder set)",              g2, SchemaCodec.wrap(Ingredient.CODEC)));
+        list.add(new Entry("Ingredient (holder set)",              g2, SchemaCodec.wrap(Ingredient.CODEC), SERVER));
         // hex-string colors (curated Color) + optionals + enum dropdown
-        list.add(new Entry("BiomeSpecialEffects (colors)",         g2, SchemaCodec.wrap(BiomeSpecialEffects.CODEC)));
+        list.add(new Entry("BiomeSpecialEffects (colors)",         g2, SchemaCodec.wrap(BiomeSpecialEffects.CODEC), SERVER));
         // real polytone target codec
         list.add(new Entry("CreativeTabModifier",                  g2, SchemaCodec.wrap(CreativeTabModifier.CODEC)));
 
@@ -99,7 +113,7 @@ public final class CodecRegistry {
         // deeply recursive sum type — self-references degrade to raw JSON sub-editors
         list.add(new Entry("Text Component (recursive)",           g3, SchemaCodec.wrap(ComponentSerialization.CODEC)));
         // registry dispatch over ~1000 blocks — name dropdown only, opaque bodies (>128 gate)
-        list.add(new Entry("BlockState (huge dispatch)",           g3, SchemaCodec.wrap(BlockState.CODEC)));
+        list.add(new Entry("BlockState (huge dispatch)",           g3, SchemaCodec.wrap(BlockState.CODEC), SERVER));
 
         // ----- Curated entries (internal/CuratedSchemas) — verify each shows its widget -----
         String g4 = "Curated (CuratedSchemas)";
