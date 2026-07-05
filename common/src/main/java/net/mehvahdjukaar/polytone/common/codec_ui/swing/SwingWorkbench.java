@@ -204,9 +204,17 @@ public final class SwingWorkbench {
         bar.add(openPack);
         bar.add(Box.createHorizontalStrut(UiScale.small()));
 
-        // THE primary action of the tool — filled accent so it reads as the main button.
+        // THE primary action of the tool — explicit accent fill. (Inside a JToolBar,
+        // FlatLaf flattens children to toolbar-button style, so "buttonType=default"
+        // alone would NOT paint the accent; FlatLaf.style overrides it reliably.)
         newContentButton.setIcon(WorkbenchIcons.filePlus());
-        newContentButton.putClientProperty("JButton.buttonType", "default");
+        newContentButton.putClientProperty("FlatLaf.style",
+                "background: " + EditorOps.ACCENT_HEX + ";"
+                        + " foreground: #FFFFFF;"
+                        + " hoverBackground: darken(" + EditorOps.ACCENT_HEX + ",6%);"
+                        + " pressedBackground: darken(" + EditorOps.ACCENT_HEX + ",12%);"
+                        + " disabledBackground: $Button.disabledBackground;"
+                        + " disabledText: $Button.disabledText");
         newContentButton.setToolTipText(
                 "Add content to the pack — the file lands in its correct folder automatically");
         newContentButton.addActionListener(e -> openNewContentDialog());

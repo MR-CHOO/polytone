@@ -158,7 +158,6 @@ public final class ExpressionWidget implements SwingWidget, CollapsibleWidget {
                 @Override public void removeUpdate(DocumentEvent e) { validateTimer.restart(); }
                 @Override public void changedUpdate(DocumentEvent e) { validateTimer.restart(); }
             });
-            runValidation();
         } else {
             status = null;
             validateTimer = null;
@@ -172,7 +171,9 @@ public final class ExpressionWidget implements SwingWidget, CollapsibleWidget {
             @Override public void removeUpdate(DocumentEvent e) { updateSummary(); }
             @Override public void changedUpdate(DocumentEvent e) { updateSummary(); }
         });
-        updateSummary();
+        // Initial pass runs AFTER section exists — both paths write the header summary.
+        if (def.validator != null) runValidation();
+        else updateSummary();
     }
 
     @Override
