@@ -12,17 +12,22 @@ against DFU 8 / 1.21.1 — tier analysis still applies, version facts don't).
 codec_ui/            PUBLIC API — Schema (ADT), SchemaCodec (entry point), SchemaCodecs
                      (facade + extension registration), SchemaRecord/SchemaRecordBuilder
                      (companion DSLs), SchemaEditor, SPIs (SchemaHandler, EnumerableCodec)
+codec_ui/workbench/  UI-framework-agnostic workbench MODEL — PackWorkspace (lenient pack
+                     folder), CodecEntry (library entry + file association via containerDir),
+                     PackReloader (game reload hook SPI), Workbench (session state).
+                     Zero Swing/AWT imports — a future non-Swing backend reuses this as-is.
 codec_ui/internal/   machinery — SchemaResolver, mixin tag stores, dispatch enumeration.
                      NOT API. Only the construction mixins may reach in.
-codec_ui/swing/      Swing backend. Depends on the API only, never on internal/.
-                     Custom widgets bind via SwingWidgetDef.bind(codec).
-codec_ui/example/    demo/test launcher + sample codecs. Referenced by nothing.
+codec_ui/swing/      Swing backend. Depends on api + workbench, never on internal/.
+                     SwingWorkbench (single-window shell), EditorPanel (per-codec tab),
+                     widgets. Custom widgets bind via SwingWidgetDef.bind(codec).
+codec_ui/example/    demo/test entries + tool bootstrap (codec library, game reload hooks).
 mixins/codec_ui/     construction mixins — part of the internal layer, live outside only
                      because the mixin package is fixed by polytone-common.mixins.json.
 ```
 
-Dependency direction: `example → swing → api ← internal ← mixins`. Each package has a
-`package-info.java` restating its contract.
+Dependency direction: `example → swing → workbench → api ← internal ← mixins`. Each package
+has a `package-info.java` restating its contract.
 
 ## Extending: making an unparseable codec editable
 
@@ -202,13 +207,39 @@ Fix: `RecordCodecBuilderInstanceMixin` propagates tags through `map` (copy) and 
 - `SchemaMapCodec` is a plain wrapper, NOT a `MapCodec` subclass — owned MapCodecs that get
   registered into dispatch registries can't be declared schema-carrying yet.
 
+## The workbench (single-window UI)
+
+`example/ExamplesLauncher.open()` boots `swing/SwingWorkbench` — ONE frame, everything in it:
+
+- **Toolbar**: Open Pack… (lenient folder picker — ANY directory opens, since mods load packs
+  from odd places; `assets/`/`data/`/`pack.mcmeta` only refine the detected kind), plus
+  Reload Resources / Reload Data buttons driven by the `PackReloader` hook
+  (`example/GameReloadHooks` binds them to `Minecraft.reloadResourcePacks()` and the
+  integrated server's `reloadResources`; disabled when no game / no server). Reloading is
+  what makes freshly saved files referenceable by registry pickers and dispatch enumeration.
+- **Sidebar**: *Files* — lazy file tree of the opened pack (double-click routes a file:
+  codec-associated JSON → `EditorPanel`, other text → syntax-highlighted `TextEditorPanel`,
+  images → preview tab). *Codecs* — the searchable/side-filterable codec library from
+  `example/CodecRegistry` (now `workbench/CodecEntry`s).
+- **Editor tabs**: closable (Ctrl+W), dirty-dot titles, unsaved-changes confirm on close.
+  Each `EditorPanel` is form (left) | live JSON preview (right): read-only RSyntaxTextArea +
+  a wrapping status line that re-validates through the codec (registry-aware ops) whenever
+  the produced JSON changes. Optional record fields are omitted from output while they equal
+  their declared default. File-bound tabs save in place (Ctrl+S); unbound tabs ask once,
+  then bind. Loading a file that fails codec validation still opens — the error is shown,
+  never a refusal.
+
+File→codec association: `CodecEntry.containerDir` (e.g. `polytone/colormaps`) is matched
+against the file's in-pack container (`assets/<ns>/…` / `data/<ns>/…` prefix stripped,
+lenient about extra levels). Add a containerDir to an entry and its files become
+double-click-editable. `SwingSchemaEditor.open(...)` (the `SchemaEditor` API) now lands as
+a tab in the same window — no separate frames anywhere.
+
 ## Testing
 
-`example/ExamplesLauncher` is a standalone Swing app (FlatLaf) exercising the resolver on
-progressively nastier codecs, including migrated real Polytone codecs and vanilla ones
-(`example/VanillaCodecs`). Two top-level tabs split entries by `Side`. Each editor page is
-form (left) | live JSON preview (right): read-only RSyntaxTextArea + a wrapping status line
-that re-validates through the codec (registry-aware ops) whenever the produced JSON changes.
-Optional record fields are omitted from output while they equal their declared default. Run it from the IDE with the mod classpath; mixins must be active
+Run `ExamplesLauncher.open()` from the IDE with the mod classpath; mixins must be active
 for the construction tags to exist (run via a client run config / dev launch, not plain main,
-when testing mixin-dependent paths).
+when testing mixin-dependent paths). The codec library exercises the resolver on
+progressively nastier codecs, including migrated real Polytone codecs and vanilla ones
+(`example/VanillaCodecs`). A convenient end-to-end check: open `resourcepacks/sunbathing/`
+(in-repo dev pack) as the workspace, edit a colormap, save, hit Reload Resources in-game.

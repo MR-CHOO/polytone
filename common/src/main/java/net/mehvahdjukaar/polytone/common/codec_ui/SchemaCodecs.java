@@ -196,7 +196,6 @@ public final class SchemaCodecs {
      * the given labeled parts. Alternatives that are themselves AnyOf splice flat, keeping
      * their own (more specific) labels.
      */
-    @SafeVarargs
     public static <A> SchemaCodec<A> labeled(Codec<A> codec, Alt<?>... alternatives) {
         return SchemaCodec.lazy(codec, () -> {
             List<Schema.AnyOf.Option> options = new java.util.ArrayList<>(alternatives.length);
