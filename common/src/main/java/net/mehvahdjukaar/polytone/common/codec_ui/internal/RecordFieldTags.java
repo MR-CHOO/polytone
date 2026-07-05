@@ -31,7 +31,7 @@ public final class RecordFieldTags {
      * {@code RecordCodecBuilder.of(getter, name, codec)} form; the resolver then synthesises a
      * required-field Schema.Field. {@code mapCodec} carries the entire MapCodec from the
      * {@code of(getter, MapCodec)} form (optional / default / lenient variants); the resolver
-     * delegates to {@link net.mehvahdjukaar.polytone.common.codec_ui.SchemaResolver#resolveMap}
+     * delegates to {@link SchemaResolver#resolveMap}
      * which can introspect {@code OptionalFieldCodec} and friends.
      */
     public record Entry(String name,

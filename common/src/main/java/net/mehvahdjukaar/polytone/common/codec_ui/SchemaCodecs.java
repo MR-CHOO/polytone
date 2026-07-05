@@ -3,6 +3,7 @@ package net.mehvahdjukaar.polytone.common.codec_ui;
 import com.mojang.datafixers.util.Either;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
+import net.mehvahdjukaar.polytone.common.codec_ui.internal.SchemaResolver;
 import net.mehvahdjukaar.polytone.common.codec_ui.internal.SchemaTags;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceKey;
@@ -14,7 +15,25 @@ import java.util.Optional;
 import java.util.function.Function;
 
 /**
- * Combinators on {@link SchemaCodec} that preserve the schema alongside the codec.
+ * Facade of the codec_ui public API: combinators on {@link SchemaCodec} that preserve the
+ * schema alongside the codec, plus every extension-point registration.
+ *
+ * <h2>Extension points (in resolution priority order)</h2>
+ * <ol>
+ *   <li>{@link #registerCompanion(Codec, Schema)} — hand-crafted schema for ONE specific
+ *       codec instance. Always wins.</li>
+ *   <li>{@link #registerHandler(SchemaHandler)} — structural handler for a whole CLASS of
+ *       codecs (your own {@code Codec} implementations, third-party combinators). Runs
+ *       before the built-in structural tiers.</li>
+ *   <li>{@link EnumerableCodec} — implement directly on a custom codec whose value set is
+ *       a closed, named collection (custom registries). Gives dropdowns and, when used as
+ *       a dispatch key, full variant enumeration.</li>
+ *   <li>{@link #registerDispatchKeys} — enumerate the keys of a {@code Codec.dispatch}
+ *       whose key type you can't make {@link EnumerableCodec} (vanilla/3rd-party types).</li>
+ *   <li>{@code SwingWidgetDef#bind} (in the {@code swing} backend package) — bind a
+ *       domain-specific editor widget to a codec, bypassing schema-driven widget selection
+ *       entirely. Backend-specific, hence not on this facade.</li>
+ * </ol>
  */
 public final class SchemaCodecs {
 
@@ -41,6 +60,34 @@ public final class SchemaCodecs {
         SchemaTags.tag(codec, schema);
     }
 
+    /**
+     * Register a {@link SchemaHandler} that teaches the resolver how to introspect a whole
+     * class of codecs. See {@link SchemaHandler} for contract, ordering and an example.
+     */
+    public static void registerHandler(SchemaHandler handler) {
+        SchemaResolver.registerHandler(handler);
+    }
+
+    /**
+     * Register the key set of a {@code Codec.dispatch(...)} family whose key type can't
+     * implement {@link EnumerableCodec} (vanilla or third-party K). The resolver applies a
+     * dispatch's decoder to each supplied key; keys the dispatch accepts become entries in
+     * the variant picker, with fully resolved bodies.
+     *
+     * @param keyType the dispatch key class K (used to index hooks; one hook per K class)
+     * @param keys    lazy supplier of all known keys — re-queried at each editor open, so
+     *                late registrations are picked up
+     * @param codecOf variant codec lookup, used only as a fallback when the dispatch's own
+     *                decoder can't be read
+     * @param nameOf  display/serialized name of a key (what the "type" field contains)
+     */
+    public static <K> void registerDispatchKeys(Class<K> keyType,
+                                                java.util.function.Supplier<List<K>> keys,
+                                                Function<K, MapCodec<?>> codecOf,
+                                                Function<K, String> nameOf) {
+        net.mehvahdjukaar.polytone.common.codec_ui.internal.DispatchRegistry.register(keyType, keys, codecOf, nameOf);
+    }
+
     @SuppressWarnings("unchecked")
     private static <A, B> Schema<B> castSchema(Schema<A> schema) {
         return (Schema<B>) schema;
@@ -49,34 +96,6 @@ public final class SchemaCodecs {
     /** Convenience: a {@link SchemaCodec} that pairs an integer codec with a {@link Schema.Color} (RGB). */
     public static SchemaCodec<Integer> colorRgb(com.mojang.serialization.Codec<Integer> codec) {
         return SchemaCodec.of(codec, new Schema.Color(false));
-    }
-
-    /**
-     * Bind a {@link Codec} to a domain-specific
-     * {@link net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWidget} via a
-     * {@link net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWidgetDef}.
-     * The schema-to-UI binding is colocated with the codec declaration — no global
-     * registry, no Identifier strings.
-     *
-     * <p><b>Backend note:</b> this combinator references the Swing backend
-     * ({@code SwingWidgetDef}), so it is Swing-specific even though it lives in the
-     * backend-agnostic {@code SchemaCodecs} class. Other UI backends would expose
-     * their own equivalent that stores their own def type into {@link Schema.Custom}.
-     * If we ever add a second backend we should split this out into
-     * {@code SwingSchemaCodecs} under the {@code swing/} subpackage; until then,
-     * keeping it here keeps the common entry-point obvious.</p>
-     *
-     * <p>Idiomatic:
-     * <pre>{@code
-     * public static final SchemaCodec<IBlockExp> BLOCK_EXP =
-     *     SchemaCodecs.withWidget(IBlockExp.CODEC, BlockExpressionWidget.DEF);
-     * }</pre>
-     */
-    public static <A> SchemaCodec<A> withWidget(
-            com.mojang.serialization.Codec<A> codec,
-            net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWidgetDef<A> def
-    ) {
-        return SchemaCodec.of(codec, new Schema.Custom<>(def));
     }
 
     /** Convenience: same as {@link #colorRgb} but for ARGB (with alpha channel). */

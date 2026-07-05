@@ -1,8 +1,10 @@
-package net.mehvahdjukaar.polytone.common.codec_ui.swing;
+package net.mehvahdjukaar.polytone.common.codec_ui.example;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
 import com.mojang.serialization.DataResult;
+import net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWidget;
+import net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWidgetDef;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.BoxLayout;
@@ -22,7 +24,7 @@ import java.awt.Font;
  * <p>Bind to a codec like:
  * <pre>{@code
  * public static final SchemaCodec<String> EXPRESSION =
- *     SchemaCodecs.withWidget(Codec.STRING, ExampleExpressionWidget.DEF);
+ *     ExampleExpressionWidget.DEF.bind(Codec.STRING);
  * }</pre>
  *
  * <p>The {@link #DEF} constant is the entry point — reference it from codec declarations

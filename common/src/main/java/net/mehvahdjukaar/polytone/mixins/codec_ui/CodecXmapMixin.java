@@ -5,14 +5,11 @@ import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
-import net.mehvahdjukaar.polytone.common.codec_ui.SchemaResolver;
 import net.mehvahdjukaar.polytone.common.codec_ui.internal.FieldOfTags;
 import net.mehvahdjukaar.polytone.common.codec_ui.internal.SchemaTags;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
-
-import java.util.List;
 
 /**
  * Tags codecs returned by Codec's combinator default methods (xmap, flatXmap, ...) with the

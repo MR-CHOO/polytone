@@ -6,6 +6,42 @@ registry exists as the escape hatch for codecs that genuinely can't be introspec
 Targets DFU **9.0.19** (MC 1.21.11). Research notes: `research/codecs/findings.md` (written
 against DFU 8 / 1.21.1 — tier analysis still applies, version facts don't).
 
+## Package layout & API boundary
+
+```
+codec_ui/            PUBLIC API — Schema (ADT), SchemaCodec (entry point), SchemaCodecs
+                     (facade + extension registration), SchemaRecord/SchemaRecordBuilder
+                     (companion DSLs), SchemaEditor, SPIs (SchemaHandler, EnumerableCodec)
+codec_ui/internal/   machinery — SchemaResolver, mixin tag stores, dispatch enumeration.
+                     NOT API. Only the construction mixins may reach in.
+codec_ui/swing/      Swing backend. Depends on the API only, never on internal/.
+                     Custom widgets bind via SwingWidgetDef.bind(codec).
+codec_ui/example/    demo/test launcher + sample codecs. Referenced by nothing.
+mixins/codec_ui/     construction mixins — part of the internal layer, live outside only
+                     because the mixin package is fixed by polytone-common.mixins.json.
+```
+
+Dependency direction: `example → swing → api ← internal ← mixins`. Each package has a
+`package-info.java` restating its contract.
+
+## Extending: making an unparseable codec editable
+
+In priority order (first match wins at resolve time) — all registered via `SchemaCodecs`:
+
+1. **Companion** — `SchemaCodecs.registerCompanion(codec, schema)`: hand-crafted schema for
+   one specific codec instance. Always beats everything.
+2. **Custom handler** — `SchemaCodecs.registerHandler((codec, resolver) -> ...)`: teach the
+   resolver a whole *class* of codecs (your own `Codec` impls, third-party combinators).
+   Return null to pass; use the provided `resolver` for inner codecs. Runs before the
+   built-in structural tiers, so it also overrides tier-2/3 guesses.
+3. **`EnumerableCodec`** — implement on a custom codec whose values are a closed named set
+   (e.g. `MapRegistry`): gives an Enum dropdown, and full variant enumeration when the
+   codec is a dispatch key.
+4. **Dispatch keys** — `SchemaCodecs.registerDispatchKeys(keyType, keys, codecOf, nameOf)`
+   for `Codec.dispatch` families whose key type you don't control.
+5. **Custom widget** — `MyWidget.DEF.bind(codec)` (Swing backend): bypass schema-driven
+   widget selection with a domain editor (see `example/ExampleExpressionWidget`).
+
 ## Architecture
 
 Three layers:
@@ -21,14 +57,32 @@ Three layers:
      the construction mixins. Lazy = they store the *inner codec*, not a resolved schema, so
      companions registered after MC bootstrap still win at resolve time. Never eagerly
      resolve inside a mixin.
+   - **Tier 0.5**: user-registered `SchemaHandler`s (`SchemaCodecs.registerHandler`) —
+     class-level handlers for codecs the built-in tiers can't or shouldn't guess.
    - **Tier 1**: identity match on primitive singletons (`Codec.INT`, `STRING`, …).
-   - **Tier 2**: `instanceof` on concrete DFU codec classes (+ VarHandles for private
+   - **Tier 2**: `instanceof` on concrete DFU/MC codec classes (+ VarHandles for private
      fields): ListCodec, EitherCodec, XorCodec, PairCodec, UnboundedMapCodec,
      SimpleMapCodec, CompoundListCodec, DispatchedMapCodec, RecursiveCodec,
      MapCodecCodec, OptionalFieldCodec, PairMapCodec, EitherMapCodec, RecursiveMapCodec,
-     KeyDispatchCodec (variant enumeration via `DispatchRegistry` hooks or registry-backed
-     key codecs).
+     KeyDispatchCodec, and MC's registry-element codecs: `RegistryFileCodec`
+     (id-or-inline → `EitherOf(ResourceId, inline)`), `RegistryFixedCodec` (→ `ResourceId`),
+     `HolderSetCodec` (tag-string / single / list). Codecs implementing the
+     **`EnumerableCodec`** SPI (e.g. `MapRegistry`) resolve to an `Enum` dropdown of their
+     registered names.
+   - **Tier 3 (heuristic)**: reflective last resort for unknown hand-rolled codec classes —
+     scans instance fields for inner `Codec`/`MapCodec`/`Codec[]` values: one inner →
+     inherit (wrapper assumption); a (key, element/value) pair → `MapOf`; several →
+     right-nested `EitherOf` in declaration order ("try each" alternatives assumption).
+     Covers reference-or-inline codecs, multi-format unions, etc. A wrong guess is
+     overridden by a tier-0 companion.
    - **Fallback**: `Schema.Opaque`.
+
+   `KeyDispatchCodec` variant enumeration order: (0) the dispatch's own key codec, when it
+   implements `EnumerableCodec` or resolves to a `Schema.Enum` — each key is fed through the
+   dispatch's decoder function, giving fully-resolved variant bodies; (1) `DispatchRegistry`
+   hooks; (2) registry-backed key fallback — small registries (≤128 entries) also get real
+   bodies via the decoder, large ones stay name-only with opaque bodies. If everything comes
+   up empty the dispatch renders as raw JSON instead of a dead empty picker.
 
    Recursion: a per-resolve `IdentityHashMap` cache; an `Opaque` placeholder is inserted
    before descending, so self-references (e.g. `Codec.recursive`) terminate and render as
@@ -66,13 +120,17 @@ Fix: `RecordCodecBuilderInstanceMixin` propagates tags through `map` (copy) and 
 ## Known remaining gaps
 
 - `RecordCodecBuilder.Instance.dependent(...)` and hand-rolled `Codec.of(enc, dec)` —
-  opaque by nature; needs a companion.
-- `KeyDispatchCodec` variant **bodies** from registry-backed dispatches stay `Opaque`
-  (resolving 1000+ per-entry codecs is impractical); only the key dropdown is populated.
-  Non-registry dispatches need a `DispatchRegistry` hook (see `VanillaDispatches`).
+  opaque by nature (tier 3 finds no codec-typed fields in the lambdas); needs a companion.
+- Registry-backed dispatches over **large** registries (>128 entries, e.g. Block) keep
+  opaque variant bodies; only the key dropdown is populated.
+- Recursive self-references (a dispatch variant embedding the dispatch codec itself, e.g.
+  an "and" predicate holding a list of predicates) render as raw-JSON sub-editors — the
+  in-progress placeholder short-circuits them. Needs a future `Schema.Ref`.
+- Tier 3 is a guess: a hand-rolled codec whose two codec fields are *not* alternatives
+  (and not a key/value pair) gets a wrong `EitherOf` surface. Override with a companion.
 - `xmap`s that genuinely change shape (string ↔ parsed tree) show the on-disk (inner)
   shape — correct JSON, but no structured editor for the runtime form. Override with a
-  companion/`withWidget` when a domain widget is wanted (see the expression widget).
+  companion/`SwingWidgetDef.bind` when a domain widget is wanted (see the expression widget).
 - Plain-lambda enums via `Codec.stringResolver` are not enumerable → resolve as `Str`.
 - `MapCodec.Dependent`, `assumeMapUnsafe`, `unit` — no handlers (rare; fall to Opaque).
 - `DispatchedMapCodec` values are opaque (function-typed); keys resolve.

@@ -8,6 +8,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Registry of variant enumerators for {@code KeyDispatchCodec}-backed codecs.
@@ -36,7 +37,7 @@ public final class DispatchRegistry {
      * (and, for dynamic registries, when a level / registryAccess is available).
      */
     public record Hook<K>(Class<K> keyType,
-                          java.util.function.Supplier<List<K>> keys,
+                          Supplier<List<K>> keys,
                           Function<K, MapCodec<?>> codecOf,
                           Function<K, String> nameOf) {}
 

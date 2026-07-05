@@ -6,7 +6,6 @@ package net.mehvahdjukaar.polytone.common.codec_ui.example;
  * which now lists every example schema.
  */
 public final class FooExampleTrigger {
-    private FooExampleTrigger() {}
 
     public static void open() {
         ExamplesLauncher.open();

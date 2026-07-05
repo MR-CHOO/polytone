@@ -4,8 +4,15 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.RecordBuilder;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec;
+import net.mehvahdjukaar.polytone.content.block.BlockPropertyModifier;
+import net.mehvahdjukaar.polytone.content.colormap.Colormap;
+import net.mehvahdjukaar.polytone.content.dimension.DimensionEffectsModifier;
+import net.mehvahdjukaar.polytone.content.fluid.FluidPropertyModifier;
+import net.mehvahdjukaar.polytone.content.shaders.ExpressionUniformBuffers;
+import net.mehvahdjukaar.polytone.content.tabs.ItemPredicate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.dimension.DimensionType;
@@ -55,6 +62,11 @@ public final class CodecRegistry {
         list.add(new Entry("raw ItemStack.CODEC",                  g, SchemaCodec.wrap(ItemStack.CODEC)));
         list.add(new Entry("raw RuleTest.CODEC",                   g, SchemaCodec.wrap(RuleTest.CODEC)));
         list.add(new Entry("raw dimensitonType.CODEC",                   g, SchemaCodec.wrap(DimensionType.DIRECT_CODEC)));
+        list.add(new Entry("raw colormap.CODEC",                   g, SchemaCodec.wrap(Colormap.CODEC)));
+        list.add(new Entry("raw dimensionmod.CODEC",                   g, SchemaCodec.wrap(DimensionEffectsModifier.CODEC)));
+        list.add(new Entry("raw sound event.CODEC",                   g, SchemaCodec.wrap(SoundEvent.CODEC)));
+        list.add(new Entry("raw itempreciate.CODEC",                   g, SchemaCodec.wrap(ItemPredicate.CODEC)));
+        list.add(new Entry("raw Expressiontype.CODEC",                   g, SchemaCodec.wrap(ExpressionUniformBuffers.CODEC)));
         return list;
     };
 }

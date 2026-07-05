@@ -1,4 +1,4 @@
-package net.mehvahdjukaar.polytone.common.codec_ui;
+package net.mehvahdjukaar.polytone.common.codec_ui.internal;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
@@ -16,9 +16,13 @@ import com.mojang.serialization.codecs.UnboundedMapCodec;
 import com.mojang.serialization.codecs.XorCodec;
 import com.mojang.serialization.DataResult;
 import net.mehvahdjukaar.polytone.Polytone;
-import net.mehvahdjukaar.polytone.common.codec_ui.internal.DispatchRegistry;
-import net.mehvahdjukaar.polytone.common.codec_ui.internal.SchemaTags;
-import net.mehvahdjukaar.polytone.common.codec_ui.internal.VanillaDispatches;
+import net.mehvahdjukaar.polytone.common.codec_ui.EnumerableCodec;
+import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
+import net.mehvahdjukaar.polytone.common.codec_ui.SchemaHandler;
+import net.minecraft.resources.HolderSetCodec;
+import net.minecraft.resources.RegistryFileCodec;
+import net.minecraft.resources.RegistryFixedCodec;
+import net.minecraft.resources.ResourceKey;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
@@ -29,13 +33,25 @@ import java.util.function.Function;
 /**
  * Walks a Codec graph and produces an introspected Schema. Falls back to {@link Schema.Opaque}
  * for anything we can't statically introspect (xmap, flatXmap, RecordCodecBuilder outputs, etc.).
+ *
+ * <p>Internal — external code goes through {@code SchemaCodec.wrap(...)} /
+ * {@code SchemaCodecs}, and extends resolution via the public SPIs
+ * ({@code SchemaHandler}, {@code EnumerableCodec}, companions, dispatch key hooks).</p>
  */
-public final class SchemaResolver {
+public final class SchemaResolver implements SchemaHandler.Resolver {
 
     private static final SchemaResolver INSTANCE = new SchemaResolver();
 
+    // Registered via SchemaCodecs.registerHandler. Consulted after per-instance tags,
+    // before the built-in structural tiers.
+    private static final java.util.List<SchemaHandler> HANDLERS = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     public static SchemaResolver get() {
         return INSTANCE;
+    }
+
+    public static void registerHandler(SchemaHandler handler) {
+        HANDLERS.add(handler);
     }
 
     // ---- VarHandles for private-field access on DFU codec classes ----
@@ -66,6 +82,12 @@ public final class SchemaResolver {
     private static final @org.jetbrains.annotations.Nullable VarHandle EITHER_MAP_FIRST;
     private static final @org.jetbrains.annotations.Nullable VarHandle EITHER_MAP_SECOND;
 
+    private static final @org.jetbrains.annotations.Nullable VarHandle REGISTRY_FILE_KEY;
+    private static final @org.jetbrains.annotations.Nullable VarHandle REGISTRY_FILE_ELEMENT;
+    private static final @org.jetbrains.annotations.Nullable VarHandle REGISTRY_FILE_INLINE;
+    private static final @org.jetbrains.annotations.Nullable VarHandle REGISTRY_FIXED_KEY;
+    private static final @org.jetbrains.annotations.Nullable VarHandle HOLDER_SET_ELEMENT;
+
     static {
         VarHandle pf = null, ps = null;
         VarHandle ofn = null, ofe = null, ofl = null;
@@ -76,6 +98,9 @@ public final class SchemaResolver {
         Class<?> rmc = null;
         VarHandle clk = null, cle = null;
         VarHandle emf = null, ems = null;
+        VarHandle rfk = null, rfe = null, rfi = null;
+        VarHandle rxk = null;
+        VarHandle hse = null;
         try {
             var lookup = MethodHandles.privateLookupIn(PairCodec.class, MethodHandles.lookup());
             pf = lookup.findVarHandle(PairCodec.class, "first", Codec.class);
@@ -131,6 +156,21 @@ public final class SchemaResolver {
             ems = lookup.findVarHandle(EitherMapCodec.class, "second", MapCodec.class);
         } catch (Throwable ignored) {}
 
+        try {
+            var lookup = MethodHandles.privateLookupIn(RegistryFileCodec.class, MethodHandles.lookup());
+            rfk = lookup.findVarHandle(RegistryFileCodec.class, "registryKey", ResourceKey.class);
+            rfe = lookup.findVarHandle(RegistryFileCodec.class, "elementCodec", Codec.class);
+            rfi = lookup.findVarHandle(RegistryFileCodec.class, "allowInline", boolean.class);
+        } catch (Throwable ignored) {}
+        try {
+            var lookup = MethodHandles.privateLookupIn(RegistryFixedCodec.class, MethodHandles.lookup());
+            rxk = lookup.findVarHandle(RegistryFixedCodec.class, "registryKey", ResourceKey.class);
+        } catch (Throwable ignored) {}
+        try {
+            var lookup = MethodHandles.privateLookupIn(HolderSetCodec.class, MethodHandles.lookup());
+            hse = lookup.findVarHandle(HolderSetCodec.class, "elementCodec", Codec.class);
+        } catch (Throwable ignored) {}
+
         PAIR_CODEC_FIRST = pf;
         PAIR_CODEC_SECOND = ps;
         OPTIONAL_FIELD_NAME = ofn;
@@ -151,6 +191,11 @@ public final class SchemaResolver {
         COMPOUND_LIST_ELEMENT = cle;
         EITHER_MAP_FIRST = emf;
         EITHER_MAP_SECOND = ems;
+        REGISTRY_FILE_KEY = rfk;
+        REGISTRY_FILE_ELEMENT = rfe;
+        REGISTRY_FILE_INLINE = rfi;
+        REGISTRY_FIXED_KEY = rxk;
+        HOLDER_SET_ELEMENT = hse;
     }
 
     // Per-call cache; new IdentityHashMap each resolve() so it doesn't leak codecs.
@@ -205,8 +250,10 @@ public final class SchemaResolver {
         Schema.Opaque<A> placeholder = new Schema.Opaque<>(codec, null);
         cache.put(codec, placeholder);
 
-        Schema<A> result = (Schema<A>) tierOnePrimitive(codec);
+        Schema<A> result = (Schema<A>) tierCustomHandlers(codec, false);
+        if (result == null) result = (Schema<A>) tierOnePrimitive(codec);
         if (result == null) result = (Schema<A>) tierTwoStructural(codec, cache);
+        if (result == null) result = (Schema<A>) tierThreeReflective(codec, cache);
         if (result == null) result = placeholder;
 
         cache.put(codec, result);
@@ -282,11 +329,33 @@ public final class SchemaResolver {
         Schema.Opaque<A> placeholder = new Schema.Opaque<>(codec.codec(), null);
         cache.put(codec, placeholder);
 
-        Schema<A> result = (Schema<A>) tierTwoMapStructural(codec, cache);
+        Schema<A> result = (Schema<A>) tierCustomHandlers(codec, true);
+        if (result == null) result = (Schema<A>) tierTwoMapStructural(codec, cache);
+        if (result == null) result = (Schema<A>) tierThreeReflective(codec, cache);
         if (result == null) result = placeholder;
 
         cache.put(codec, result);
         return result;
+    }
+
+    // ---- Tier 0.5: user-registered SchemaHandlers (SchemaCodecs.registerHandler) ----
+    //
+    // The cache placeholder is already in place when these run, so handlers can freely
+    // resolve inner codecs through the Resolver view without breaking cycle detection.
+
+    private @org.jetbrains.annotations.Nullable Schema<?> tierCustomHandlers(Object codec, boolean isMapCodec) {
+        for (SchemaHandler handler : HANDLERS) {
+            try {
+                Schema<?> schema = isMapCodec
+                        ? handler.tryResolveMap((MapCodec<?>) codec, this)
+                        : handler.tryResolve((Codec<?>) codec, this);
+                if (schema != null) return schema;
+            } catch (Throwable t) {
+                Polytone.LOGGER.warn("[codec_ui] SchemaHandler {} threw on {}: {}",
+                        handler.getClass().getName(), codec.getClass().getName(), t.toString());
+            }
+        }
+        return null;
     }
 
     // ---- Tier 1: identity match on Codec singletons ----
@@ -362,6 +431,33 @@ public final class SchemaResolver {
             Schema<?> k = resolveCodec(dm.keyCodec(), cache);
             return new Schema.MapOf(k, new Schema.Opaque<>(null, null));
         }
+        // Holder<E> by registry id, optionally with an inline definition (SoundEvent.CODEC etc.).
+        if (codec instanceof RegistryFileCodec<?> rfc && REGISTRY_FILE_KEY != null
+                && REGISTRY_FILE_ELEMENT != null && REGISTRY_FILE_INLINE != null) {
+            var key = (ResourceKey<? extends net.minecraft.core.Registry<?>>) REGISTRY_FILE_KEY.get(rfc);
+            Schema<?> id = new Schema.ResourceId(key);
+            if ((boolean) REGISTRY_FILE_INLINE.get(rfc)) {
+                Schema<?> inline = resolveCodec((Codec<?>) REGISTRY_FILE_ELEMENT.get(rfc), cache);
+                return new Schema.EitherOf(id, inline);
+            }
+            return id;
+        }
+        // Holder<E> strictly by registry id.
+        if (codec instanceof RegistryFixedCodec<?> rfx && REGISTRY_FIXED_KEY != null) {
+            return new Schema.ResourceId((ResourceKey<? extends net.minecraft.core.Registry<?>>) REGISTRY_FIXED_KEY.get(rfx));
+        }
+        // HolderSet<E>: a "#namespace:path" tag string, a single entry, or a list of entries.
+        if (codec instanceof HolderSetCodec<?> hs && HOLDER_SET_ELEMENT != null) {
+            Schema<?> element = resolveCodec((Codec<?>) HOLDER_SET_ELEMENT.get(hs), cache);
+            Schema<?> tagOrId = new Schema.Str(0, Integer.MAX_VALUE, null);
+            return new Schema.EitherOf(tagOrId,
+                    new Schema.EitherOf(element, new Schema.ListOf(element, 0, Integer.MAX_VALUE)));
+        }
+        // Custom registries etc. that expose their value set — a dropdown of registered names.
+        if (codec instanceof EnumerableCodec en) {
+            java.util.List<String> names = new java.util.ArrayList<>(en.codecUiValues().keySet());
+            return new Schema.Enum<>(names, Function.identity());
+        }
         return null;
     }
 
@@ -397,7 +493,12 @@ public final class SchemaResolver {
             // If so, populate variants directly from that registry. Bodies stay Opaque since
             // resolving 1000+ per-variant codecs (e.g. every Block) is impractical.
             if (variants.isEmpty()) {
-                variants = enumerateFromRegistryTag(keyCodec, dispatch);
+                variants = enumerateFromRegistryTag(keyCodec, dispatch, cache);
+            }
+            if (variants.isEmpty()) {
+                // A OneOf with zero variants renders as a dead picker; raw JSON is strictly
+                // more useful, and also keeps tier 3 from mis-guessing on the key codec field.
+                return new Schema.Opaque<>(codec.codec(), null);
             }
             return new Schema.OneOf<>(typeKey, variants);
         }
@@ -424,6 +525,87 @@ public final class SchemaResolver {
             } catch (Throwable ignored) {}
         }
         return null;
+    }
+
+    // ---- Tier 3: reflective last resort over unknown (typically hand-rolled) codec classes ----
+
+    /**
+     * Scans the instance fields of an unknown Codec/MapCodec class for inner
+     * {@code Codec}/{@code MapCodec} values (including {@code Codec[]} arrays) and guesses
+     * the shape from what it finds:
+     * <ul>
+     *   <li>one inner codec → assume a shape-preserving wrapper, inherit its schema;</li>
+     *   <li>a (key, element/value) field pair → assume a map codec, produce {@code MapOf};</li>
+     *   <li>several inner codecs → assume "try each in order" alternatives (the dominant
+     *       hand-rolled pattern: reference-or-inline, multi-format unions) and produce a
+     *       right-nested {@code EitherOf} in declaration order.</li>
+     * </ul>
+     * Heuristic by design — a wrong guess is overridden by registering a tier-0 companion
+     * for that codec. Only runs after every exact tier has passed.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private @org.jetbrains.annotations.Nullable Schema<?> tierThreeReflective(Object codec,
+                                                                              IdentityHashMap<Object, Schema<?>> cache) {
+        java.util.List<Object> inners = new java.util.ArrayList<>();
+        java.util.List<String> names = new java.util.ArrayList<>();
+        try {
+            for (Class<?> cls = codec.getClass(); cls != null && cls != Object.class; cls = cls.getSuperclass()) {
+                for (java.lang.reflect.Field f : cls.getDeclaredFields()) {
+                    if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                    Class<?> t = f.getType();
+                    boolean single = Codec.class.isAssignableFrom(t) || MapCodec.class.isAssignableFrom(t);
+                    boolean array = t.isArray() && Codec.class.isAssignableFrom(t.getComponentType());
+                    if (!single && !array) continue;
+                    Object value;
+                    try {
+                        f.setAccessible(true);
+                        value = f.get(codec);
+                    } catch (Throwable inaccessible) {
+                        continue;
+                    }
+                    if (value == null || value == codec) continue;
+                    if (array) {
+                        for (Object o : (Object[]) value) {
+                            if (o != null && o != codec) {
+                                inners.add(o);
+                                names.add(f.getName().toLowerCase(java.util.Locale.ROOT));
+                            }
+                        }
+                    } else {
+                        inners.add(value);
+                        names.add(f.getName().toLowerCase(java.util.Locale.ROOT));
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            return null;
+        }
+        if (inners.isEmpty()) return null;
+
+        Polytone.LOGGER.debug("[codec_ui] tier-3 reflective guess for {} ({} inner codecs: {})",
+                codec.getClass().getName(), inners.size(), names);
+        if (inners.size() == 1) {
+            return resolveAny(inners.get(0), cache);
+        }
+        if (inners.size() == 2) {
+            String a = names.get(0), b = names.get(1);
+            boolean aKey = a.contains("key"), bKey = b.contains("key");
+            boolean aVal = a.contains("element") || a.contains("value");
+            boolean bVal = b.contains("element") || b.contains("value");
+            if (aKey && bVal) return new Schema.MapOf(resolveAny(inners.get(0), cache), resolveAny(inners.get(1), cache));
+            if (bKey && aVal) return new Schema.MapOf(resolveAny(inners.get(1), cache), resolveAny(inners.get(0), cache));
+        }
+        Schema<?> result = resolveAny(inners.get(inners.size() - 1), cache);
+        for (int i = inners.size() - 2; i >= 0; i--) {
+            result = new Schema.EitherOf(resolveAny(inners.get(i), cache), result);
+        }
+        return result;
+    }
+
+    private Schema<?> resolveAny(Object inner, IdentityHashMap<Object, Schema<?>> cache) {
+        if (inner instanceof Codec<?> c) return resolveCodec(c, cache);
+        if (inner instanceof MapCodec<?> m) return resolveMapCodec(m, cache);
+        return new Schema.Opaque<>(null, null);
     }
 
     /**
@@ -461,6 +643,36 @@ public final class SchemaResolver {
             Polytone.LOGGER.warn("[codec_ui]   decoder field is not a Function (got {})",
                     decoderFn == null ? "null" : decoderFn.getClass().getName());
             return variants;
+        }
+
+        // Path 0: ask the key codec itself. The stored keyCodec is the user codec wrapped in
+        // fieldOf(typeKey); FieldOfTags gives us the inner codec back. If it implements
+        // EnumerableCodec (custom registries like MapRegistry) or resolves to a Schema.Enum
+        // (StringRepresentable codecs), we know the exact key set of THIS dispatch — feed
+        // each key through the decoder and get real variant bodies.
+        if (KEY_DISPATCH_KEYCODEC != null) {
+            MapCodec<?> keyCodec = (MapCodec<?>) KEY_DISPATCH_KEYCODEC.get(dispatch);
+            FieldOfTags.Entry foe = keyCodec == null ? null : FieldOfTags.get(keyCodec);
+            Codec<?> innerKey = foe != null ? foe.innerCodec() : null;
+            if (innerKey instanceof EnumerableCodec en) {
+                for (var e : en.codecUiValues().entrySet()) {
+                    MapCodec<?> variantCodec = applyDecoder((Function) fn, e.getValue());
+                    if (variantCodec == null) continue;
+                    variants.put(e.getKey(), resolveMapCodec(variantCodec, cache));
+                }
+            } else if (innerKey != null
+                    && resolveCodec((Codec) innerKey, cache) instanceof Schema.Enum keyEnum) {
+                for (Object k : keyEnum.options()) {
+                    MapCodec<?> variantCodec = applyDecoder((Function) fn, k);
+                    if (variantCodec == null) continue;
+                    String name = ((Function<Object, String>) keyEnum.label()).apply(k);
+                    variants.put(name, resolveMapCodec(variantCodec, cache));
+                }
+            }
+            if (!variants.isEmpty()) {
+                Polytone.LOGGER.debug("[codec_ui]   key-codec enumeration produced {} variants", variants.size());
+                return variants;
+            }
         }
 
         for (DispatchRegistry.Hook<?> hook : DispatchRegistry.all()) {
@@ -521,7 +733,8 @@ public final class SchemaResolver {
      * edit the body as raw JSON.</p>
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private LinkedHashMap<String, Schema<?>> enumerateFromRegistryTag(MapCodec<?> keyCodec, KeyDispatchCodec<?, ?> dispatch) {
+    private LinkedHashMap<String, Schema<?>> enumerateFromRegistryTag(MapCodec<?> keyCodec, KeyDispatchCodec<?, ?> dispatch,
+                                                                      IdentityHashMap<Object, Schema<?>> cache) {
         LinkedHashMap<String, Schema<?>> variants = new LinkedHashMap<>();
 
         // Try the lazy FieldOfTags first (typical case: BLOCK.byNameCodec().fieldOf("Name")).
@@ -554,12 +767,28 @@ public final class SchemaResolver {
                 return variants;
             }
             net.minecraft.core.Registry<?> registry = (net.minecraft.core.Registry<?>) holderOpt.get().value();
-            int count = 0;
-            for (net.minecraft.resources.Identifier id : registry.keySet()) {
-                variants.put(id.toString(), new Schema.Opaque<>(null, null));
-                count++;
+            // For small registries (rule tests, height providers, ...) the registry VALUES are
+            // the dispatch keys themselves — feed each through the decoder for a real variant
+            // body. Large registries (Block, Item, ...) stay name-only with opaque bodies.
+            boolean resolveBodies = registry.size() <= 128 && KEY_DISPATCH_DECODER != null;
+            Object decoderFn = resolveBodies ? KEY_DISPATCH_DECODER.get(dispatch) : null;
+            java.util.List<net.minecraft.resources.Identifier> ids = new java.util.ArrayList<>(registry.keySet());
+            ids.sort(java.util.Comparator.comparing(net.minecraft.resources.Identifier::toString));
+            int bodies = 0;
+            for (net.minecraft.resources.Identifier id : ids) {
+                Schema<?> body = new Schema.Opaque<>(null, null);
+                if (decoderFn instanceof Function<?, ?> fn) {
+                    Object value = registry.getValue(id);
+                    MapCodec<?> variantCodec = value == null ? null : applyDecoder((Function) fn, value);
+                    if (variantCodec != null) {
+                        body = resolveMapCodec(variantCodec, cache);
+                        bodies++;
+                    }
+                }
+                variants.put(id.toString(), body);
             }
-            Polytone.LOGGER.debug("[codec_ui]   registry-backed dispatch: populated {} variants from {}", count, rid.registry().identifier());
+            Polytone.LOGGER.debug("[codec_ui]   registry-backed dispatch: populated {} variants ({} with real bodies) from {}",
+                    variants.size(), bodies, rid.registry().identifier());
         } catch (Throwable t) {
             Polytone.LOGGER.warn("[codec_ui]   Failed to enumerate registry {}: {}", rid.registry(), t.toString());
         }

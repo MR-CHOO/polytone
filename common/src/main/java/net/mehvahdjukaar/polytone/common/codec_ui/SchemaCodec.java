@@ -4,6 +4,7 @@ import com.mojang.datafixers.util.Pair;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.DynamicOps;
+import net.mehvahdjukaar.polytone.common.codec_ui.internal.SchemaResolver;
 
 /**
  * Pairing of a {@link Codec} with its {@link Schema}.

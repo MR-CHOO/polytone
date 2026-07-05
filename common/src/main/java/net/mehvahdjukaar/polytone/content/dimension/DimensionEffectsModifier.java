@@ -26,7 +26,7 @@ public record DimensionEffectsModifier(DimensionEnvAttributeModifications attrib
                                        //TODO: ad timelines
                                        DimensionTarget targets) {
 
-    public static final Decoder<DimensionEffectsModifier> CODEC = RecordCodecBuilder.create(instance ->
+    public static final Codec<DimensionEffectsModifier> CODEC = RecordCodecBuilder.create(instance ->
             instance.group(
                     DimensionEnvAttributeModifications.CODEC.optionalFieldOf("attributes_modifiers",
                             DimensionEnvAttributeModifications.EMPTY).forGetter(DimensionEffectsModifier::attributeModifications),

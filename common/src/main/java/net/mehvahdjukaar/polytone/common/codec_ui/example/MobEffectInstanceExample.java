@@ -33,8 +33,6 @@ import java.util.List;
  */
 public final class MobEffectInstanceExample {
 
-    private MobEffectInstanceExample() {}
-
     public static final SchemaCodec<MobEffectInstance> SCHEMA_CODEC;
 
     static {

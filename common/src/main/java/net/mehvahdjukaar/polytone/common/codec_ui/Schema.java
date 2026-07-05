@@ -53,10 +53,8 @@ public sealed interface Schema<A> {
     /**
      * Binds an arbitrary domain-specific widget to a codec. The {@code widgetDef} is
      * opaque to this ADT (so the core schema layer stays UI-backend-agnostic); it is
-     * populated by a backend-specific combinator — e.g.
-     * {@link net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs#withWidget} for Swing,
-     * which stores a {@link net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWidgetDef}
-     * here. Backends pattern-match on the runtime type of {@code widgetDef} to dispatch.
+     * populated by a backend-specific combinator — e.g. {@code SwingWidgetDef.bind(codec)}
+     * for Swing. Backends pattern-match on the runtime type of {@code widgetDef} to dispatch.
      */
     record Custom<A>(Object widgetDef) implements Schema<A> {}
 
