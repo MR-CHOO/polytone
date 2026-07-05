@@ -165,7 +165,7 @@ public final class ExpressionWidget implements SwingWidget, CollapsibleWidget {
 
         // Collapsed by default: the header summary (text + validity) carries the value, so
         // records with several expression fields stay one line each until actually edited.
-        section = new CollapsibleSection("expression", root, true);
+        section = new CollapsibleSection("expression", WorkbenchIcons.fx(), root, true);
         area.getDocument().addDocumentListener(new DocumentListener() {
             @Override public void insertUpdate(DocumentEvent e) { updateSummary(); }
             @Override public void removeUpdate(DocumentEvent e) { updateSummary(); }

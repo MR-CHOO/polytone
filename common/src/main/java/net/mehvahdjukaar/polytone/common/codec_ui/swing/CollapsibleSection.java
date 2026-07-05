@@ -30,11 +30,26 @@ final class CollapsibleSection extends JPanel {
 
     private final JLabel chevron = new JLabel();
     private final JLabel summary = new JLabel();
-    private final JPanel contentHost = new JPanel(new java.awt.BorderLayout());
+    // Rounded hairline container — the one grouping style shared with AnyOf and list items.
+    private final JPanel contentHost = new JPanel(new java.awt.BorderLayout()) {
+        @Override public void updateUI() {
+            super.updateUI();
+            setOpaque(false);
+            setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
+                    new java.awt.Insets(8, 10, 8, 10), EditorOps.dividerColor(), 1f, 10));
+        }
+    };
+    private JPanel indentHost;
     private boolean collapsed = true;
     private boolean summaryError;
 
     CollapsibleSection(String title, JComponent content, boolean collapsedByDefault) {
+        this(title, null, content, collapsedByDefault);
+    }
+
+    /** {@code glyph} marks the embedded language (ƒ(x) for expressions, &lt;/&gt; for JSON). */
+    CollapsibleSection(String title, @Nullable javax.swing.Icon glyph, JComponent content,
+                       boolean collapsedByDefault) {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setOpaque(false);
         setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -53,6 +68,10 @@ final class CollapsibleSection extends JPanel {
         header.setToolTipText("Click to expand / collapse");
         header.add(chevron);
         header.add(Box.createHorizontalStrut(UiScale.small()));
+        if (glyph != null) {
+            header.add(new JLabel(glyph));
+            header.add(Box.createHorizontalStrut(UiScale.small()));
+        }
         header.add(titleLabel);
         header.add(Box.createHorizontalStrut(UiScale.med()));
         header.add(summary);
@@ -63,19 +82,20 @@ final class CollapsibleSection extends JPanel {
             @Override public void mouseClicked(MouseEvent e) { setCollapsed(!collapsed); }
         });
 
-        // Content aligned under the title (indented past the chevron), with a hairline rail
-        // tying it back to its header — same grouping language as list rows.
-        contentHost.setOpaque(false);
+        // Expanded content sits in the workbench's shared grouping container: rounded
+        // hairline outline (same language as AnyOf groups and list items).
         contentHost.setAlignmentX(Component.LEFT_ALIGNMENT);
-        contentHost.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createEmptyBorder(UiScale.small(), UiScale.px(7), 0, 0),
-                BorderFactory.createCompoundBorder(
-                        BorderFactory.createMatteBorder(0, UiScale.px(2), 0, 0, EditorOps.dividerColor()),
-                        BorderFactory.createEmptyBorder(0, UiScale.med(), 0, 0))));
         contentHost.add(content, java.awt.BorderLayout.CENTER);
 
+        JPanel indent = new JPanel(new java.awt.BorderLayout());
+        indent.setOpaque(false);
+        indent.setAlignmentX(Component.LEFT_ALIGNMENT);
+        indent.setBorder(BorderFactory.createEmptyBorder(UiScale.small(), UiScale.px(7), 0, 0));
+        indent.add(contentHost, java.awt.BorderLayout.CENTER);
+
         add(header);
-        add(contentHost);
+        add(indent);
+        this.indentHost = indent;
         setCollapsed(collapsedByDefault);
     }
 
@@ -84,7 +104,7 @@ final class CollapsibleSection extends JPanel {
         Icon icon = UIManager.getIcon(collapsed ? "Tree.collapsedIcon" : "Tree.expandedIcon");
         chevron.setIcon(icon);
         if (icon == null) chevron.setText(collapsed ? "▸" : "▾"); // L&F without tree icons
-        contentHost.setVisible(!collapsed);
+        if (indentHost != null) indentHost.setVisible(!collapsed);
         summary.setVisible(collapsed);
         revalidate();
         repaint();

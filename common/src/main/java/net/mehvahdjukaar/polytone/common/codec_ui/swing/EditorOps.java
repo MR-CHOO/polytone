@@ -107,7 +107,7 @@ final class EditorOps {
      * source of truth; the bootstrap reads {@link #ACCENT_HEX}, widgets read
      * {@link #accentColor()}.
      */
-    static final String ACCENT_HEX = "#4C8DF6";
+    static final String ACCENT_HEX = "#8B5CF6";
 
     /** The accent as a {@link Color} for hand-drawn touches (brand text, gutters). */
     static Color accentColor() {
@@ -127,6 +127,14 @@ final class EditorOps {
     static Color dividerColor() {
         Color c = UIManager.getColor("Component.borderColor");
         return c != null ? c : surface(0.12f);
+    }
+
+    /** Linear blend a→b by t (0..1) — tinted pills/banners without alpha compositing. */
+    static Color mix(Color a, Color b, float t) {
+        return new Color(
+                Math.round(a.getRed() + (b.getRed() - a.getRed()) * t),
+                Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * t),
+                Math.round(a.getBlue() + (b.getBlue() - a.getBlue()) * t));
     }
 
     private static Color shiftBrightness(@Nullable Color base, float delta) {

@@ -54,8 +54,9 @@ final class PackTreePanel extends JPanel {
         packLabel.setFont(UiScale.deriveFont(packLabel.getFont(), Font.BOLD, -1f));
         packLabel.setForeground(EditorOps.mutedColor());
         header.add(packLabel, BorderLayout.CENTER);
-        JButton refresh = new JButton("Refresh");
+        JButton refresh = new JButton(WorkbenchIcons.refresh());
         refresh.putClientProperty("JButton.buttonType", "toolBarButton");
+        refresh.setFocusable(false);
         refresh.setToolTipText("Re-scan the pack folder");
         refresh.addActionListener(e -> refresh());
         header.add(refresh, BorderLayout.EAST);

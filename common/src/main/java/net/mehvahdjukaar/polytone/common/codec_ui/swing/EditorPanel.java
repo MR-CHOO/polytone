@@ -18,6 +18,7 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
@@ -66,6 +67,18 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
     private final SwingWidget rootWidget;
     private final JLabel errorLabel = new JLabel(" ");
     private final javax.swing.Timer previewTimer;
+    private final JPanel kindHeader = new JPanel();
+    /** Accent-outlined chip naming the content type being edited ("Fluid modifier"). */
+    private final JLabel kindChip = new JLabel() {
+        @Override public void updateUI() {
+            super.updateUI();
+            setForeground(EditorOps.accentColor());
+            setFont(UiScale.deriveFont(getFont(), Font.BOLD, -1f));
+            setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
+                    new java.awt.Insets(2, 8, 2, 8),
+                    EditorOps.mix(EditorOps.dividerColor(), EditorOps.accentColor(), 0.5f), 1f, 999));
+        }
+    };
 
     private @Nullable Path boundFile;
     private @Nullable Path defaultDir;
@@ -90,6 +103,20 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
 
         setBorder(BorderFactory.createEmptyBorder(
                 UiScale.med(), UiScale.med(), UiScale.med(), UiScale.med()));
+
+        // ---- Kind header: what am I editing? (hidden until the shell names it) ----
+        kindHeader.setLayout(new BoxLayout(kindHeader, BoxLayout.X_AXIS));
+        kindHeader.setOpaque(false);
+        JLabel sideLabel = new JLabel(side == Side.SERVER_DATA
+                ? "datapack side" : "resource pack side");
+        sideLabel.setForeground(EditorOps.mutedColor());
+        sideLabel.setFont(UiScale.deriveFont(sideLabel.getFont(), Font.PLAIN, -1f));
+        kindHeader.add(kindChip);
+        kindHeader.add(Box.createHorizontalStrut(UiScale.med()));
+        kindHeader.add(sideLabel);
+        kindHeader.add(Box.createHorizontalGlue());
+        kindHeader.setVisible(false);
+        add(kindHeader, BorderLayout.NORTH);
 
         // ---- Center split: scrollable form (left) | live JSON preview (right) ----
         JPanel scrollHost = new ScrollableFormHost(new BorderLayout());
@@ -169,6 +196,16 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
     /** Shell callback after every successful write (status line, tree refresh). */
     public void setOnSavedToFile(@Nullable Consumer<Path> onSavedToFile) {
         this.onSavedToFile = onSavedToFile;
+    }
+
+    /** Names the content type being edited ("Fluid modifier") — shown as a header chip. */
+    public void setContentKind(@Nullable String kind) {
+        if (kind == null || kind.isBlank()) {
+            kindHeader.setVisible(false);
+        } else {
+            kindChip.setText(kind);
+            kindHeader.setVisible(true);
+        }
     }
 
     // -------------------- Content --------------------
@@ -309,7 +346,9 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
     // -------------------- Live preview --------------------
 
     private RSyntaxTextArea previewArea;
-    private JTextArea previewStatus;
+    private Pill validityPill;
+    private JTextArea errorBanner;
+    private JPanel errorBannerHost;
 
     private JComponent buildJsonPreview() {
         previewArea = new RSyntaxTextArea();
@@ -321,25 +360,87 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         UIManager.addPropertyChangeListener(lafListener);
 
         RTextScrollPane areaScroll = new RTextScrollPane(previewArea);
-        areaScroll.setLineNumbersEnabled(false);
+        areaScroll.setLineNumbersEnabled(true);
         areaScroll.setBorder(BorderFactory.createLineBorder(UIManager.getColor("Component.borderColor")));
 
-        // Wrapping, read-only status line — validation errors show IN FULL, never elided.
-        previewStatus = new JTextArea("Output");
-        previewStatus.setEditable(false);
-        previewStatus.setFocusable(false);
-        previewStatus.setLineWrap(true);
-        previewStatus.setWrapStyleWord(true);
-        previewStatus.setOpaque(false);
-        previewStatus.setFont(UIManager.getFont("Label.font"));
-        previewStatus.setBorder(BorderFactory.createEmptyBorder(0, 0, UiScale.small(), 0));
+        // ---- Header: title | validity pill | copy ----
+        JLabel title = new JLabel("JSON Preview");
+        title.setFont(UiScale.deriveFont(title.getFont(), Font.BOLD, 0f));
 
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.add(previewStatus, BorderLayout.NORTH);
+        validityPill = new Pill();
+
+        JButton copy = new JButton(WorkbenchIcons.copy());
+        copy.putClientProperty("JButton.buttonType", "toolBarButton");
+        copy.setFocusable(false);
+        copy.setToolTipText("Copy JSON to clipboard");
+        copy.addActionListener(e -> Toolkit.getDefaultToolkit().getSystemClipboard().setContents(
+                new java.awt.datatransfer.StringSelection(previewArea.getText()), null));
+
+        Box header = Box.createHorizontalBox();
+        header.add(title);
+        header.add(Box.createHorizontalGlue());
+        header.add(validityPill);
+        header.add(Box.createHorizontalStrut(UiScale.small()));
+        header.add(copy);
+
+        // ---- Bottom banner: FULL validation error, tinted red, never elided ----
+        errorBanner = new JTextArea();
+        errorBanner.setEditable(false);
+        errorBanner.setFocusable(false);
+        errorBanner.setLineWrap(true);
+        errorBanner.setWrapStyleWord(true);
+        errorBanner.setOpaque(false);
+        errorBanner.setFont(UiScale.deriveFont(UIManager.getFont("Label.font"), Font.PLAIN, -1f));
+        errorBannerHost = new JPanel(new BorderLayout()) {
+            @Override public void updateUI() {
+                super.updateUI();
+                setOpaque(true);
+                setBackground(EditorOps.mix(EditorOps.surface(0f), EditorOps.errorColor(), 0.12f));
+                setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
+                        new java.awt.Insets(8, 10, 8, 10),
+                        EditorOps.mix(EditorOps.surface(0f), EditorOps.errorColor(), 0.5f), 1f, 10));
+                if (errorBanner != null) errorBanner.setForeground(EditorOps.errorColor());
+            }
+        };
+        errorBannerHost.add(errorBanner, BorderLayout.CENTER);
+        errorBannerHost.setVisible(false);
+
+        JPanel panel = new JPanel(new BorderLayout(0, UiScale.small()));
+        panel.add(header, BorderLayout.NORTH);
         panel.add(areaScroll, BorderLayout.CENTER);
+        panel.add(errorBannerHost, BorderLayout.SOUTH);
         panel.setPreferredSize(new Dimension(UiScale.px(460), UiScale.px(400)));
         panel.setMinimumSize(new Dimension(UiScale.px(280), UiScale.px(200)));
         return panel;
+    }
+
+    /** Small filled rounded status chip ("Valid" / "Invalid"). */
+    private static final class Pill extends JLabel {
+        Pill() {
+            setText(" ");
+            setBorder(BorderFactory.createEmptyBorder(
+                    UiScale.px(2), UiScale.px(8), UiScale.px(2), UiScale.px(8)));
+        }
+
+        void set(String text, Color fg, Color bg) {
+            setText(text);
+            setForeground(fg);
+            setBackground(bg);
+            setFont(UiScale.deriveFont(UIManager.getFont("Label.font"), Font.BOLD, -1f));
+            repaint();
+        }
+
+        @Override protected void paintComponent(java.awt.Graphics g) {
+            if (getBackground() != null && !getText().isBlank()) {
+                java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+                g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                        java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), getHeight(), getHeight());
+                g2.dispose();
+            }
+            super.paintComponent(g);
+        }
     }
 
     /** (Re)apply the RSyntaxTextArea theme matching the current FlatLaf light/dark mode. */
@@ -383,23 +484,30 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         lastRefreshKey = key;
 
         boolean ok = false;
-        String state;
-        if (buildError != null) {
-            state = "✗ " + buildError;
-        } else {
+        String problem = buildError;
+        if (buildError == null) {
             try {
                 DataResult<A> parsed = codec.parse(ops, json);
                 ok = parsed.error().isEmpty();
-                state = ok ? "✓ valid" : "✗ " + parsed.error().get().message();
+                if (!ok) problem = parsed.error().get().message();
             } catch (Throwable t) {
-                state = "✗ " + t;
+                problem = String.valueOf(t);
             }
         }
         previewArea.setText(text);
         previewArea.setCaretPosition(0);
-        previewStatus.setText(state);
-        Color okColor = UIManager.getColor("Label.foreground");
-        previewStatus.setForeground(ok ? okColor : EditorOps.errorColor());
+        Color surface = EditorOps.surface(0f);
+        if (ok) {
+            validityPill.set("Valid", EditorOps.successColor(),
+                    EditorOps.mix(surface, EditorOps.successColor(), 0.18f));
+            errorBannerHost.setVisible(false);
+        } else {
+            validityPill.set("Invalid", EditorOps.errorColor(),
+                    EditorOps.mix(surface, EditorOps.errorColor(), 0.18f));
+            errorBanner.setText(problem == null ? "unknown error" : problem);
+            errorBannerHost.setVisible(true);
+        }
+        revalidate();
 
         if (buildError == null) {
             if (baselineText == null) {

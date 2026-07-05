@@ -41,6 +41,17 @@ final class WorkbenchIcons {
     static Icon trash()     { return themed("trash-2"); }
     static Icon sun()       { return themed("sun"); }
     static Icon moon()      { return themed("moon"); }
+    static Icon copy()      { return themed("copy"); }
+    static Icon zoomIn()    { return themed("zoom-in"); }
+    static Icon zoomOut()   { return themed("zoom-out"); }
+
+    /** Accent glyphs marking embedded-language fields: ƒ(x) = expression, &lt;/&gt; = raw JSON. */
+    static Icon fx()        { return new ThemedSvgIcon("square-function", SIZE, EditorOps::accentColor); }
+    static Icon codeGlyph() { return new ThemedSvgIcon("code", SIZE, EditorOps::accentColor); }
+
+    /** Status-bar state glyphs, tinted to their semantic color. */
+    static Icon checkTinted() { return new ThemedSvgIcon("check", SIZE, EditorOps::successColor); }
+    static Icon xTinted()     { return new ThemedSvgIcon("x", SIZE, EditorOps::errorColor); }
 
     /** Accent-colored plus, matching the list rail. */
     static Icon plusAccent() { return new ThemedSvgIcon("plus", SIZE, EditorOps::accentColor); }

@@ -134,14 +134,38 @@ public final class SwingSchemaEditor implements SchemaEditor {
         applyUiDefaults();
     }
 
+    // -------------------- UI zoom --------------------
+
+    private static final String FONT_PREF_KEY = "baseFontPt";
+    private static final int DEFAULT_FONT_PT = 20;
+    private static int fontPt = PREFS.getInt(FONT_PREF_KEY, DEFAULT_FONT_PT);
+
+    /**
+     * Zoom the whole UI by nudging the base font ({@code deltaPt} pt; 0 resets). FlatLaf
+     * derives component metrics from the default font, so this rescales everything except
+     * the hand-sized monospace editors. Persisted across sessions.
+     */
+    static void adjustZoom(int deltaPt) {
+        fontPt = deltaPt == 0 ? DEFAULT_FONT_PT
+                : Math.max(12, Math.min(32, fontPt + deltaPt));
+        PREFS.putInt(FONT_PREF_KEY, fontPt);
+        UIManager.put("defaultFont", new FontUIResource(Font.SANS_SERIF, Font.PLAIN, fontPt));
+        FlatLaf.updateUI();
+    }
+
+    static int zoomPercent() {
+        return Math.round(fontPt * 100f / DEFAULT_FONT_PT);
+    }
+
     /**
      * Fonts, minimum component sizes and visual polish layered on top of whichever FlatLaf
      * theme is installed. Must run after EVERY {@code setup()} — installing an L&amp;F resets
      * the UIManager defaults, so a live theme switch has to re-apply these.
      */
     private static void applyUiDefaults() {
-        // 20pt logical (was 18). FlatLaf further scales by flatlaf.uiScale.
-        UIManager.put("defaultFont", new FontUIResource(Font.SANS_SERIF, Font.PLAIN, 20));
+        // Base font in logical pt (FlatLaf further scales by flatlaf.uiScale). Mutable:
+        // this is the UI zoom — bumping it makes FlatLaf recompute every component metric.
+        UIManager.put("defaultFont", new FontUIResource(Font.SANS_SERIF, Font.PLAIN, fontPt));
 
         // Minimum component heights — logical px, FlatLaf scales them.
         UIManager.put("Button.minimumHeight", 48);

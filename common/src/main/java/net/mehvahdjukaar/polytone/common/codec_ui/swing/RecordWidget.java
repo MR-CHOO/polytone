@@ -73,6 +73,9 @@ public final class RecordWidget implements SwingWidget {
             FieldEntry entry = new FieldEntry(field, child);
             entries.add(entry);
 
+            // Lists get their element name for a contextual add button ("Add Emitter").
+            if (child instanceof ListWidget list) list.setItemLabel(prettyName(field.name()));
+
             // Optional fields start out showing their declared default (when representable);
             // snapshot that pristine output as the field's "unset" baseline.
             if (field.optional()) {
@@ -81,21 +84,30 @@ public final class RecordWidget implements SwingWidget {
                 entry.unsetBaseline = snapshot(child);
             }
 
-            // Right-aligned label column.
-            JLabel name = new JLabel(field.name());
+            // Right-aligned label column: prettified name (raw JSON key in the tooltip).
+            JLabel name = new JLabel(prettyName(field.name()));
             name.setFont(name.getFont().deriveFont(Font.PLAIN));
+            name.setToolTipText(field.name());
 
             JPanel labelCell = new JPanel(new GridBagLayout());
+            labelCell.setOpaque(false);
             GridBagConstraints lc = new GridBagConstraints();
             lc.gridx = 0;
             lc.anchor = GridBagConstraints.LINE_END;
             labelCell.add(name, lc);
             if (field.optional()) {
-                JLabel opt = new JLabel("opt");
-                opt.setFont(UiScale.deriveFont(opt.getFont(), Font.ITALIC, -2f));
-                opt.setForeground(mutedColor);
-                opt.setBorder(BorderFactory.createEmptyBorder(0, UiScale.small(), 0, 0));
+                // Tiny outlined pill badge — quieter than text, clearly metadata.
+                JLabel opt = new JLabel("opt") {
+                    @Override public void updateUI() {
+                        super.updateUI();
+                        setFont(UiScale.deriveFont(getFont(), Font.PLAIN, -3f));
+                        setForeground(EditorOps.mutedColor());
+                        setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
+                                new java.awt.Insets(1, 6, 1, 6), EditorOps.dividerColor(), 1f, 999));
+                    }
+                };
                 lc.gridx = 1;
+                lc.insets = new java.awt.Insets(0, UiScale.small(), 0, 0);
                 labelCell.add(opt, lc);
             }
 
@@ -184,6 +196,17 @@ public final class RecordWidget implements SwingWidget {
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    /** {@code sound_emitters} → {@code Sound Emitters}; the raw key stays in the tooltip. */
+    private static String prettyName(String raw) {
+        StringBuilder sb = new StringBuilder(raw.length());
+        for (String part : raw.split("[_\\s]+")) {
+            if (part.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+        }
+        return sb.length() > 0 ? sb.toString() : raw;
     }
 
     /** JSON form of a primitive default value; null for complex/absent defaults. */

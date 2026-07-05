@@ -95,6 +95,7 @@ public final class SwingWorkbench {
     private final JPanel centerHost = new JPanel(centerCards);
     private final PackTreePanel treePanel;
     private final JLabel packLabel = new JLabel("No pack opened");
+    private final JLabel packKindLabel = new JLabel();
     private final JLabel statusLabel = new JLabel(" ");
     private final JLabel infoLabel = new JLabel();
     private final JButton newContentButton = new JButton("New Content…");
@@ -122,7 +123,7 @@ public final class SwingWorkbench {
         SwingUtilities.invokeLater(() -> {
             SwingWorkbench wb = ensureInstance(new Workbench(List.of()));
             wb.show();
-            wb.addCodecTab("standalone:" + label, codec, label, side, initialJson, null, onSave);
+            wb.addCodecTab("standalone:" + label, codec, label, side, null, initialJson, null, onSave);
         });
     }
 
@@ -231,6 +232,9 @@ public final class SwingWorkbench {
         bar.add(Box.createHorizontalGlue());
 
         // Game-sync pair: green-tinted icons — "this talks to the running game".
+        // Borderless like the mockup: lighter header, the tint does the signaling.
+        reloadResourcesButton.putClientProperty("JButton.buttonType", "toolBarButton");
+        reloadDataButton.putClientProperty("JButton.buttonType", "toolBarButton");
         reloadResourcesButton.setIcon(WorkbenchIcons.refreshTinted());
         reloadResourcesButton.setToolTipText("Reload the game's resource packs (F3+T) so saved files take effect");
         reloadResourcesButton.addActionListener(e -> triggerReload(Side.CLIENT_RESOURCES, reloadResourcesButton));
@@ -244,8 +248,26 @@ public final class SwingWorkbench {
         bar.add(Box.createHorizontalStrut(UiScale.med()));
         bar.add(toolbarSeparator());
         bar.add(Box.createHorizontalStrut(UiScale.small()));
+        bar.add(zoomButton(WorkbenchIcons.zoomOut(), "Zoom out (Ctrl+-)", -2));
+        bar.add(zoomButton(WorkbenchIcons.zoomIn(), "Zoom in (Ctrl+=)", +2));
+        bar.add(Box.createHorizontalStrut(UiScale.small()));
         bar.add(buildThemeToggle());
         return bar;
+    }
+
+    private JButton zoomButton(javax.swing.Icon icon, String tooltip, int deltaPt) {
+        JButton button = new JButton(icon);
+        button.putClientProperty("JButton.buttonType", "toolBarButton");
+        button.setFocusable(false);
+        button.setToolTipText(tooltip);
+        button.addActionListener(e -> adjustZoom(deltaPt));
+        return button;
+    }
+
+    private void adjustZoom(int deltaPt) {
+        SwingSchemaEditor.adjustZoom(deltaPt);
+        status("Zoom " + SwingSchemaEditor.zoomPercent() + "%"
+                + (deltaPt == 0 ? "" : "  (Ctrl+0 resets)"));
     }
 
     /** Vertical hairline dividing toolbar groups (actions | breadcrumb | game sync | theme). */
@@ -281,6 +303,10 @@ public final class SwingWorkbench {
         chip.add(icon);
         chip.add(Box.createHorizontalStrut(UiScale.small()));
         chip.add(packLabel);
+        chip.add(Box.createHorizontalStrut(UiScale.med()));
+        packKindLabel.setForeground(EditorOps.accentColor());
+        packKindLabel.setFont(UiScale.deriveFont(packKindLabel.getFont(), Font.PLAIN, -1f));
+        chip.add(packKindLabel);
         chip.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
         chip.setToolTipText("Click to open a different pack");
         chip.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -329,13 +355,28 @@ public final class SwingWorkbench {
 
         // Ctrl+W closes the selected tab.
         var im = centerHost.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
-        im.put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_W,
-                Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()), "closeTab");
+        int menuMask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+        im.put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_W, menuMask), "closeTab");
         centerHost.getActionMap().put("closeTab", new javax.swing.AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) {
                 int index = editorTabs.getSelectedIndex();
                 if (index >= 0) closeTab(index);
             }
+        });
+
+        // Ctrl+= / Ctrl+- / Ctrl+0: UI zoom (base-font scaling).
+        im.put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_EQUALS, menuMask), "zoomIn");
+        im.put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_PLUS, menuMask), "zoomIn");
+        im.put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_MINUS, menuMask), "zoomOut");
+        im.put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_0, menuMask), "zoomReset");
+        centerHost.getActionMap().put("zoomIn", new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) { adjustZoom(+2); }
+        });
+        centerHost.getActionMap().put("zoomOut", new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) { adjustZoom(-2); }
+        });
+        centerHost.getActionMap().put("zoomReset", new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) { adjustZoom(0); }
         });
 
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebar, centerHost);
@@ -515,9 +556,11 @@ public final class SwingWorkbench {
                 && model.entries().stream().anyMatch(e -> e.containerDir() != null));
         if (ws == null) {
             packLabel.setText("No pack opened");
+            packKindLabel.setText("");
             infoLabel.setText(UiScale.scaleAsPercent());
         } else {
-            packLabel.setText(ws.name() + "  —  " + ws.kind().display());
+            packLabel.setText(ws.name());
+            packKindLabel.setText(ws.kind().display());
             packLabel.setToolTipText(ws.root().toString());
             infoLabel.setText(UiScale.scaleAsPercent() + " · " + ws.root());
             status("Opened " + ws.kind().display().toLowerCase(Locale.ROOT) + ": " + ws.root());
@@ -569,6 +612,7 @@ public final class SwingWorkbench {
         }
         // Bound but not yet on disk: the file (and its namespace/container folders) are
         // created on first save, so cancelled tabs leave no debris in the pack.
+        panel.setContentKind(created.entry().label());
         panel.bindFile(created.file());
         panel.setDefaultDir(created.file().getParent());
         panel.setOnSavedToFile(saved -> {
@@ -584,14 +628,14 @@ public final class SwingWorkbench {
 
     private void openEntryTab(CodecEntry entry) {
         PackWorkspace ws = model.workspace();
-        addCodecTab(entry, entry.codec(), entry.label(), entry.side(), null,
+        addCodecTab(entry, entry.codec(), entry.label(), entry.side(), entry.label(), null,
                 ws != null ? ws.root() : null, null);
     }
 
     @SuppressWarnings("unchecked")
     private <A> void addCodecTab(Object key, SchemaCodec<?> codec, String label, Side side,
-                                 @Nullable JsonElement initialJson, @Nullable Path defaultDir,
-                                 @Nullable Consumer<A> onSave) {
+                                 @Nullable String contentKind, @Nullable JsonElement initialJson,
+                                 @Nullable Path defaultDir, @Nullable Consumer<A> onSave) {
         if (focusExisting(key)) return;
         EditorPanel<A> panel;
         try {
@@ -601,6 +645,7 @@ public final class SwingWorkbench {
             statusError("Could not build editor for " + label + ": " + t);
             return;
         }
+        panel.setContentKind(contentKind);
         panel.setDefaultDir(defaultDir);
         if (onSave != null) panel.setOnSave(onSave);
         panel.setOnSavedToFile(file -> {
@@ -661,6 +706,7 @@ public final class SwingWorkbench {
             statusError("Could not build editor (" + t + ") — opening as text");
             return false;
         }
+        panel.setContentKind(entry.label());
         panel.bindFile(file);
         panel.setDefaultDir(file.getParent());
         panel.setOnSavedToFile(saved -> {
@@ -779,18 +825,20 @@ public final class SwingWorkbench {
     }
 
     private void status(String message) {
-        statusMessage(message, null);
+        statusMessage(message, null, null);
     }
 
     private void statusSuccess(String message) {
-        statusMessage(message, EditorOps.successColor());
+        statusMessage(message, EditorOps.successColor(), WorkbenchIcons.checkTinted());
     }
 
     private void statusError(String message) {
-        statusMessage(message, EditorOps.errorColor());
+        statusMessage(message, EditorOps.errorColor(), WorkbenchIcons.xTinted());
     }
 
-    private void statusMessage(String message, java.awt.@Nullable Color color) {
+    private void statusMessage(String message, java.awt.@Nullable Color color,
+                               javax.swing.@Nullable Icon icon) {
+        statusLabel.setIcon(icon);
         statusLabel.setForeground(color != null ? color
                 : UIManager.getColor("Label.foreground"));
         statusLabel.setText(message);

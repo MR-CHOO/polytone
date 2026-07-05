@@ -24,6 +24,8 @@ public final class ListWidget implements SwingWidget {
     private final JPanel root = new JPanel();
     private final JPanel rowsHost = new JPanel();
     private final javax.swing.JLabel emptyHint = new javax.swing.JLabel("(empty)");
+    // Minimal "+" — contextual label goes in the tooltip via setItemLabel.
+    private final JButton addButton = new JButton(WorkbenchIcons.plusAccent());
     private final List<SwingWidget> rowWidgets = new ArrayList<>();
     private final List<JPanel> rowPanels = new ArrayList<>();
     private final List<javax.swing.JLabel> indexLabels = new ArrayList<>();
@@ -49,15 +51,29 @@ public final class ListWidget implements SwingWidget {
         JPanel addBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         addBar.setOpaque(false);
         addBar.setAlignmentX(Component.LEFT_ALIGNMENT);
-        JButton add = new JButton("Add", WorkbenchIcons.plusAccent());
-        add.putClientProperty("JButton.buttonType", "roundRect");
-        add.addActionListener(e -> {
+        addButton.putClientProperty("JButton.buttonType", "roundRect");
+        addButton.setToolTipText("Add item"); // refined by setItemLabel when nested in a record
+        addButton.addActionListener(e -> {
             addRow(null);
             root.revalidate();
             root.repaint();
         });
-        addBar.add(add);
+        addBar.add(addButton);
         root.add(addBar);
+    }
+
+    /**
+     * The owning record passes the (prettified) field name; the button stays a minimal
+     * "+" — the context lives in its tooltip ("Add Sound Emitter").
+     */
+    void setItemLabel(String pluralPretty) {
+        addButton.setToolTipText("Add " + singularize(pluralPretty));
+    }
+
+    private static String singularize(String s) {
+        if (s.endsWith("ies") && s.length() > 3) return s.substring(0, s.length() - 3) + "y";
+        if (s.endsWith("s") && !s.endsWith("ss") && s.length() > 1) return s.substring(0, s.length() - 1);
+        return s;
     }
 
     private void addRow(@Nullable JsonElement initialValue) {
@@ -77,14 +93,13 @@ public final class ListWidget implements SwingWidget {
         row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        // Thin left rail + indent groups each element with its index and remove button so
-        // the array reads as a stack of list items; the empty bottom border replaces the
-        // old inter-row struts (which leaked in rowsHost when a row was removed).
+        // Rounded hairline item container — the ONE grouping style shared with AnyOf and
+        // expanded collapsibles. The empty bottom border replaces the old inter-row struts
+        // (which leaked in rowsHost when a row was removed).
         row.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createEmptyBorder(0, 0, UiScale.med(), 0),
-                BorderFactory.createCompoundBorder(
-                        BorderFactory.createMatteBorder(0, UiScale.px(2), 0, 0, EditorOps.accentColor()),
-                        BorderFactory.createEmptyBorder(0, UiScale.med(), 0, 0))));
+                new com.formdev.flatlaf.ui.FlatLineBorder(
+                        new java.awt.Insets(8, 10, 8, 10), EditorOps.dividerColor(), 1f, 10)));
 
         // Everything top-aligned: with tall children (records, pickers) a centered remove
         // button floats in the middle of the row, which is what made lists feel off.

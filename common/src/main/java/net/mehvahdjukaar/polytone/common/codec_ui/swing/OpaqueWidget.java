@@ -152,7 +152,7 @@ public final class OpaqueWidget implements SwingWidget, CollapsibleWidget {
         root.add(scroll);
         root.add(errorLabel);
 
-        section = new CollapsibleSection("Raw JSON", root, true);
+        section = new CollapsibleSection("Raw JSON", WorkbenchIcons.codeGlyph(), root, true);
 
         // Live syntax validation, on whichever Document we bound.
         docAttach.attach(new DocumentListener() {
