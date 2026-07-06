@@ -27,9 +27,7 @@ public final class EnumWidget implements SwingWidget {
         }
         this.combo = new JComboBox<>(labels.toArray(new String[0]));
         // Allow horizontal stretch in BoxLayout/GridBag parents.
-        int h = combo.getPreferredSize().height;
-        combo.setMaximumSize(new Dimension(Integer.MAX_VALUE, h));
-        combo.setMinimumSize(new Dimension(0, h));
+        UiScale.pinRowHeight(combo);
     }
 
     @Override

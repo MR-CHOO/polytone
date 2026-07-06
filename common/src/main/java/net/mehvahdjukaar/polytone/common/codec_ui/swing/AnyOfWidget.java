@@ -36,9 +36,7 @@ public final class AnyOfWidget implements SwingWidget {
             super.updateUI();
             setOpaque(false);
             setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
-                    new java.awt.Insets(UiScale.zoomLogical(8), UiScale.zoomLogical(10),
-                            UiScale.zoomLogical(10), UiScale.zoomLogical(10)),
-                    EditorOps.dividerColor(), 1f, 10));
+                    new java.awt.Insets(8, 10, 10, 10), EditorOps.dividerColor(), 1f, 10));
         }
     };
     private final JPanel subHost = new JPanel(new BorderLayout());
@@ -60,7 +58,7 @@ public final class AnyOfWidget implements SwingWidget {
         combo = new JComboBox<>(labels);
         combo.setAlignmentX(Component.LEFT_ALIGNMENT);
         // Compact selector: size to its longest option instead of stretching form-wide.
-        combo.setMaximumSize(combo.getPreferredSize());
+        UiScale.pinCompact(combo);
         root.add(combo);
         root.add(javax.swing.Box.createVerticalStrut(UiScale.med()));
         subHost.setOpaque(false);

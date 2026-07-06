@@ -2,11 +2,16 @@ package net.mehvahdjukaar.polytone.common.codec_ui.swing;
 
 import com.formdev.flatlaf.util.UIScale;
 
+import javax.swing.JComponent;
+import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Insets;
 import java.awt.Toolkit;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 
 /**
  * Thin delegate over FlatLaf's {@link UIScale}. Use these helpers for every
@@ -158,6 +163,61 @@ public final class UiScale {
         // fraction of a zoomed-up one.
         float scaledDelta = sizeDeltaLogical * scale() * zoom;
         return base.deriveFont(style, base.getSize2D() + scaledDelta);
+    }
+
+    /**
+     * Glue a single-line component's MAX height to its LIVE preferred height so a
+     * {@code BoxLayout} parent (list / map rows, the form root) never stretches it
+     * vertically — and RE-PIN whenever its font changes (theme switch / UI zoom).
+     *
+     * <p>The old pattern captured {@code getPreferredSize().height} ONCE at construction and
+     * pinned {@code maximumSize} to it. After a zoom the font (and real preferred height)
+     * grew but the cap stayed at the original height, so the widget's text got clipped — the
+     * "lists cut off with zoom" bug. FlatLaf re-applies the zoomed default font on
+     * {@code updateUI()}, which fires a {@code "font"} property change we re-pin on.</p>
+     */
+    public static void pinRowHeight(JComponent c) { installRowPin(c, false); }
+
+    /** Like {@link #pinRowHeight} but also caps WIDTH to preferred — compact combos that
+     *  must not span the whole form column. */
+    public static void pinCompact(JComponent c) { installRowPin(c, true); }
+
+    private static void installRowPin(JComponent c, boolean compactWidth) {
+        Runnable pin = () -> {
+            Dimension p = c.getPreferredSize();
+            if (compactWidth) {
+                c.setMaximumSize(new Dimension(p.width, p.height));
+            } else {
+                c.setMaximumSize(new Dimension(Integer.MAX_VALUE, p.height));
+                c.setMinimumSize(new Dimension(0, p.height));
+            }
+        };
+        pin.run();
+        // FlatLaf.updateUI() re-applies the (zoomed) default font, firing this event — but it
+        // fires DURING updateUI's tree traversal. Re-pinning synchronously there mutates sizes
+        // (→ invalidate) mid-layout and corrupts BoxLayout's non-reentrant size cache (the
+        // "xTotal is null" NPE). Defer so it runs after the update/layout settles.
+        c.addPropertyChangeListener("font", e -> SwingUtilities.invokeLater(pin));
+    }
+
+    // Guards {@link #maxHeightHugging} against reentrancy — EDT-only, so a plain identity set.
+    private static final Set<Object> SIZE_GUARD = Collections.newSetFromMap(new IdentityHashMap<>());
+
+    /**
+     * Reentrancy-safe "fill available width, hug the LIVE preferred height" — the idiom for a
+     * {@code BoxLayout} child that must not stretch vertically yet grows with a zoomed font.
+     * Swing's {@code BoxLayout} size cache is not reentrant: if this component's size is queried
+     * again while we're mid-computation (which a {@code FlatLaf.updateUI()} relayout can
+     * provoke), return an unconstrained height to break the cycle instead of reading the
+     * half-built cache and throwing {@code "xTotal is null"}.
+     */
+    public static Dimension maxHeightHugging(JComponent c) {
+        if (!SIZE_GUARD.add(c)) return new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE);
+        try {
+            return new Dimension(Integer.MAX_VALUE, c.getPreferredSize().height);
+        } finally {
+            SIZE_GUARD.remove(c);
+        }
     }
 
     /** UIManager-default font for a key, or a sane fallback. */

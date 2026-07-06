@@ -100,7 +100,7 @@ public final class ListWidget implements SwingWidget {
         // JSON / expression editors) re-flow instead of being clipped at built-time height.
         JPanel row = new JPanel() {
             @Override public Dimension getMaximumSize() {
-                return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+                return UiScale.maxHeightHugging(this);
             }
         };
         row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));

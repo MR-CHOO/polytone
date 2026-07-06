@@ -24,9 +24,7 @@ public final class StringWidget implements SwingWidget {
         // Allow horizontal stretch in BoxLayout/GridBag parents. Without this the field
         // sits at its 20-column preferred width and content overflows. Min width 0 so
         // it never pushes the form wider than its container.
-        int h = field.getPreferredSize().height;
-        field.setMaximumSize(new Dimension(Integer.MAX_VALUE, h));
-        field.setMinimumSize(new Dimension(0, h));
+        UiScale.pinRowHeight(field);
     }
 
     @Override

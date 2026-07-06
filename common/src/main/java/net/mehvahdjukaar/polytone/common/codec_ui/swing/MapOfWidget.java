@@ -36,9 +36,7 @@ public final class MapOfWidget implements SwingWidget {
             super.updateUI();
             setOpaque(false);
             setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
-                    new java.awt.Insets(UiScale.zoomLogical(8), UiScale.zoomLogical(10),
-                            UiScale.zoomLogical(8), UiScale.zoomLogical(10)),
-                    EditorOps.dividerColor(), 1f, 10));
+                    new java.awt.Insets(8, 10, 8, 10), EditorOps.dividerColor(), 1f, 10));
         }
     };
     private final JPanel rowsHost = new JPanel();
@@ -95,7 +93,7 @@ public final class MapOfWidget implements SwingWidget {
         // Live max height so children that grow later (collapsibles) re-flow.
         JPanel row = new JPanel() {
             @Override public Dimension getMaximumSize() {
-                return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+                return UiScale.maxHeightHugging(this);
             }
         };
         row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));

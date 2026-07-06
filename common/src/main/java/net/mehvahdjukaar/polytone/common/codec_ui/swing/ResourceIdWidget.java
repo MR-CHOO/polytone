@@ -31,9 +31,7 @@ public final class ResourceIdWidget implements SwingWidget {
         button.addActionListener(e -> openPicker());
         // Allow horizontal stretch so the button fills the form column and the long
         // identifier text remains visible without resizing the window.
-        int h = button.getPreferredSize().height;
-        button.setMaximumSize(new Dimension(Integer.MAX_VALUE, h));
-        button.setMinimumSize(new Dimension(0, h));
+        UiScale.pinRowHeight(button);
     }
 
     private void openPicker() {

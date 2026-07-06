@@ -26,9 +26,7 @@ public final class NumberWidget implements SwingWidget {
         // SpinnerNumberModel signed-Comparable ctor expects Comparable bounds. Pass raw numbers.
         this.spinner = new JSpinner(new SpinnerNumberModel(initial, (Comparable<?>) min, (Comparable<?>) max, step));
         // Allow horizontal stretch in BoxLayout/GridBag parents.
-        int h = spinner.getPreferredSize().height;
-        spinner.setMaximumSize(new Dimension(Integer.MAX_VALUE, h));
-        spinner.setMinimumSize(new Dimension(0, h));
+        UiScale.pinRowHeight(spinner);
     }
 
     @Override

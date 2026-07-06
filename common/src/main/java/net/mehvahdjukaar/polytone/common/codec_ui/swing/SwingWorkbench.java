@@ -316,9 +316,7 @@ public final class SwingWorkbench {
                 setOpaque(true);
                 setBackground(EditorOps.surface(0.06f));
                 setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
-                        new java.awt.Insets(UiScale.zoomLogical(4), UiScale.zoomLogical(10),
-                                UiScale.zoomLogical(4), UiScale.zoomLogical(10)),
-                        EditorOps.dividerColor(), 1f, 999));
+                        new java.awt.Insets(4, 10, 4, 10), EditorOps.dividerColor(), 1f, 999));
             }
             @Override public Dimension getMaximumSize() {
                 return getPreferredSize(); // hug the label — never stretch into a bar

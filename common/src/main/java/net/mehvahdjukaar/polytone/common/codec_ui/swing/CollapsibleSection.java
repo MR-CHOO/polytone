@@ -36,9 +36,7 @@ final class CollapsibleSection extends JPanel {
             super.updateUI();
             setOpaque(false);
             setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
-                    new java.awt.Insets(UiScale.zoomLogical(8), UiScale.zoomLogical(10),
-                            UiScale.zoomLogical(8), UiScale.zoomLogical(10)),
-                    EditorOps.dividerColor(), 1f, 10));
+                    new java.awt.Insets(8, 10, 8, 10), EditorOps.dividerColor(), 1f, 10));
         }
     };
     private JPanel indentHost;
@@ -61,7 +59,15 @@ final class CollapsibleSection extends JPanel {
         summary.setForeground(EditorOps.mutedColor());
         summary.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UiScale.px(13)));
 
-        JPanel header = new JPanel();
+        JPanel header = new JPanel() {
+            @Override public Dimension getMaximumSize() {
+                // Live so the header row grows with a zoomed font instead of being pinned to
+                // its build-time height (which clipped the title / chevron after zooming in).
+                // Reentrancy-safe against BoxLayout's non-reentrant size cache.
+                Dimension d = UiScale.maxHeightHugging(this);
+                return new Dimension(d.width, Math.max(d.height, UiScale.px(24)));
+            }
+        };
         header.setLayout(new BoxLayout(header, BoxLayout.X_AXIS));
         header.setOpaque(false);
         header.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -77,8 +83,6 @@ final class CollapsibleSection extends JPanel {
         header.add(Box.createHorizontalStrut(UiScale.med()));
         header.add(summary);
         header.add(Box.createHorizontalGlue());
-        int headerH = Math.max(header.getPreferredSize().height, UiScale.px(24));
-        header.setMaximumSize(new Dimension(Integer.MAX_VALUE, headerH));
         header.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) { setCollapsed(!collapsed); }
         });
@@ -124,9 +128,10 @@ final class CollapsibleSection extends JPanel {
         }
     }
 
-    /** Collapse/expand must re-flow BoxLayout parents — never pin the built-time height. */
+    /** Collapse/expand must re-flow BoxLayout parents — never pin the built-time height.
+     *  Reentrancy-safe against BoxLayout's non-reentrant size cache. */
     @Override
     public Dimension getMaximumSize() {
-        return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+        return UiScale.maxHeightHugging(this);
     }
 }

@@ -49,27 +49,26 @@ public final class ColorWidget implements SwingWidget {
         // Initialize to opaque black so RGB and ARGB defaults are both sensible.
         this.value = 0xFF000000;
 
-        this.root = new JPanel();
+        this.root = new JPanel() {
+            @Override public Dimension getMaximumSize() {
+                // Live (grows with a zoomed font) yet never stretches vertically; the helper
+                // is reentrancy-safe against BoxLayout's non-reentrant size cache.
+                return UiScale.maxHeightHugging(this);
+            }
+        };
         this.root.setLayout(new BoxLayout(this.root, BoxLayout.X_AXIS));
         this.root.setAlignmentX(Component.LEFT_ALIGNMENT);
         this.root.setOpaque(false);
 
-        this.swatch.setPreferredSize(UiScale.dim(28, 28));
-        this.swatch.setMinimumSize(UiScale.dim(28, 28));
-        this.swatch.setMaximumSize(UiScale.dim(28, 28));
         this.swatch.setBorder(BorderFactory.createLineBorder(Color.GRAY));
 
         this.hexField.setFont(UiScale.uiFont("TextField.font"));
         // Let the text field absorb the row's leftover horizontal space — the swatch
         // and picker button are fixed-size, the hex field stretches between them so
         // the row fills the form column flush with siblings.
-        Dimension prefField = this.hexField.getPreferredSize();
-        this.hexField.setMaximumSize(new Dimension(Integer.MAX_VALUE, prefField.height));
-        this.hexField.setMinimumSize(new Dimension(0, prefField.height));
-
-        // Root row should also stretch horizontally so the parent form layout grants
-        // it the full column width.
-        this.root.setMaximumSize(new Dimension(Integer.MAX_VALUE, prefField.height));
+        UiScale.pinRowHeight(this.hexField);
+        // Root row stretches horizontally (full column width); its max HEIGHT is live off
+        // getMaximumSize (see the root's anonymous subclass) so it tracks the zoomed children.
 
         this.pickerButton.setFont(UiScale.uiFont("Button.font"));
         this.pickerButton.setMargin(UiScale.insets(0, 6, 0, 6));
@@ -171,6 +170,11 @@ public final class ColorWidget implements SwingWidget {
 
     /** Filled rectangle whose color tracks {@link ColorWidget#value}. */
     private final class Swatch extends JComponent {
+        // Live, zoom-aware square (computed each query) instead of a size pinned at build time.
+        @Override public Dimension getPreferredSize() { return UiScale.dim(28, 28); }
+        @Override public Dimension getMinimumSize()   { return UiScale.dim(28, 28); }
+        @Override public Dimension getMaximumSize()   { return UiScale.dim(28, 28); }
+
         @Override
         protected void paintComponent(Graphics g) {
             Color c = new Color(value, hasAlpha);

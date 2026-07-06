@@ -37,9 +37,7 @@ public final class OneOfWidget implements SwingWidget {
             super.updateUI();
             setOpaque(false);
             setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
-                    new java.awt.Insets(UiScale.zoomLogical(8), UiScale.zoomLogical(10),
-                            UiScale.zoomLogical(10), UiScale.zoomLogical(10)),
-                    EditorOps.dividerColor(), 1f, 10));
+                    new java.awt.Insets(8, 10, 10, 10), EditorOps.dividerColor(), 1f, 10));
         }
     };
     private final JPanel subHost = new JPanel(new BorderLayout());
@@ -60,7 +58,7 @@ public final class OneOfWidget implements SwingWidget {
         combo = new JComboBox<>(variantKeys.toArray(new String[0]));
         combo.setAlignmentX(Component.LEFT_ALIGNMENT);
         // Compact selector sized to its options; the dispatch key is tooltip metadata.
-        combo.setMaximumSize(combo.getPreferredSize());
+        UiScale.pinCompact(combo);
         combo.setToolTipText("Selects \"" + typeField + "\"");
         root.add(combo);
         root.add(javax.swing.Box.createVerticalStrut(UiScale.med()));
