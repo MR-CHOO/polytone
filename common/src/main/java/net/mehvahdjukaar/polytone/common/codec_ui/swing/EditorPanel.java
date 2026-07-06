@@ -352,7 +352,7 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
     // -------------------- Live preview --------------------
 
     private RSyntaxTextArea previewArea;
-    private Pill validityPill;
+    private ValidityLabel validityPill;
     private JTextArea errorBanner;
     private JPanel errorBannerHost;
 
@@ -373,7 +373,7 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         JLabel title = new JLabel("JSON Preview");
         title.setFont(UiScale.deriveFont(title.getFont(), Font.BOLD, 0f));
 
-        validityPill = new Pill();
+        validityPill = new ValidityLabel();
 
         JButton copy = new JButton(WorkbenchIcons.copy());
         copy.putClientProperty("JButton.buttonType", "toolBarButton");
@@ -420,32 +420,40 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         return panel;
     }
 
-    /** Small filled rounded status chip ("Valid" / "Invalid"). */
-    private static final class Pill extends JLabel {
-        Pill() {
+    /**
+     * "Valid" / "Invalid" status marker — a tinted glyph + tinted text, matching the green
+     * reload glyphs in the toolbar instead of a filled chip. Colors/icons are re-derived in
+     * {@link #updateUI()} so a live light/dark theme switch (or zoom) restyles it even though
+     * {@link #refreshPreview()} is dirty-gated and won't re-run on a theme change alone.
+     */
+    private static final class ValidityLabel extends JLabel {
+        private Boolean ok; // null = no state yet
+
+        ValidityLabel() {
             setText(" ");
-            setBorder(BorderFactory.createEmptyBorder(
-                    UiScale.px(2), UiScale.px(8), UiScale.px(2), UiScale.px(8)));
+            setIconTextGap(UiScale.small());
         }
 
-        void set(String text, Color fg, Color bg) {
-            setText(text);
-            setForeground(fg);
-            setBackground(bg);
-            setFont(UiScale.deriveFont(UIManager.getFont("Label.font"), Font.BOLD, -1f));
-            repaint();
+        void set(boolean valid) {
+            this.ok = valid;
+            applyStyle();
         }
 
-        @Override protected void paintComponent(java.awt.Graphics g) {
-            if (getBackground() != null && !getText().isBlank()) {
-                java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
-                g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
-                        java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(getBackground());
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), getHeight(), getHeight());
-                g2.dispose();
+        private void applyStyle() {
+            if (ok == null) {
+                setIcon(null);
+                setText(" ");
+                return;
             }
-            super.paintComponent(g);
+            setIcon(ok ? WorkbenchIcons.checkTinted() : WorkbenchIcons.xTinted());
+            setText(ok ? "Valid" : "Invalid");
+            setForeground(ok ? EditorOps.successColor() : EditorOps.errorColor());
+            setFont(UiScale.labelFont(Font.BOLD, -1f));
+        }
+
+        @Override public void updateUI() {
+            super.updateUI();
+            applyStyle();
         }
     }
 
@@ -502,14 +510,11 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         }
         previewArea.setText(text);
         previewArea.setCaretPosition(0);
-        Color surface = EditorOps.surface(0f);
         if (ok) {
-            validityPill.set("Valid", EditorOps.successColor(),
-                    EditorOps.mix(surface, EditorOps.successColor(), 0.18f));
+            validityPill.set(true);
             errorBannerHost.setVisible(false);
         } else {
-            validityPill.set("Invalid", EditorOps.errorColor(),
-                    EditorOps.mix(surface, EditorOps.errorColor(), 0.18f));
+            validityPill.set(false);
             errorBanner.setText(problem == null ? "unknown error" : problem);
             errorBannerHost.setVisible(true);
         }

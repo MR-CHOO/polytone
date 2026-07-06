@@ -34,6 +34,8 @@ public final class RecordWidget implements SwingWidget {
         final Schema.Field<?, ?> field;
         final SwingWidget widget;
         @Nullable JsonElement unsetBaseline;
+        /** Red "*" shown next to a REQUIRED field while it has no picked value (see {@link #isUnset}). */
+        @Nullable JLabel requiredMark;
 
         FieldEntry(Schema.Field<?, ?> field, SwingWidget widget) {
             this.field = field;
@@ -109,6 +111,24 @@ public final class RecordWidget implements SwingWidget {
                 lc.gridx = 1;
                 lc.insets = new java.awt.Insets(0, UiScale.small(), 0, 0);
                 labelCell.add(opt, lc);
+            } else {
+                // Required field: a red asterisk that appears only while nothing is picked
+                // (null/no selection) — the field will fail to load in that state. Visibility
+                // is driven by isUnset() in currentJson()/setJson(); color re-derived in
+                // updateUI() so a live theme switch keeps it readable.
+                JLabel star = new JLabel("*") {
+                    @Override public void updateUI() {
+                        super.updateUI();
+                        setFont(UiScale.labelFont(Font.BOLD, 1f));
+                        setForeground(EditorOps.errorColor());
+                    }
+                };
+                star.setToolTipText("Required — pick a value or this will fail to load");
+                star.setVisible(false);
+                entry.requiredMark = star;
+                lc.gridx = 1;
+                lc.insets = new java.awt.Insets(0, UiScale.small(), 0, 0);
+                labelCell.add(star, lc);
             }
 
             // MED vertical between rows, SMALL horizontal gap label↔widget.
@@ -137,6 +157,8 @@ public final class RecordWidget implements SwingWidget {
         filler.weighty = 1.0;
         filler.fill = GridBagConstraints.VERTICAL;
         panel.add(new JLabel(""), filler);
+
+        refreshRequiredMarks();
     }
 
     @Override
@@ -147,17 +169,25 @@ public final class RecordWidget implements SwingWidget {
     @Override
     public DataResult<JsonElement> currentJson() {
         JsonObject obj = new JsonObject();
+        // Evaluate every child once, updating the required-field markers as we go and
+        // remembering the first required error to return (we still keep iterating so all
+        // markers reflect the current state, rather than stopping at the first bad field).
+        DataResult<JsonElement> firstError = null;
         for (FieldEntry e : entries) {
             DataResult<JsonElement> r = e.widget.currentJson();
+            updateMark(e, r);
             var error = r.error();
             if (error.isPresent()) {
                 if (e.field.optional()) {
                     // Optional field with invalid child: omit so codec default applies
                     continue;
                 }
-                String name = e.field.name();
-                String msg = error.get().message();
-                return DataResult.error(() -> "Field '" + name + "': " + msg);
+                if (firstError == null) {
+                    String name = e.field.name();
+                    String msg = error.get().message();
+                    firstError = DataResult.error(() -> "Field '" + name + "': " + msg);
+                }
+                continue;
             }
             JsonElement json = r.result().orElseThrow();
             // Optional field still matching its unset/default baseline → omit from the
@@ -167,7 +197,7 @@ public final class RecordWidget implements SwingWidget {
             }
             obj.add(e.field.name(), json);
         }
-        return DataResult.success(obj);
+        return firstError != null ? firstError : DataResult.success(obj);
     }
 
     @Override
@@ -176,6 +206,7 @@ public final class RecordWidget implements SwingWidget {
             for (FieldEntry e : entries) {
                 e.widget.setJson(e.field.optional() ? primitiveToJson(e.field.defaultValue()) : null);
             }
+            refreshRequiredMarks();
             return;
         }
         JsonObject obj = value.getAsJsonObject();
@@ -187,6 +218,30 @@ public final class RecordWidget implements SwingWidget {
             }
             e.widget.setJson(sub);
         }
+        refreshRequiredMarks();
+    }
+
+    /** Re-evaluate every required field's marker (used outside the {@link #currentJson()} poll). */
+    private void refreshRequiredMarks() {
+        for (FieldEntry e : entries) {
+            if (e.requiredMark != null) updateMark(e, e.widget.currentJson());
+        }
+    }
+
+    /** Show the required-marker iff the field currently has no picked value. */
+    private static void updateMark(FieldEntry e, DataResult<JsonElement> current) {
+        if (e.requiredMark != null) e.requiredMark.setVisible(isUnset(current));
+    }
+
+    /**
+     * A field is "not picked" when its widget can't yield a real value: either it errors
+     * (e.g. no dispatch variant / enum selected) or it produces {@code null} (an empty
+     * resource / ref picker). Both fail codec validation, so the field is flagged required.
+     */
+    private static boolean isUnset(DataResult<JsonElement> r) {
+        if (r.error().isPresent()) return true;
+        JsonElement json = r.result().orElse(null);
+        return json != null && json.isJsonNull();
     }
 
     /** Widget's current JSON, or null when it can't produce one (opaque mid-edit, ...). */

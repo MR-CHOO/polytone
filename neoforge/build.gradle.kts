@@ -10,6 +10,7 @@ neoforge {
 val exp4j_version: String by extra
 val mvel_version: String by extra
 val flatlaf_version: String by extra
+val rsyntaxtextarea_version: String by extra
 val jsvg_version: String by extra
 
 dependencies {
@@ -25,6 +26,7 @@ dependencies {
     apiInclude("com.formdev:flatlaf:${flatlaf_version}")
     apiInclude("com.formdev:flatlaf-extras:${flatlaf_version}")
     apiInclude("com.github.weisj:jsvg:${jsvg_version}")
+    apiInclude("com.fifesoft:rsyntaxtextarea:${rsyntaxtextarea_version}")
 
     //   modImplementation ("curse.maven:embeddium-908741:6118392")
     modCompileOnly("curse.maven:curios-309927:6538253")

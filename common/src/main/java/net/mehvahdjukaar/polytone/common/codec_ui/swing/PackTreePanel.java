@@ -41,7 +41,15 @@ final class PackTreePanel extends JPanel {
     private final JPanel cardHost = new JPanel(cards);
     private final DefaultTreeModel treeModel;
     private final JTree tree;
-    private final JLabel packLabel = new JLabel(" ");
+    // Font/color set in updateUI() so zoom (FlatLaf.updateUI) re-derives them fresh —
+    // deriving from getFont() here would compound the delta on every theme/zoom change.
+    private final JLabel packLabel = new JLabel(" ") {
+        @Override public void updateUI() {
+            super.updateUI();
+            setFont(UiScale.labelFont(Font.BOLD, -1f));
+            setForeground(EditorOps.mutedColor());
+        }
+    };
     private @Nullable PackWorkspace workspace;
 
     PackTreePanel(Consumer<Path> onOpenFile, Runnable openPackAction) {
@@ -51,8 +59,6 @@ final class PackTreePanel extends JPanel {
 
         // ---- Header row: pack kind label + refresh ----
         JPanel header = new JPanel(new BorderLayout());
-        packLabel.setFont(UiScale.deriveFont(packLabel.getFont(), Font.BOLD, -1f));
-        packLabel.setForeground(EditorOps.mutedColor());
         header.add(packLabel, BorderLayout.CENTER);
         JButton refresh = new JButton(WorkbenchIcons.refresh());
         refresh.putClientProperty("JButton.buttonType", "toolBarButton");
