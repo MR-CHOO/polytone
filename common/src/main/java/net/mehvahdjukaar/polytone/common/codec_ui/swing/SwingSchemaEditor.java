@@ -149,7 +149,9 @@ public final class SwingSchemaEditor implements SchemaEditor {
         fontPt = deltaPt == 0 ? DEFAULT_FONT_PT
                 : Math.max(8, Math.min(40, fontPt + deltaPt)); // 40%..200% of the 20pt base
         PREFS.putInt(FONT_PREF_KEY, fontPt);
-        UIManager.put("defaultFont", new FontUIResource(Font.SANS_SERIF, Font.PLAIN, fontPt));
+        // Re-apply ALL defaults (not just the font): metric defaults + the UiScale zoom ratio
+        // are zoom-aware now, so spacing, min heights and border insets grow with the font.
+        applyUiDefaults();
         FlatLaf.updateUI();
     }
 
@@ -163,26 +165,30 @@ public final class SwingSchemaEditor implements SchemaEditor {
      * the UIManager defaults, so a live theme switch has to re-apply these.
      */
     private static void applyUiDefaults() {
+        // Keep the shared UI-zoom ratio in step with the base font BEFORE anything reads it.
+        UiScale.setZoom(fontPt / (float) DEFAULT_FONT_PT);
+
         // Base font in logical pt (FlatLaf further scales by flatlaf.uiScale). Mutable:
         // this is the UI zoom — bumping it makes FlatLaf recompute every component metric.
         UIManager.put("defaultFont", new FontUIResource(Font.SANS_SERIF, Font.PLAIN, fontPt));
 
-        // Minimum component heights — logical px, FlatLaf scales them.
-        UIManager.put("Button.minimumHeight", 48);
-        UIManager.put("TextComponent.minimumHeight", 44);
-        UIManager.put("Spinner.minimumHeight", 44);
-        UIManager.put("ComboBox.minimumHeight", 44);
-        UIManager.put("Button.minimumWidth", 120);
+        // Minimum component heights — logical px; FlatLaf scales by uiScale, zoomLogical adds
+        // the font zoom so boxes grow WITH the text (otherwise big-font/short-box mismatches).
+        UIManager.put("Button.minimumHeight", UiScale.zoomLogical(48));
+        UIManager.put("TextComponent.minimumHeight", UiScale.zoomLogical(44));
+        UIManager.put("Spinner.minimumHeight", UiScale.zoomLogical(44));
+        UIManager.put("ComboBox.minimumHeight", UiScale.zoomLogical(44));
+        UIManager.put("Button.minimumWidth", UiScale.zoomLogical(120));
 
-        // Rounded corners + scroll bar polish.
-        UIManager.put("Component.arc", 8);
-        UIManager.put("Button.arc", 8);
-        UIManager.put("TextComponent.arc", 6);
+        // Rounded corners + scroll bar polish (radii grow with zoom to stay proportional).
+        UIManager.put("Component.arc", UiScale.zoomLogical(8));
+        UIManager.put("Button.arc", UiScale.zoomLogical(8));
+        UIManager.put("TextComponent.arc", UiScale.zoomLogical(6));
         UIManager.put("ProgressBar.arc", 999);
         UIManager.put("ScrollBar.thumbArc", 999);
         UIManager.put("ScrollBar.trackArc", 999);
         UIManager.put("ScrollBar.thumbInsets", new Insets(2, 2, 2, 2));
-        UIManager.put("ScrollBar.width", 12);
+        UIManager.put("ScrollBar.width", UiScale.zoomLogical(12));
 
         // Focus ring polish.
         UIManager.put("Component.focusWidth", 1);
@@ -192,7 +198,7 @@ public final class SwingSchemaEditor implements SchemaEditor {
         // roomy tab height, and a subtle elevation on the selected/hovered tab so the
         // card-style editor tabs read like a real code editor's file tabs.
         UIManager.put("TabbedPane.tabSelectionHeight", 3);
-        UIManager.put("TabbedPane.tabHeight", 38);
+        UIManager.put("TabbedPane.tabHeight", UiScale.zoomLogical(38));
         UIManager.put("TabbedPane.showTabSeparators", Boolean.TRUE);
         UIManager.put("TabbedPane.tabSeparatorsFullHeight", Boolean.FALSE);
         UIManager.put("TabbedPane.selectedBackground", new ColorUIResource(EditorOps.surface(0.05f)));

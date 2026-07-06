@@ -75,7 +75,8 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
             setForeground(EditorOps.accentColor());
             setFont(UiScale.labelFont(Font.BOLD, -1f));
             setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
-                    new java.awt.Insets(2, 8, 2, 8),
+                    new java.awt.Insets(UiScale.zoomLogical(2), UiScale.zoomLogical(8),
+                            UiScale.zoomLogical(2), UiScale.zoomLogical(8)),
                     EditorOps.mix(EditorOps.dividerColor(), EditorOps.accentColor(), 0.5f), 1f, 999));
         }
     };
@@ -403,7 +404,8 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
                 setOpaque(true);
                 setBackground(EditorOps.mix(EditorOps.surface(0f), EditorOps.errorColor(), 0.12f));
                 setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
-                        new java.awt.Insets(8, 10, 8, 10),
+                        new java.awt.Insets(UiScale.zoomLogical(8), UiScale.zoomLogical(10),
+                                UiScale.zoomLogical(8), UiScale.zoomLogical(10)),
                         EditorOps.mix(EditorOps.surface(0f), EditorOps.errorColor(), 0.5f), 1f, 10));
                 if (errorBanner != null) errorBanner.setForeground(EditorOps.errorColor());
             }

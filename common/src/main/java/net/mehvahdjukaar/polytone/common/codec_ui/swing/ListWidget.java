@@ -32,7 +32,13 @@ public final class ListWidget implements SwingWidget {
         }
     };
     private final JPanel rowsHost = new JPanel();
-    private final javax.swing.JLabel emptyHint = new javax.swing.JLabel("(empty)");
+    private final javax.swing.JLabel emptyHint = new javax.swing.JLabel("(empty)") {
+        @Override public void updateUI() {
+            super.updateUI();
+            setFont(UiScale.labelFont(java.awt.Font.ITALIC, -1f));
+            setForeground(EditorOps.mutedColor());
+        }
+    };
     // Minimal "+" — contextual label goes in the tooltip via setItemLabel.
     private final JButton addButton = new JButton(WorkbenchIcons.plusAccent());
     private final List<SwingWidget> rowWidgets = new ArrayList<>();
@@ -51,8 +57,6 @@ public final class ListWidget implements SwingWidget {
         rowsHost.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
         root.add(rowsHost);
 
-        emptyHint.setFont(UiScale.deriveFont(emptyHint.getFont(), java.awt.Font.ITALIC, -1f));
-        emptyHint.setForeground(EditorOps.mutedColor());
         emptyHint.setAlignmentX(Component.LEFT_ALIGNMENT);
         emptyHint.setBorder(BorderFactory.createEmptyBorder(0, 0, UiScale.small(), 0));
         root.add(emptyHint);

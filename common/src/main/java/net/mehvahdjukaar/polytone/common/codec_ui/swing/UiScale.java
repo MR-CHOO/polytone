@@ -23,6 +23,28 @@ public final class UiScale {
 
     private UiScale() {}
 
+    // ---- UI zoom (100% = 1.0) --------------------------------------------------
+    // The editor's zoom nudges the base font point size, which grows FONTS but NOT the
+    // DPI uiScale (that is pinned for reliable HiDPI detection). Left alone, spacing,
+    // insets and font-size deltas would stay put while text grew — cramped boxes, tiny
+    // "opt" badges, first fields clipped by fixed card padding. So we mirror the same
+    // ratio here and fold it into px()/deriveFont()/zoomLogical() so the whole pixel
+    // system tracks the font. SwingSchemaEditor keeps this in step with the base font.
+    private static volatile float zoom = 1f;
+
+    /** Set the UI zoom ratio (base font pt / default pt). Call BEFORE {@code FlatLaf.updateUI()}. */
+    public static void setZoom(float z) { zoom = z > 0f ? z : 1f; }
+
+    /** Current UI zoom ratio (1.0 = 100%). */
+    public static float zoom() { return zoom; }
+
+    /**
+     * A LOGICAL (pre-uiScale) value nudged by the UI zoom — for values FlatLaf scales by
+     * uiScale ITSELF, so we must NOT also run them through {@link #px}: {@code FlatLineBorder}
+     * insets and {@code UIManager} metric defaults. Final size = {@code base * zoom * uiScale}.
+     */
+    public static int zoomLogical(int base) { return Math.max(1, Math.round(base * zoom)); }
+
     // ---- Spacing tokens (LOGICAL px). Use these everywhere instead of ad-hoc numbers
     // so the widget tree has a single, consistent rhythm.
     //   SMALL  — gap inside a row (label↔widget, button↔button in a tight cluster)
@@ -108,14 +130,14 @@ public final class UiScale {
         return Math.round(scale() * 100f) + "%";
     }
 
-    /** Scale a logical pixel count via FlatLaf. */
+    /** Scale a logical pixel count via FlatLaf, including the UI zoom so spacing tracks the font. */
     public static int px(int base) {
-        return UIScale.scale(base);
+        return UIScale.scale(Math.round(base * zoom));
     }
 
-    /** Scaled preferred size. */
+    /** Scaled preferred size (zoom-aware, via {@link #px}). */
     public static Dimension dim(int w, int h) {
-        return new Dimension(UIScale.scale(w), UIScale.scale(h));
+        return new Dimension(px(w), px(h));
     }
 
     /** Scaled {@link Insets}. */
@@ -130,7 +152,11 @@ public final class UiScale {
      * "+2pt bold" or "-1pt italic" without re-scaling.
      */
     public static Font deriveFont(Font base, int style, float sizeDeltaLogical) {
-        float scaledDelta = sizeDeltaLogical * scale();
+        // Multiply the delta by the zoom too, so a "-3pt" badge stays the SAME proportion of
+        // the field font at every zoom. Without this the fixed-pt delta is a large fraction of
+        // a small zoomed-down font (badge shrinks far faster than its sibling) and a tiny
+        // fraction of a zoomed-up one.
+        float scaledDelta = sizeDeltaLogical * scale() * zoom;
         return base.deriveFont(style, base.getSize2D() + scaledDelta);
     }
 

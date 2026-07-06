@@ -87,8 +87,15 @@ public final class RecordWidget implements SwingWidget {
             }
 
             // Right-aligned label column: prettified name (raw JSON key in the tooltip).
-            JLabel name = new JLabel(prettyName(field.name()));
-            name.setFont(name.getFont().deriveFont(Font.PLAIN));
+            // Font set in updateUI() (re-derived FRESH from the L&F default) so it tracks a
+            // zoom / theme change — a construction-time deriveFont() freezes and would leave
+            // names at their original size while everything around them scaled.
+            JLabel name = new JLabel(prettyName(field.name())) {
+                @Override public void updateUI() {
+                    super.updateUI();
+                    setFont(UiScale.labelFont(Font.PLAIN, 0f));
+                }
+            };
             name.setToolTipText(field.name());
 
             JPanel labelCell = new JPanel(new GridBagLayout());

@@ -36,11 +36,19 @@ public final class MapOfWidget implements SwingWidget {
             super.updateUI();
             setOpaque(false);
             setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
-                    new java.awt.Insets(8, 10, 8, 10), EditorOps.dividerColor(), 1f, 10));
+                    new java.awt.Insets(UiScale.zoomLogical(8), UiScale.zoomLogical(10),
+                            UiScale.zoomLogical(8), UiScale.zoomLogical(10)),
+                    EditorOps.dividerColor(), 1f, 10));
         }
     };
     private final JPanel rowsHost = new JPanel();
-    private final JLabel emptyHint = new JLabel("(empty)");
+    private final JLabel emptyHint = new JLabel("(empty)") {
+        @Override public void updateUI() {
+            super.updateUI();
+            setFont(UiScale.labelFont(Font.ITALIC, -1f));
+            setForeground(EditorOps.mutedColor());
+        }
+    };
     private final JButton addButton = new JButton(WorkbenchIcons.plusAccent());
     private final List<SwingWidget> keyWidgets = new ArrayList<>();
     private final List<SwingWidget> valueWidgets = new ArrayList<>();
@@ -58,8 +66,6 @@ public final class MapOfWidget implements SwingWidget {
         rowsHost.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
         root.add(rowsHost);
 
-        emptyHint.setFont(UiScale.deriveFont(emptyHint.getFont(), Font.ITALIC, -1f));
-        emptyHint.setForeground(EditorOps.mutedColor());
         emptyHint.setAlignmentX(Component.LEFT_ALIGNMENT);
         emptyHint.setBorder(BorderFactory.createEmptyBorder(0, 0, UiScale.small(), 0));
         root.add(emptyHint);
