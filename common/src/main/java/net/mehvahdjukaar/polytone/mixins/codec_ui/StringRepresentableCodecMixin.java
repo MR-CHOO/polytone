@@ -1,7 +1,7 @@
 package net.mehvahdjukaar.polytone.mixins.codec_ui;
 
 import com.mojang.serialization.Codec;
-import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
+import net.mehvahdjukaar.codecui.Schema;
 import net.mehvahdjukaar.polytone.common.codec_ui.internal.SchemaTags;
 import net.minecraft.util.StringRepresentable;
 import org.spongepowered.asm.mixin.Mixin;

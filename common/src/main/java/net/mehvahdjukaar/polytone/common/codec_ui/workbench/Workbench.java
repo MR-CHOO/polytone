@@ -69,4 +69,25 @@ public final class Workbench {
         }
         return fallback;
     }
+
+    /**
+     * The codec entry a directory is the EXACT container root of (the {@code colormaps} folder,
+     * the {@code block_modifiers} folder, ...), or null. Unlike {@link #entryFor}, this identifies
+     * the folder itself — used to badge codec-root folders in the file tree — and matches only the
+     * root, not files or sub-folders within it.
+     */
+    public @Nullable CodecEntry entryForContainer(Path dir) {
+        PackWorkspace ws = workspace;
+        if (ws == null) return null;
+        // Treat the folder as a container by locating a hypothetical file inside it.
+        PackWorkspace.Location location = ws.locate(dir.resolve("_probe"));
+        if (location == null) return null;
+        String container = location.containerDir();
+        for (CodecEntry entry : entries) {
+            String c = entry.containerDir();
+            if (c == null || c.isEmpty()) continue;
+            if (container.equals(c) || container.endsWith("/" + c)) return entry;
+        }
+        return null;
+    }
 }

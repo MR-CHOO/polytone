@@ -4,7 +4,7 @@ import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
-import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
+import net.mehvahdjukaar.codecui.Schema;
 import net.mehvahdjukaar.polytone.common.codec_ui.internal.FieldOfTags;
 import net.mehvahdjukaar.polytone.common.codec_ui.internal.SchemaTags;
 import org.spongepowered.asm.mixin.Mixin;

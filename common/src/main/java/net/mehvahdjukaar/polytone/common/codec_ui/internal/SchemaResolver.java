@@ -16,8 +16,8 @@ import com.mojang.serialization.codecs.UnboundedMapCodec;
 import com.mojang.serialization.codecs.XorCodec;
 import com.mojang.serialization.DataResult;
 import net.mehvahdjukaar.polytone.Polytone;
-import net.mehvahdjukaar.polytone.common.codec_ui.EnumerableCodec;
-import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
+import net.mehvahdjukaar.codecui.EnumerableCodec;
+import net.mehvahdjukaar.codecui.Schema;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaHandler;
 import net.minecraft.resources.HolderSetCodec;
 import net.minecraft.resources.RegistryFileCodec;
@@ -385,7 +385,7 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
     private Schema<?> tierTwoStructural(Codec<?> codec, IdentityHashMap<Object, Schema<?>> cache) {
         // Authored schema-carrying codecs know their own schema. (Lazy variants re-enter the
         // resolver for inner codecs — the placeholder already in the cache guards cycles.)
-        if (codec instanceof net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec<?> sc) {
+        if (codec instanceof net.mehvahdjukaar.codecui.SchemaCodec<?> sc) {
             return sc.schema();
         }
         // MapCodec.codec() returns a MapCodecCodec record wrapping the underlying MapCodec.

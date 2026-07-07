@@ -4,7 +4,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonPrimitive;
 import com.mojang.serialization.DataResult;
-import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
+import net.mehvahdjukaar.codecui.Schema;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;

@@ -1,6 +1,6 @@
 package net.mehvahdjukaar.polytone.common.codec_ui.internal;
 
-import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
+import net.mehvahdjukaar.codecui.Schema;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.UUIDUtil;

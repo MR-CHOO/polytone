@@ -7,7 +7,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.DynamicOps;
-import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec;
+import net.mehvahdjukaar.codecui.SchemaCodec;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
@@ -502,10 +502,12 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
             @Override public void updateUI() {
                 super.updateUI();
                 setOpaque(true);
-                setBackground(EditorOps.mix(EditorOps.surface(0f), EditorOps.errorColor(), 0.12f));
+                // Neutral raised surface (NOT a red-tinted one, which muddied the text and read
+                // as "faded") + a full error-red outline; the red text then reads at full strength,
+                // consistent with every other error indicator.
+                setBackground(EditorOps.surface(0.03f));
                 setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
-                        new java.awt.Insets(8, 10, 8, 10),
-                        EditorOps.mix(EditorOps.surface(0f), EditorOps.errorColor(), 0.5f), 1f, 10));
+                        new java.awt.Insets(8, 10, 8, 10), EditorOps.errorColor(), 1f, 10));
                 if (errorBanner != null) errorBanner.setForeground(EditorOps.errorColor());
             }
         };

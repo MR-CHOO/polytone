@@ -73,12 +73,14 @@ final class EditorOps {
         return vanillaLookup;
     }
 
-    /** Error/warning color that reads on both light and dark themes. */
+    /**
+     * The ONE error red, per theme. Deliberately NOT {@code UIManager "Actions.Red"} — some
+     * FlatLaf themes define that as a muted/desaturated red that reads "faded" and drifts between
+     * components. A single fixed vivid red keeps every error indicator (banners, status lines,
+     * required {@code *}, validity pills, borders) identical and legible on both themes.
+     */
     static Color errorColor() {
-        Color c = UIManager.getColor("Actions.Red");
-        if (c != null) return c;
-        // #FF6B6B reads on dark; #C0392B on light. Pick by L&F dark flag.
-        return FlatLaf.isLafDark() ? new Color(0xFF6B6B) : new Color(0xC0392B);
+        return FlatLaf.isLafDark() ? new Color(0xFF5C5C) : new Color(0xC0392B);
     }
 
     /** Muted foreground for secondary text — adapts to dark/light L&F. */
@@ -116,7 +118,9 @@ final class EditorOps {
         return FlatLaf.isLafDark() ? ACCENT_FILL_DARK_HEX : ACCENT_FILL_LIGHT_HEX;
     }
 
-    static final String ACCENT_FILL_DARK_HEX = "#7C3AED";
+    // Toned down from the brighter #7C3AED (read as too neon on the filled New Content button)
+    // to a deeper violet that still stands out cleanly against the dark chrome.
+    static final String ACCENT_FILL_DARK_HEX = "#6D28D9";
     static final String ACCENT_FILL_LIGHT_HEX = "#6D28D9";
 
     // ---- Structured two-tone surface palette -------------------------------------------------

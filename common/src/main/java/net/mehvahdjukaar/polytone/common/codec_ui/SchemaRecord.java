@@ -1,4 +1,5 @@
 package net.mehvahdjukaar.polytone.common.codec_ui;
+import net.mehvahdjukaar.codecui.*;
 
 import com.mojang.datafixers.util.Function3;
 import com.mojang.datafixers.util.Function4;
@@ -45,7 +46,7 @@ public final class SchemaRecord {
         }
 
         public <F> FieldRef<A, F> field(String name, Codec<F> codec, Function<A, F> getter) {
-            return field(name, SchemaCodec.wrap(codec), getter);
+            return field(name, SchemaCodecs.wrap(codec), getter);
         }
 
         public <F> FieldRef<A, F> optional(String name, SchemaCodec<F> codec, F defaultValue, Function<A, F> getter) {
@@ -53,7 +54,7 @@ public final class SchemaRecord {
         }
 
         public <F> FieldRef<A, F> optional(String name, Codec<F> codec, F defaultValue, Function<A, F> getter) {
-            return optional(name, SchemaCodec.wrap(codec), defaultValue, getter);
+            return optional(name, SchemaCodecs.wrap(codec), defaultValue, getter);
         }
 
         /** Optional field with NO default — round-trips as {@code Optional<F>}, mirroring
@@ -65,7 +66,7 @@ public final class SchemaRecord {
 
         public <F> FieldRef<A, java.util.Optional<F>> optional(String name, Codec<F> codec,
                                                                Function<A, java.util.Optional<F>> getter) {
-            return optional(name, SchemaCodec.wrap(codec), getter);
+            return optional(name, SchemaCodecs.wrap(codec), getter);
         }
 
         public <F1> Group1<A, F1> group(FieldRef<A, F1> f1) {

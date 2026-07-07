@@ -3,7 +3,7 @@ package net.mehvahdjukaar.polytone.common.codec_ui.swing;
 import com.formdev.flatlaf.FlatLaf;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
-import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec;
+import net.mehvahdjukaar.codecui.SchemaCodec;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side;
 import net.mehvahdjukaar.polytone.common.codec_ui.workbench.CodecEntry;
 import net.mehvahdjukaar.polytone.common.codec_ui.workbench.GamePaths;
@@ -125,24 +125,13 @@ public final class SwingWorkbench {
             setForeground(EditorOps.mutedColor());
         }
     };
-    // THE primary action of the tool — explicit accent fill, re-derived in updateUI() so a
-    // live theme switch swaps in that theme's fill accent. (Inside a JToolBar, FlatLaf
-    // flattens children to toolbar-button style, so "buttonType=default" alone would NOT
-    // paint the accent; FlatLaf.style overrides it reliably.)
-    private final JButton newContentButton = new JButton("New Content") {
-        @Override public void updateUI() {
-            super.updateUI();
-            String accent = EditorOps.accentFillHex();
-            putClientProperty("FlatLaf.style",
-                    "arc: 999;" // pill — matches the rounded pack chip
-                            + " background: " + accent + ";"
-                            + " foreground: #FFFFFF;"
-                            + " hoverBackground: darken(" + accent + ",6%);"
-                            + " pressedBackground: darken(" + accent + ",12%);"
-                            + " disabledBackground: $Button.disabledBackground;"
-                            + " disabledText: $Button.disabledText");
-        }
-    };
+    // THE primary action — a NATIVE FlatLaf "default" (accent-filled) button, identical to the
+    // accent buttons in dialogs (e.g. the unsaved-changes prompt): same computed text color, same
+    // native padding. The old hand-rolled FlatLaf.style forced #FFFFFF text and manual margins that
+    // diverged from those buttons and got eaten by the toolbar. A default button only paints its
+    // accent when it is NOT a direct JToolBar child (FlatLaf flattens those to toolbar buttons), so
+    // buildToolbar() nests it in a plain panel.
+    private final JButton newContentButton = new JButton("New Content");
     /** Live zoom readout in the status bar; clicking it resets to 100%. */
     private final JButton zoomResetButton = new JButton();
     private final JButton reloadResourcesButton = new JButton("Reload Resources");
@@ -199,7 +188,7 @@ public final class SwingWorkbench {
             @Override public void windowClosing(WindowEvent e) { requestClose(); }
         });
 
-        treePanel = new PackTreePanel(this::openFile, this::openPackChooser);
+        treePanel = new PackTreePanel(this::openFile, this::openPackChooser, model::entryForContainer);
 
         JPanel content = new JPanel(new BorderLayout());
         content.add(buildToolbar(), BorderLayout.NORTH);
@@ -258,23 +247,19 @@ public final class SwingWorkbench {
         bar.add(toolbarSeparator());
         bar.add(Box.createHorizontalStrut(UiScale.med()));
 
+        newContentButton.putClientProperty("JButton.buttonType", "default"); // accent-filled primary
         newContentButton.setIcon(WorkbenchIcons.filePlus());
         newContentButton.setToolTipText(
                 "Add content to the pack — the file lands in its correct folder automatically");
         newContentButton.addActionListener(e -> openNewContentDialog());
-        bar.add(newContentButton);
+        // Nest in a plain panel so FlatLaf does NOT flatten it to a toolbar button (which would
+        // drop the accent fill); this keeps the native default-button look, matching dialogs.
+        JPanel newContentWrap = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
+        newContentWrap.setOpaque(false);
+        newContentWrap.add(newContentButton);
+        bar.add(newContentWrap);
 
         bar.add(Box.createHorizontalGlue());
-
-        // Open-pack: a compact icon button living with the game tools on the right (the pack chip
-        // is the primary open affordance; this is the quick secondary next to the reloads).
-        JButton openPack = new JButton(WorkbenchIcons.folderOpen());
-        openPack.putClientProperty("JButton.buttonType", "toolBarButton");
-        openPack.setFocusable(false);
-        openPack.setToolTipText("Open a resource pack / datapack folder — any folder works");
-        openPack.addActionListener(e -> openPackChooser());
-        bar.add(openPack);
-        bar.add(Box.createHorizontalStrut(UiScale.small()));
 
         // Game-sync pair: green-tinted icons — "this talks to the running game".
         // Borderless like the mockup: lighter header, the tint does the signaling.
@@ -289,6 +274,8 @@ public final class SwingWorkbench {
         bar.add(reloadResourcesButton);
         bar.add(Box.createHorizontalStrut(UiScale.small()));
         bar.add(reloadDataButton);
+        // Open-pack lives in the Files panel header, next to Re-scan — the two pack-folder actions
+        // belong together (see PackTreePanel).
 
         // Zoom lives in the status bar (bottom-right, the conventional spot) — keeping the
         // header to context + actions only.

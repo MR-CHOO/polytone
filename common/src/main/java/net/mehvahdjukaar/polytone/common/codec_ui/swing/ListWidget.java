@@ -3,7 +3,7 @@ package net.mehvahdjukaar.polytone.common.codec_ui.swing;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.mojang.serialization.DataResult;
-import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
+import net.mehvahdjukaar.codecui.Schema;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.BorderFactory;

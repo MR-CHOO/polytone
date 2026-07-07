@@ -1,6 +1,6 @@
 package net.mehvahdjukaar.polytone.common.codec_ui.swing;
 
-import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
+import net.mehvahdjukaar.codecui.Schema;
 
 public final class SwingWidgetFactory {
 

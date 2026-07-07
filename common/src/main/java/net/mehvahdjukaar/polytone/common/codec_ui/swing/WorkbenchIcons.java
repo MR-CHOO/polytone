@@ -30,8 +30,10 @@ final class WorkbenchIcons {
     private static final String DIR = "polytone/codec_ui/icons/";
     private static final int SIZE = 18; // logical px; FlatSVGIcon scales for HiDPI
 
-    static Icon folder()     { return themed("folder"); }
-    static Icon folderOpen() { return themed("folder-open"); }
+    static Icon folder()      { return themed("folder"); }
+    static Icon folderOpen()  { return themed("folder-open"); }
+    /** Accent-tinted folder — marks a directory we recognise as a codec content root. */
+    static Icon folderAccent() { return new ThemedSvgIcon("folder", SIZE, EditorOps::accentColor); }
     static Icon file()      { return themed("file"); }
     static Icon filePlus()  { return themed("file-plus"); }
     static Icon refresh()   { return themed("refresh-cw"); }

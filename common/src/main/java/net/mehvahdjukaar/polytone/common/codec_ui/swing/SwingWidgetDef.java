@@ -1,8 +1,8 @@
 package net.mehvahdjukaar.polytone.common.codec_ui.swing;
 
 import com.mojang.serialization.Codec;
-import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
-import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec;
+import net.mehvahdjukaar.codecui.Schema;
+import net.mehvahdjukaar.codecui.SchemaCodec;
 
 /**
  * Named, reusable factory for a custom widget bound to a codec via {@link #bind}.

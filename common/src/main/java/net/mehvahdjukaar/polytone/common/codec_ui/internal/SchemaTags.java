@@ -2,7 +2,7 @@ package net.mehvahdjukaar.polytone.common.codec_ui.internal;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
-import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
+import net.mehvahdjukaar.codecui.Schema;
 
 import java.util.Collections;
 import java.util.Map;

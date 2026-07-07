@@ -1,4 +1,5 @@
 package net.mehvahdjukaar.polytone.common.codec_ui;
+import net.mehvahdjukaar.codecui.*;
 
 import com.mojang.datafixers.util.Either;
 import com.mojang.serialization.Codec;
@@ -36,6 +37,19 @@ import java.util.function.Function;
  * </ol>
  */
 public final class SchemaCodecs {
+
+    /**
+     * Wrap a raw codec as a {@link SchemaCodec}; the schema is derived LAZILY via the resolver
+     * on each {@link SchemaCodec#schema()} call, so companions/handlers/registry content
+     * registered later are reflected when the editor opens. Returns the codec unchanged when it
+     * already carries a schema. This is the resolver-backed counterpart of codecui's own
+     * {@link SchemaCodec#wrap} (which has no inference engine and falls back to raw JSON).
+     */
+    @SuppressWarnings("unchecked")
+    public static <A> SchemaCodec<A> wrap(Codec<A> codec) {
+        if (codec instanceof SchemaCodec<?> sc) return (SchemaCodec<A>) sc;
+        return SchemaCodec.lazy(codec, () -> SchemaResolver.get().resolve(codec));
+    }
 
     /**
      * Manually register a schema for a codec we can't (or don't want to) auto-introspect.

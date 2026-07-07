@@ -6,7 +6,7 @@ import com.mojang.datafixers.kinds.App;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
+import net.mehvahdjukaar.codecui.Schema;
 import net.mehvahdjukaar.polytone.common.codec_ui.internal.SchemaResolver;
 import net.mehvahdjukaar.polytone.common.codec_ui.internal.RecordFieldTags;
 import net.mehvahdjukaar.polytone.common.codec_ui.internal.SchemaTags;

@@ -2,8 +2,8 @@ package net.mehvahdjukaar.polytone.content.colormap;
 
 import com.mojang.serialization.Codec;
 import net.mehvahdjukaar.polytone.common.ColorUtils;
-import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
-import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec;
+import net.mehvahdjukaar.codecui.Schema;
+import net.mehvahdjukaar.codecui.SchemaCodec;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs;
 import net.mehvahdjukaar.polytone.common.expressions.impl.IBlockExp;
 import net.mehvahdjukaar.polytone.content.item.BarColor;

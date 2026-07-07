@@ -4,7 +4,7 @@ import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLaf;
 import com.formdev.flatlaf.FlatLightLaf;
 import com.google.gson.JsonElement;
-import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec;
+import net.mehvahdjukaar.codecui.SchemaCodec;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor;
 import org.jetbrains.annotations.Nullable;
 
@@ -201,7 +201,7 @@ public final class SwingSchemaEditor implements SchemaEditor {
         ColorUIResource panel = new ColorUIResource(EditorOps.panelBg());
         for (String k : new String[]{
                 "Panel.background", "control", "Viewport.background", "ScrollPane.background",
-                "SplitPane.background", "TabbedPane.background", "TabbedPane.contentAreaColor",
+                "SplitPane.background",
                 "List.background", "Tree.background", "Table.background",
                 "MenuBar.background", "Menu.background", "PopupMenu.background"}) {
             UIManager.put(k, panel);
@@ -236,15 +236,21 @@ public final class SwingSchemaEditor implements SchemaEditor {
         UIManager.put("Component.focusWidth", 1);
         UIManager.put("Component.innerFocusWidth", 1);
 
-        // Modern tabbed-pane styling: a slim accent underline marks the selected tab,
-        // roomy tab height, and a subtle elevation on the selected/hovered tab so the
-        // card-style editor tabs read like a real code editor's file tabs.
-        UIManager.put("TabbedPane.tabSelectionHeight", 3);
+        // Editor file-tabs — the previous scheme painted the tab STRIP, the unselected tabs and
+        // the selected tab all in the panel tone, so multiple open tabs melted together. Fix by
+        // giving the three surfaces distinct tones: the strip SINKS (darker) so tabs read as raised
+        // cards; the selected tab takes the content (panel) tone so it visually connects to the
+        // editor below it; unselected tabs recede into the darker strip; a slim accent underline +
+        // visible separators finish the code-editor look.
+        UIManager.put("TabbedPane.tabSelectionHeight", UiScale.zoomLogical(3));
         UIManager.put("TabbedPane.tabHeight", UiScale.zoomLogical(38));
         UIManager.put("TabbedPane.showTabSeparators", Boolean.TRUE);
         UIManager.put("TabbedPane.tabSeparatorsFullHeight", Boolean.FALSE);
-        UIManager.put("TabbedPane.selectedBackground", new ColorUIResource(EditorOps.surface(0.05f)));
-        UIManager.put("TabbedPane.hoverColor", new ColorUIResource(EditorOps.surface(0.03f)));
+        UIManager.put("TabbedPane.background", new ColorUIResource(EditorOps.surface(-0.05f)));
+        UIManager.put("TabbedPane.contentAreaColor", new ColorUIResource(EditorOps.panelBg()));
+        UIManager.put("TabbedPane.selectedBackground", new ColorUIResource(EditorOps.panelBg()));
+        UIManager.put("TabbedPane.hoverColor", new ColorUIResource(EditorOps.surface(-0.02f)));
+        UIManager.put("TabbedPane.tabSeparatorColor", new ColorUIResource(EditorOps.dividerColor()));
     }
 
     private static void logBootstrapDiagnostics() {

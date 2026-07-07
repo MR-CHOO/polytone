@@ -1,6 +1,6 @@
 package net.mehvahdjukaar.polytone.common.codec_ui.workbench;
 
-import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec;
+import net.mehvahdjukaar.codecui.SchemaCodec;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor;
 import org.jetbrains.annotations.Nullable;
 

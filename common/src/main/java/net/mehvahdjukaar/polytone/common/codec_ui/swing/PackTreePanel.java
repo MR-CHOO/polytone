@@ -1,5 +1,6 @@
 package net.mehvahdjukaar.polytone.common.codec_ui.swing;
 
+import net.mehvahdjukaar.polytone.common.codec_ui.workbench.CodecEntry;
 import net.mehvahdjukaar.polytone.common.codec_ui.workbench.PackWorkspace;
 import org.jetbrains.annotations.Nullable;
 
@@ -26,6 +27,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.nio.file.Path;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Lazily-populated file tree of the opened {@link PackWorkspace}. Children are scanned on
@@ -51,21 +53,36 @@ final class PackTreePanel extends JPanel {
         }
     };
     private @Nullable PackWorkspace workspace;
+    /** Resolves a directory to the codec content type it is the root of (colormaps, …), or null. */
+    private final @Nullable Function<Path, CodecEntry> codecRootResolver;
 
-    PackTreePanel(Consumer<Path> onOpenFile, Runnable openPackAction) {
+    PackTreePanel(Consumer<Path> onOpenFile, Runnable openPackAction,
+                  @Nullable Function<Path, CodecEntry> codecRootResolver) {
         super(new BorderLayout(0, UiScale.small()));
+        this.codecRootResolver = codecRootResolver;
         setBorder(BorderFactory.createEmptyBorder(
                 UiScale.small(), UiScale.small(), UiScale.small(), UiScale.small()));
 
-        // ---- Header row: pack kind label + refresh ----
+        // ---- Header row: pack kind label + open-pack / re-scan actions ----
         JPanel header = new JPanel(new BorderLayout());
         header.add(packLabel, BorderLayout.CENTER);
+
+        JButton openPack = new JButton(WorkbenchIcons.folderOpen());
+        openPack.putClientProperty("JButton.buttonType", "toolBarButton");
+        openPack.setFocusable(false);
+        openPack.setToolTipText("Open a resource pack / datapack folder — any folder works");
+        openPack.addActionListener(e -> openPackAction.run());
+
         JButton refresh = new JButton(WorkbenchIcons.refresh());
         refresh.putClientProperty("JButton.buttonType", "toolBarButton");
         refresh.setFocusable(false);
         refresh.setToolTipText("Re-scan the pack folder");
         refresh.addActionListener(e -> refresh());
-        header.add(refresh, BorderLayout.EAST);
+
+        Box headerActions = Box.createHorizontalBox();
+        headerActions.add(openPack);
+        headerActions.add(refresh);
+        header.add(headerActions, BorderLayout.EAST);
         add(header, BorderLayout.NORTH);
 
         // ---- Tree ----
@@ -120,7 +137,7 @@ final class PackTreePanel extends JPanel {
         line2.setAlignmentX(Component.CENTER_ALIGNMENT);
         line2.setForeground(EditorOps.mutedColor());
         line2.setFont(UiScale.deriveFont(line2.getFont(), Font.PLAIN, -2f));
-        JButton open = new JButton("Open Pack…", WorkbenchIcons.folder());
+        JButton open = new JButton("Open Pack", WorkbenchIcons.folderOpen());
         open.setAlignmentX(Component.CENTER_ALIGNMENT);
         open.addActionListener(e -> openPackAction.run());
         empty.add(line1);
@@ -176,15 +193,42 @@ final class PackTreePanel extends JPanel {
         }
     }
 
-    /** Folder icons keyed off the real directory flag, not child count. */
-    private static final class Renderer extends DefaultTreeCellRenderer {
+    /**
+     * Folder icons keyed off the real directory flag (not child count). Directories we recognise
+     * as a codec content root (colormaps, block modifiers, …) get an accent-tinted folder icon and
+     * a trailing accent tag naming the content type — a clear "this is a Polytone folder" marker.
+     */
+    private final class Renderer extends DefaultTreeCellRenderer {
         @Override
         public Component getTreeCellRendererComponent(JTree tree, Object value, boolean sel,
                                                       boolean expanded, boolean leaf, int row, boolean focus) {
             boolean dir = value instanceof FileNode node && node.directory;
+            CodecEntry codecRoot = dir && codecRootResolver != null
+                    ? codecRootResolver.apply(((FileNode) value).path) : null;
             super.getTreeCellRendererComponent(tree, value, sel, expanded, dir ? false : leaf, row, focus);
-            if (dir) setIcon(expanded ? getOpenIcon() : getClosedIcon());
+            if (dir && codecRoot != null) {
+                setIcon(WorkbenchIcons.folderAccent());
+                String name = String.valueOf(((FileNode) value).path.getFileName());
+                // Accent tag, but switch to the selection foreground when the row is selected
+                // (accent-on-accent would vanish).
+                String tagColor = hex(sel ? getTextSelectionColor() : EditorOps.accentColor());
+                setText("<html>" + escapeHtml(name)
+                        + " <font color='" + tagColor + "'>• " + escapeHtml(codecRoot.label())
+                        + "</font></html>");
+                setToolTipText(codecRoot.label() + " — Polytone codec folder");
+            } else if (dir) {
+                setIcon(expanded ? getOpenIcon() : getClosedIcon());
+                setToolTipText(null);
+            }
             return this;
         }
+    }
+
+    private static String hex(java.awt.Color c) {
+        return String.format("#%06X", c.getRGB() & 0xFFFFFF);
+    }
+
+    private static String escapeHtml(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 }

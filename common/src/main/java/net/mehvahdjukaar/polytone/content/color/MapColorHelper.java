@@ -124,10 +124,10 @@ public class MapColorHelper {
      * Declared AFTER {@code colorNames} — the option list snapshots its keys at class-init.
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    public static final Codec<MapColor> CODEC = net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec.of(
+    public static final Codec<MapColor> CODEC = net.mehvahdjukaar.codecui.SchemaCodec.of(
             Codec.STRING.xmap(MapColorHelper::byName, mapColor -> "none"),
-            (net.mehvahdjukaar.polytone.common.codec_ui.Schema)
-                    new net.mehvahdjukaar.polytone.common.codec_ui.Schema.Enum<>(
+            (net.mehvahdjukaar.codecui.Schema)
+                    new net.mehvahdjukaar.codecui.Schema.Enum<>(
                             colorNames.keySet().stream().sorted().toList(),
                             java.util.function.Function.identity()));
 

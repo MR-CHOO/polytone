@@ -1,4 +1,5 @@
 package net.mehvahdjukaar.polytone.common.codec_ui;
+import net.mehvahdjukaar.codecui.*;
 
 import org.jetbrains.annotations.Nullable;
 import java.util.function.Consumer;

@@ -4,7 +4,7 @@ import com.formdev.flatlaf.FlatLaf;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
 import com.mojang.serialization.DataResult;
-import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
+import net.mehvahdjukaar.codecui.Schema;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.Theme;
 import org.fife.ui.rtextarea.RTextScrollPane;
@@ -141,13 +141,20 @@ public final class ExpressionWidget implements SwingWidget, CollapsibleWidget {
 
         // ---- Debounced validation status.
         if (def.validator != null) {
-            status = new JTextArea(" ");
+            // Re-assert font AND color in updateUI(): a FlatLaf.updateUI() (zoom / theme switch)
+            // otherwise reset the foreground back to the default, blanking the red error text.
+            status = new JTextArea(" ") {
+                @Override public void updateUI() {
+                    super.updateUI();
+                    setFont(UiScale.deriveFont(UIManager.getFont("Label.font"), Font.PLAIN, -1f));
+                    applyStatusStyle();
+                }
+            };
             status.setEditable(false);
             status.setFocusable(false);
             status.setLineWrap(true);
             status.setWrapStyleWord(true);
             status.setOpaque(false);
-            status.setFont(UiScale.deriveFont(UIManager.getFont("Label.font"), Font.PLAIN, -1f));
             status.setAlignmentX(Component.LEFT_ALIGNMENT);
             root.add(Box.createVerticalStrut(UiScale.small()));
             root.add(status);
@@ -268,10 +275,16 @@ public final class ExpressionWidget implements SwingWidget, CollapsibleWidget {
         } catch (Throwable t) {
             error = String.valueOf(t);
         }
-        status.setText(error == null ? "✓ compiles" : "✗ " + error);
-        status.setForeground(error == null ? EditorOps.mutedColor() : EditorOps.errorColor());
         lastError = error;
+        status.setText(error == null ? "✓ compiles" : "✗ " + error);
+        applyStatusStyle();
         updateSummary();
+    }
+
+    /** Green-muted "compiles" vs the shared error red — re-applied on every theme/zoom updateUI. */
+    private void applyStatusStyle() {
+        if (status == null) return;
+        status.setForeground(lastError == null ? EditorOps.mutedColor() : EditorOps.errorColor());
     }
 
     // -------------------- SwingWidget --------------------

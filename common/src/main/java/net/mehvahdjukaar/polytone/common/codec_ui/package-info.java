@@ -3,10 +3,10 @@
  *
  * <p><b>This root package is the public API.</b> Everything a consumer needs lives here:</p>
  * <ul>
- *   <li>{@link net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodec} — entry point:
+ *   <li>{@link net.mehvahdjukaar.codecui.SchemaCodec} — entry point:
  *       {@code SchemaCodec.wrap(anyCodec)} auto-introspects; {@code of(codec, schema)} pairs
  *       a hand-made schema.</li>
- *   <li>{@link net.mehvahdjukaar.polytone.common.codec_ui.Schema} — the sealed ADT describing
+ *   <li>{@link net.mehvahdjukaar.codecui.Schema} — the sealed ADT describing
  *       a codec's edit surface; consumed by UI backends.</li>
  *   <li>{@link net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs} — facade: combinators
  *       and ALL extension-point registration (see its class javadoc for the how-to-extend
@@ -15,7 +15,7 @@
  *       {@link net.mehvahdjukaar.polytone.common.codec_ui.SchemaRecordBuilder} — DSLs for
  *       declaring schema-carrying record codecs by hand (companion style).</li>
  *   <li>SPIs: {@link net.mehvahdjukaar.polytone.common.codec_ui.SchemaHandler} (custom
- *       structural handlers) and {@link net.mehvahdjukaar.polytone.common.codec_ui.EnumerableCodec}
+ *       structural handlers) and {@link net.mehvahdjukaar.codecui.EnumerableCodec}
  *       (enumerable custom codecs / dispatch keys).</li>
  *   <li>{@link net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor} — backend-agnostic
  *       editor handle.</li>

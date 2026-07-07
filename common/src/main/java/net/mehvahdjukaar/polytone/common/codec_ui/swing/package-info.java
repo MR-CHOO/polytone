@@ -1,5 +1,5 @@
 /**
- * Swing UI backend for codec_ui: renders a {@link net.mehvahdjukaar.polytone.common.codec_ui.Schema}
+ * Swing UI backend for codec_ui: renders a {@link net.mehvahdjukaar.codecui.Schema}
  * tree as editor widgets, and hosts the single-window
  * {@link net.mehvahdjukaar.polytone.common.codec_ui.swing.SwingWorkbench} shell (pack file
  * tree, codec library, closable editor tabs). Depends only on the public API and

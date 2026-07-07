@@ -16,7 +16,7 @@ import java.util.WeakHashMap;
  * mixins (RecordCodecBuilder.of, Instance.apN, point/stable).
  *
  * <p>WeakHashMap by builder identity so transient builders don't leak. The list is read on
- * {@code build(...)} to synthesise a {@link net.mehvahdjukaar.polytone.common.codec_ui.Schema.Record}.</p>
+ * {@code build(...)} to synthesise a {@link net.mehvahdjukaar.codecui.Schema.Record}.</p>
  */
 public final class RecordFieldTags {
 

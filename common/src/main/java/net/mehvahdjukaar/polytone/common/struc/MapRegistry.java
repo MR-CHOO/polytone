@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-public class MapRegistry<T> implements Codec<T>, net.mehvahdjukaar.polytone.common.codec_ui.EnumerableCodec {
+public class MapRegistry<T> implements Codec<T>, net.mehvahdjukaar.codecui.EnumerableCodec {
     private final BiMap<Identifier, T> map = HashBiMap.create();
     private final List<Identifier> orderedKeys = new ArrayList<>();
     private final String name;
