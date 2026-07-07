@@ -25,7 +25,7 @@ public class ExtendedAttributeMod {
                                 return c.sampleColor(
                                         level,
                                         null,
-                                        ClientFrameTicker.getCameraPos(), null, null);
+                                        ClientFrameTicker.getCameraPos(), ClientFrameTicker.getCameraBiome().value(), null);
                             },
                             supplier -> new IColorGetter.StaticColor(supplier.get()));
 
