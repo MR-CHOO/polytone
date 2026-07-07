@@ -108,6 +108,11 @@ final class PackTreePanel extends JPanel {
         JPanel empty = new JPanel();
         empty.setLayout(new javax.swing.BoxLayout(empty, javax.swing.BoxLayout.Y_AXIS));
         empty.add(Box.createVerticalGlue());
+        JLabel art = new JLabel(WorkbenchIcons.sized("folder", 40));
+        art.setAlignmentX(Component.CENTER_ALIGNMENT);
+        art.setForeground(EditorOps.mutedColor()); // themed icon follows this
+        empty.add(art);
+        empty.add(Box.createVerticalStrut(UiScale.med()));
         JLabel line1 = new JLabel("No pack opened");
         line1.setAlignmentX(Component.CENTER_ALIGNMENT);
         line1.setForeground(EditorOps.mutedColor());
@@ -115,7 +120,7 @@ final class PackTreePanel extends JPanel {
         line2.setAlignmentX(Component.CENTER_ALIGNMENT);
         line2.setForeground(EditorOps.mutedColor());
         line2.setFont(UiScale.deriveFont(line2.getFont(), Font.PLAIN, -2f));
-        JButton open = new JButton("Open Pack…");
+        JButton open = new JButton("Open Pack…", WorkbenchIcons.folder());
         open.setAlignmentX(Component.CENTER_ALIGNMENT);
         open.addActionListener(e -> openPackAction.run());
         empty.add(line1);

@@ -113,14 +113,32 @@ public final class SwingWorkbench {
             setFont(UiScale.labelFont(Font.PLAIN, -1f));
         }
     };
-    private final JLabel infoLabel = new JLabel() {
+    private final JLabel pathLabel = new JLabel() {
         @Override public void updateUI() {
             super.updateUI();
             setFont(UiScale.labelFont(Font.PLAIN, -1f));
             setForeground(EditorOps.mutedColor());
         }
     };
-    private final JButton newContentButton = new JButton("New Content…");
+    // THE primary action of the tool — explicit accent fill, re-derived in updateUI() so a
+    // live theme switch swaps in that theme's fill accent. (Inside a JToolBar, FlatLaf
+    // flattens children to toolbar-button style, so "buttonType=default" alone would NOT
+    // paint the accent; FlatLaf.style overrides it reliably.)
+    private final JButton newContentButton = new JButton("New Content…") {
+        @Override public void updateUI() {
+            super.updateUI();
+            String accent = EditorOps.accentFillHex();
+            putClientProperty("FlatLaf.style",
+                    "background: " + accent + ";"
+                            + " foreground: #FFFFFF;"
+                            + " hoverBackground: darken(" + accent + ",6%);"
+                            + " pressedBackground: darken(" + accent + ",12%);"
+                            + " disabledBackground: $Button.disabledBackground;"
+                            + " disabledText: $Button.disabledText");
+        }
+    };
+    /** Live zoom readout in the status bar; clicking it resets to 100%. */
+    private final JButton zoomResetButton = new JButton();
     private final JButton reloadResourcesButton = new JButton("Reload Resources");
     private final JButton reloadDataButton = new JButton("Reload Data");
     private final javax.swing.Timer reloadAvailabilityTimer;
@@ -225,34 +243,26 @@ public final class SwingWorkbench {
         brand.setBorder(BorderFactory.createEmptyBorder(0, UiScale.small(), 0, UiScale.large()));
         bar.add(brand);
 
+        // Context first, like a title bar: brand · current pack chip. Actions follow after
+        // the hairline — the old order (actions, THEN the chip, then glue) left the chip
+        // floating mid-bar between button groups.
+        bar.add(buildPackChip());
+
+        bar.add(Box.createHorizontalStrut(UiScale.med()));
+        bar.add(toolbarSeparator());
+        bar.add(Box.createHorizontalStrut(UiScale.med()));
+
         JButton openPack = new JButton("Open Pack…", WorkbenchIcons.folder());
         openPack.setToolTipText("Open a resource pack / datapack folder — any folder works");
         openPack.addActionListener(e -> openPackChooser());
         bar.add(openPack);
         bar.add(Box.createHorizontalStrut(UiScale.small()));
 
-        // THE primary action of the tool — explicit accent fill. (Inside a JToolBar,
-        // FlatLaf flattens children to toolbar-button style, so "buttonType=default"
-        // alone would NOT paint the accent; FlatLaf.style overrides it reliably.)
         newContentButton.setIcon(WorkbenchIcons.filePlus());
-        newContentButton.putClientProperty("FlatLaf.style",
-                "background: " + EditorOps.ACCENT_HEX + ";"
-                        + " foreground: #FFFFFF;"
-                        + " hoverBackground: darken(" + EditorOps.ACCENT_HEX + ",6%);"
-                        + " pressedBackground: darken(" + EditorOps.ACCENT_HEX + ",12%);"
-                        + " disabledBackground: $Button.disabledBackground;"
-                        + " disabledText: $Button.disabledText");
         newContentButton.setToolTipText(
                 "Add content to the pack — the file lands in its correct folder automatically");
         newContentButton.addActionListener(e -> openNewContentDialog());
         bar.add(newContentButton);
-
-        // Hairline separates the action group from the pack breadcrumb chip.
-        bar.add(Box.createHorizontalStrut(UiScale.med()));
-        bar.add(toolbarSeparator());
-        bar.add(Box.createHorizontalStrut(UiScale.med()));
-
-        bar.add(buildPackChip());
 
         bar.add(Box.createHorizontalGlue());
 
@@ -270,11 +280,10 @@ public final class SwingWorkbench {
         bar.add(Box.createHorizontalStrut(UiScale.small()));
         bar.add(reloadDataButton);
 
+        // Zoom lives in the status bar (bottom-right, the conventional spot) — keeping the
+        // header to context + actions only.
         bar.add(Box.createHorizontalStrut(UiScale.med()));
         bar.add(toolbarSeparator());
-        bar.add(Box.createHorizontalStrut(UiScale.small()));
-        bar.add(zoomButton(WorkbenchIcons.zoomOut(), "Zoom out (Ctrl+-)", -2));
-        bar.add(zoomButton(WorkbenchIcons.zoomIn(), "Zoom in (Ctrl+=)", +2));
         bar.add(Box.createHorizontalStrut(UiScale.small()));
         bar.add(buildThemeToggle());
         return bar;
@@ -291,8 +300,7 @@ public final class SwingWorkbench {
 
     private void adjustZoom(int deltaPt) {
         SwingSchemaEditor.adjustZoom(deltaPt);
-        status("Zoom " + SwingSchemaEditor.zoomPercent() + "%"
-                + (deltaPt == 0 ? "" : "  (Ctrl+0 resets)"));
+        zoomResetButton.setText(SwingSchemaEditor.zoomPercent() + "%");
     }
 
     /** Vertical hairline dividing toolbar groups (actions | breadcrumb | game sync | theme). */
@@ -459,7 +467,23 @@ public final class SwingWorkbench {
             }
         };
         bar.add(statusLabel, BorderLayout.CENTER);
-        bar.add(infoLabel, BorderLayout.EAST);
+
+        // Right side: pack path readout | – 100% + zoom cluster (the percent resets).
+        zoomResetButton.putClientProperty("JButton.buttonType", "toolBarButton");
+        zoomResetButton.setFocusable(false);
+        zoomResetButton.setToolTipText("Reset zoom to 100% (Ctrl+0)");
+        zoomResetButton.setText(SwingSchemaEditor.zoomPercent() + "%");
+        zoomResetButton.addActionListener(e -> adjustZoom(0));
+
+        Box east = Box.createHorizontalBox();
+        east.add(pathLabel);
+        east.add(Box.createHorizontalStrut(UiScale.med()));
+        east.add(toolbarSeparator());
+        east.add(Box.createHorizontalStrut(UiScale.small()));
+        east.add(zoomButton(WorkbenchIcons.zoomOut(), "Zoom out (Ctrl+-)", -2));
+        east.add(zoomResetButton);
+        east.add(zoomButton(WorkbenchIcons.zoomIn(), "Zoom in (Ctrl+=)", +2));
+        bar.add(east, BorderLayout.EAST);
         return bar;
     }
 
@@ -538,8 +562,11 @@ public final class SwingWorkbench {
             column.add(Box.createVerticalStrut(UiScale.small()));
 
             for (CodecEntry entry : group.getValue()) {
-                JButton button = new JButton(entry.label());
+                // Flat hover rows (not full bordered buttons) — the library reads as a list.
+                JButton button = new JButton(entry.label(), WorkbenchIcons.filePlus());
+                button.putClientProperty("JButton.buttonType", "toolBarButton");
                 button.setHorizontalAlignment(SwingConstants.LEFT);
+                button.setIconTextGap(UiScale.med());
                 button.setAlignmentX(Component.LEFT_ALIGNMENT);
                 int rowH = Math.max(button.getPreferredSize().height, UiScale.px(34));
                 button.setMaximumSize(new Dimension(Integer.MAX_VALUE, rowH));
@@ -548,8 +575,14 @@ public final class SwingWorkbench {
                 }
                 button.addActionListener(e -> openEntryTab(entry));
                 column.add(button);
-                column.add(Box.createVerticalStrut(UiScale.small()));
             }
+        }
+        if (groups.isEmpty()) {
+            JLabel none = new JLabel("No codecs match", WorkbenchIcons.search(), SwingConstants.LEFT);
+            none.setAlignmentX(Component.LEFT_ALIGNMENT);
+            none.setForeground(EditorOps.mutedColor());
+            none.setBorder(BorderFactory.createEmptyBorder(UiScale.med(), UiScale.small(), 0, 0));
+            column.add(none);
         }
         column.add(Box.createVerticalGlue());
     }
@@ -586,12 +619,12 @@ public final class SwingWorkbench {
         if (ws == null) {
             packLabel.setText("No pack opened");
             packKindLabel.setText("");
-            infoLabel.setText(UiScale.scaleAsPercent());
+            pathLabel.setText("");
         } else {
             packLabel.setText(ws.name());
             packKindLabel.setText(ws.kind().display());
             packLabel.setToolTipText(ws.root().toString());
-            infoLabel.setText(UiScale.scaleAsPercent() + " · " + ws.root());
+            pathLabel.setText(ws.root().toString());
             status("Opened " + ws.kind().display().toLowerCase(Locale.ROOT) + ": " + ws.root());
         }
     }

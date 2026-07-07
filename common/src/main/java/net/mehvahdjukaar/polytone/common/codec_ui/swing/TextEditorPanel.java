@@ -86,7 +86,9 @@ final class TextEditorPanel extends JPanel implements WorkbenchTab {
         scroll.setLineNumbersEnabled(true);
         add(scroll, BorderLayout.CENTER);
 
-        status.setForeground(EditorOps.mutedColor());
+        // Hidden until there is something to report — no permanently blank strip under the editor.
+        status.setIconTextGap(UiScale.small());
+        status.setVisible(false);
         add(status, BorderLayout.SOUTH);
 
         var im = getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
@@ -106,6 +108,7 @@ final class TextEditorPanel extends JPanel implements WorkbenchTab {
         boolean nowDirty = !area.getText().equals(savedText);
         if (nowDirty != dirty) {
             dirty = nowDirty;
+            if (dirty) status.setVisible(false); // a stale "Saved" would be a lie now
             if (stateListener != null) stateListener.run();
         }
     }
@@ -138,12 +141,17 @@ final class TextEditorPanel extends JPanel implements WorkbenchTab {
             String text = area.getText();
             Files.writeString(file, text);
             savedText = text;
+            status.setIcon(WorkbenchIcons.checkTinted());
+            status.setForeground(EditorOps.mutedColor()); // clear a previous error's red
             status.setText("Saved");
+            status.setVisible(true);
             onEdit();
             return true;
         } catch (IOException e) {
-            status.setText("Write error: " + e.getMessage());
+            status.setIcon(WorkbenchIcons.xTinted());
             status.setForeground(EditorOps.errorColor());
+            status.setText("Write error: " + e.getMessage());
+            status.setVisible(true);
             return false;
         }
     }

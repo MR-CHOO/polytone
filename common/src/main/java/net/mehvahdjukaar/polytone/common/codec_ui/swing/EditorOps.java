@@ -102,16 +102,26 @@ final class EditorOps {
     // -------------------- Theme accent + surface layering --------------------
 
     /**
-     * Single accent color — seeded into FlatLaf via {@code @accentColor} so buttons,
-     * focus rings, selection and the tab underline all share it. Kept here as the one
-     * source of truth; the bootstrap reads {@link #ACCENT_HEX}, widgets read
-     * {@link #accentColor()}.
+     * Theme accent, split by use because no single purple has enough contrast both ways:
+     * <ul>
+     *   <li>{@link #accentFillHex()} — button FILLS carrying white text (New Content, the
+     *       default Save button via {@code @accentColor}): a deep violet, ~5:1+ vs white.</li>
+     *   <li>{@link #accentColor()} — accent TEXT/GLYPHS sitting on the theme surface (brand,
+     *       kind chip, ƒ(x) glyphs): lighter on dark so it reads, deep on light.</li>
+     * </ul>
+     * The old single {@code #8B5CF6} washed out as text on light backgrounds (~3:1) and as a
+     * white-text fill (~4:1). Everything reads these live, so a theme switch re-resolves.
      */
-    static final String ACCENT_HEX = "#8B5CF6";
+    static String accentFillHex() {
+        return FlatLaf.isLafDark() ? ACCENT_FILL_DARK_HEX : ACCENT_FILL_LIGHT_HEX;
+    }
 
-    /** The accent as a {@link Color} for hand-drawn touches (brand text, gutters). */
+    static final String ACCENT_FILL_DARK_HEX = "#7C3AED";
+    static final String ACCENT_FILL_LIGHT_HEX = "#6D28D9";
+
+    /** The accent for hand-drawn text/glyph touches (brand text, chips, gutters). */
     static Color accentColor() {
-        return Color.decode(ACCENT_HEX);
+        return FlatLaf.isLafDark() ? new Color(0xA78BFA) : new Color(0x6D28D9);
     }
 
     /**

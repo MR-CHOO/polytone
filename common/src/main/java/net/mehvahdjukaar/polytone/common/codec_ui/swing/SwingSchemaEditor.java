@@ -87,14 +87,6 @@ public final class SwingSchemaEditor implements SchemaEditor {
             System.setProperty("flatlaf.uiScale", UiScale.detectInitialScale());
         }
 
-        // Phase 1b: single accent color, seeded via global extra defaults BEFORE the L&F
-        // installs so every accent-derived color (default button, focus ring, selection,
-        // tab underline, checkbox/radio) is recomputed from it. The map is retained by
-        // FlatLaf and re-applied on every subsequent theme install, so light/dark toggles
-        // keep the accent for free. One source of truth lives in EditorOps so hand-drawn
-        // touches (brand text) match exactly.
-        FlatLaf.setGlobalExtraDefaults(java.util.Map.of("@accentColor", EditorOps.ACCENT_HEX));
-
         // Phase 2 + 3: install the persisted theme and apply our defaults on top.
         darkTheme = PREFS.getBoolean(THEME_PREF_KEY, true);
         installTheme(darkTheme);
@@ -130,6 +122,11 @@ public final class SwingSchemaEditor implements SchemaEditor {
 
     /** Install the requested theme, then (re-)apply our UI defaults on top of it. */
     private static void installTheme(boolean dark) {
+        // Accent seeded BEFORE setup() so every accent-derived color (default button, focus
+        // ring, selection, tab underline, checkbox/radio) is recomputed from it. Per-theme:
+        // the fill accent is deeper on light for contrast (see EditorOps.accentFillHex()).
+        FlatLaf.setGlobalExtraDefaults(java.util.Map.of("@accentColor",
+                dark ? EditorOps.ACCENT_FILL_DARK_HEX : EditorOps.ACCENT_FILL_LIGHT_HEX));
         if (dark) FlatDarkLaf.setup(); else FlatLightLaf.setup();
         applyUiDefaults();
     }

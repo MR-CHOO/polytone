@@ -141,8 +141,11 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         split.setBorder(null);
         add(split, BorderLayout.CENTER);
 
-        // ---- Footer: error label above right-aligned action row ----
+        // ---- Footer: ONE row — error text (left, empty when clean) | Load/Save (right).
+        // A dedicated error line above the buttons sat there as a permanently blank strip
+        // right on top of the status bar; inlining it removes the dead band.
         errorLabel.setForeground(EditorOps.errorColor());
+        errorLabel.setIconTextGap(UiScale.small());
 
         JButton load = new JButton("Load JSON…", WorkbenchIcons.file());
         JButton save = new JButton("Save", WorkbenchIcons.save());
@@ -150,20 +153,21 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         save.setToolTipText("Save (Ctrl+S)");
         load.setToolTipText("Load a JSON file into the form");
 
-        JPanel buttons = new JPanel(new BorderLayout());
+        JPanel footer = new JPanel(new BorderLayout(UiScale.med(), 0)) {
+            @Override public void updateUI() {
+                super.updateUI();
+                setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createMatteBorder(1, 0, 0, 0, EditorOps.dividerColor()),
+                        BorderFactory.createEmptyBorder(UiScale.med(), 0, 0, 0)));
+            }
+        };
         Box right = Box.createHorizontalBox();
         right.add(load);
         right.add(Box.createHorizontalStrut(UiScale.med()));
         right.add(save);
-        buttons.add(right, BorderLayout.EAST);
-        buttons.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(1, 0, 0, 0, UIManager.getColor("Component.borderColor")),
-                BorderFactory.createEmptyBorder(UiScale.med(), 0, 0, 0)));
-
-        JPanel south = new JPanel(new BorderLayout(0, UiScale.small()));
-        south.add(errorLabel, BorderLayout.NORTH);
-        south.add(buttons, BorderLayout.SOUTH);
-        add(south, BorderLayout.SOUTH);
+        footer.add(errorLabel, BorderLayout.CENTER);
+        footer.add(right, BorderLayout.EAST);
+        add(footer, BorderLayout.SOUTH);
 
         save.addActionListener(e -> save());
         load.addActionListener(e -> loadFromChooser());
@@ -183,6 +187,17 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
     }
 
     // -------------------- Wiring --------------------
+
+    /** Footer error slot: red glyph + message, or a bare space keeping the row height. */
+    private void footerError(@Nullable String message) {
+        if (message == null || message.isBlank()) {
+            errorLabel.setIcon(null);
+            errorLabel.setText(" ");
+        } else {
+            errorLabel.setIcon(WorkbenchIcons.xTinted());
+            errorLabel.setText(message);
+        }
+    }
 
     /** Save directly to this file from now on (no chooser). */
     public void bindFile(@Nullable Path file) {
@@ -226,9 +241,9 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         baselineText = null;
         lastRefreshKey = null;
         DataResult<A> decoded = codec.parse(ops, json);
-        errorLabel.setText(decoded.error()
+        footerError(decoded.error()
                 .map(e -> "Loaded with problems: " + e.message())
-                .orElse(" "));
+                .orElse(null));
         SwingUtilities.invokeLater(this::refreshPreview);
     }
 
@@ -238,7 +253,7 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
     }
 
     private void loadFromChooser() {
-        errorLabel.setText(" ");
+        footerError(null);
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Load JSON");
         chooser.setFileFilter(new FileNameExtensionFilter("JSON", "json", "mcmeta"));
@@ -249,7 +264,7 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         try {
             loadJson(JsonParser.parseString(Files.readString(target.toPath())));
         } catch (Exception ex) {
-            errorLabel.setText("Load error: " + ex.getMessage());
+            footerError("Load error: " + ex.getMessage());
         }
     }
 
@@ -277,16 +292,16 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
 
     @Override
     public boolean save() {
-        errorLabel.setText(" ");
+        footerError(null);
         DataResult<JsonElement> jsonResult = rootWidget.currentJson();
         if (jsonResult.error().isPresent()) {
-            errorLabel.setText("Can't save: fix the error shown in the output panel.");
+            footerError("Can't save: fix the error shown in the output panel.");
             return false;
         }
         JsonElement json = jsonResult.result().orElseThrow();
         DataResult<A> parsed = codec.parse(ops, json);
         if (parsed.error().isPresent()) {
-            errorLabel.setText("Can't save: " + parsed.error().get().message());
+            footerError("Can't save: " + parsed.error().get().message());
             return false;
         }
 
@@ -312,7 +327,7 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
             if (target.getParent() != null) Files.createDirectories(target.getParent());
             Files.writeString(target, pretty);
         } catch (Exception ex) {
-            errorLabel.setText("Write error: " + ex.getMessage());
+            footerError("Write error: " + ex.getMessage());
             return false;
         }
 
@@ -326,7 +341,7 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
             try {
                 onSave.accept(parsed.result().orElseThrow());
             } catch (Exception ex) {
-                errorLabel.setText("Callback error: " + ex.getMessage());
+                footerError("Callback error: " + ex.getMessage());
             }
         }
         return true;
