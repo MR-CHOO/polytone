@@ -385,8 +385,12 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
     private Schema<?> tierTwoStructural(Codec<?> codec, IdentityHashMap<Object, Schema<?>> cache) {
         // Authored schema-carrying codecs know their own schema. (Lazy variants re-enter the
         // resolver for inner codecs — the placeholder already in the cache guards cycles.)
+        // A codecui SchemaCodec built by a mod WITHOUT our resolver (codecui standalone has no
+        // inference engine) freezes any raw inner codec as Schema.Opaque. Since that Opaque still
+        // carries the codec, we re-resolve those leaves here through the full pipeline — so a
+        // third-party declaration's plain float/id/registry fields render as richly as our own.
         if (codec instanceof net.mehvahdjukaar.codecui.SchemaCodec<?> sc) {
-            return sc.schema();
+            return enrichOpaques(sc.schema(), cache);
         }
         // MapCodec.codec() returns a MapCodecCodec record wrapping the underlying MapCodec.
         // Promote to the inner MapCodec resolution so dispatch codecs (KeyDispatchCodec, RCB.build
@@ -621,6 +625,73 @@ public final class SchemaResolver implements SchemaHandler.Resolver {
         if (inner instanceof Codec<?> c) return resolveCodec(c, cache);
         if (inner instanceof MapCodec<?> m) return resolveMapCodec(m, cache);
         return new Schema.Opaque<>(null, null);
+    }
+
+    /**
+     * Walks a schema declared by a codecui {@code SchemaCodec} and replaces every
+     * {@code Schema.Opaque} leaf that still carries a codec with the result of resolving that
+     * codec through the full pipeline — but only when resolution yields something better than
+     * raw JSON. This gives a third-party declaration's raw inner codecs (plain {@code Codec.FLOAT},
+     * {@code ResourceLocation.CODEC}, registry/dispatch codecs, RCB records…) the same live
+     * inference our own codecs get, instead of the Opaque fallback codecui bakes in without an
+     * engine. Container schemas are rebuilt structurally; {@code Ref} nodes are left untouched
+     * (recursion is already handled by the per-resolve cache).
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private Schema<?> enrichOpaques(Schema<?> schema, IdentityHashMap<Object, Schema<?>> cache) {
+        if (schema instanceof Schema.Opaque<?> op) {
+            Codec<?> inner = op.codec();
+            if (inner == null) return schema;
+            Schema<?> resolved = resolveCodec((Codec) inner, cache);
+            return (resolved instanceof Schema.Opaque) ? schema : resolved;
+        }
+        if (schema instanceof Schema.Record<?> rec) {
+            java.util.List<Schema.Field> out = new java.util.ArrayList<>();
+            boolean changed = false;
+            for (Schema.Field f : (java.util.List<Schema.Field>) (java.util.List) rec.fields()) {
+                Schema<?> e = enrichOpaques(f.schema(), cache);
+                changed |= e != f.schema();
+                out.add(new Schema.Field(f.name(), e, f.optional(), f.defaultValue()));
+            }
+            return changed ? new Schema.Record(rec.type(), (java.util.List) out) : schema;
+        }
+        if (schema instanceof Schema.ListOf<?> l) {
+            Schema<?> e = enrichOpaques(l.element(), cache);
+            return e == l.element() ? schema : new Schema.ListOf(e, l.min(), l.max());
+        }
+        if (schema instanceof Schema.MapOf<?, ?> m) {
+            Schema<?> k = enrichOpaques(m.key(), cache);
+            Schema<?> v = enrichOpaques(m.value(), cache);
+            return (k == m.key() && v == m.value()) ? schema : new Schema.MapOf(k, v);
+        }
+        if (schema instanceof Schema.PairOf<?, ?> p) {
+            Schema<?> f = enrichOpaques(p.first(), cache);
+            Schema<?> s = enrichOpaques(p.second(), cache);
+            return (f == p.first() && s == p.second()) ? schema : new Schema.PairOf(f, s);
+        }
+        if (schema instanceof Schema.AnyOf<?> any) {
+            java.util.List<Schema.AnyOf.Option> out = new java.util.ArrayList<>();
+            boolean changed = false;
+            for (Schema.AnyOf.Option o : any.options()) {
+                Schema<?> e = enrichOpaques(o.schema(), cache);
+                changed |= e != o.schema();
+                out.add(new Schema.AnyOf.Option(o.label(), e));
+            }
+            return changed ? new Schema.AnyOf(java.util.List.copyOf(out)) : schema;
+        }
+        if (schema instanceof Schema.OneOf<?> one) {
+            LinkedHashMap<String, Schema<?>> out = new LinkedHashMap<>();
+            boolean changed = false;
+            for (var en : ((java.util.Map<String, Schema<?>>) (java.util.Map) one.variants()).entrySet()) {
+                Schema<?> e = enrichOpaques(en.getValue(), cache);
+                changed |= e != en.getValue();
+                out.put(en.getKey(), e);
+            }
+            return changed ? new Schema.OneOf(one.typeField(), (java.util.Map) out) : schema;
+        }
+        // Ref (cycle guard) + all leaf schemas (Bool, ranges, Str, ResourceId, Color, Enum,
+        // Custom) are returned unchanged.
+        return schema;
     }
 
     /**

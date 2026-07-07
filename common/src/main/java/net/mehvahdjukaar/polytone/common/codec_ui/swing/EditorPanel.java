@@ -457,6 +457,7 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
     private JPanel errorBannerHost;
 
     private JComponent buildJsonPreview() {
+        SyntaxPalettes.ensureBuiltinTokenMakers(); // make the bundled JSON lexer load in a modded classloader
         previewArea = new RSyntaxTextArea();
         previewArea.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_JSON);
         previewArea.setEditable(false);
@@ -569,8 +570,10 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         } catch (Throwable ignored) {
             // Theme is cosmetic only.
         }
-        // Theme.apply() resets font + background — re-assert the shared editor font and the
-        // (purple-tinted) editor surface on top of it.
+        // Override the RSyntax theme's JSON token colors with our dedicated JSON palette (distinct
+        // from the expression editor's), then re-assert the shared editor font + surface that
+        // Theme.apply() just reset.
+        SyntaxPalettes.applyJson(previewArea, FlatLaf.isLafDark());
         previewArea.setFont(UiScale.editorFont());
         Color bg = EditorOps.editorSurface();
         if (bg != null) previewArea.setBackground(bg);

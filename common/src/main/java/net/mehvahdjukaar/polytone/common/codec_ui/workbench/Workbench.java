@@ -83,10 +83,16 @@ public final class Workbench {
         PackWorkspace.Location location = ws.locate(dir.resolve("_probe"));
         if (location == null) return null;
         String container = location.containerDir();
+        if (container.isEmpty()) return null;
         for (CodecEntry entry : entries) {
             String c = entry.containerDir();
             if (c == null || c.isEmpty()) continue;
-            if (container.equals(c) || container.endsWith("/" + c)) return entry;
+            // Match the exact container root, tolerating either the pack being opened ABOVE assets/
+            // (container carries an extra prefix) or INSIDE the polytone/ dir (container is a suffix
+            // of the entry's dir).
+            if (container.equals(c) || container.endsWith("/" + c) || c.endsWith("/" + container)) {
+                return entry;
+            }
         }
         return null;
     }

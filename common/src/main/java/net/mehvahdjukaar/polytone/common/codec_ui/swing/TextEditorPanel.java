@@ -63,6 +63,7 @@ final class TextEditorPanel extends JPanel implements WorkbenchTab {
         setBorder(BorderFactory.createEmptyBorder(
                 UiScale.med(), UiScale.med(), UiScale.med(), UiScale.med()));
 
+        SyntaxPalettes.ensureBuiltinTokenMakers(); // make the bundled lexers load in a modded classloader
         area = new RSyntaxTextArea(savedText);
         area.setSyntaxEditingStyle(syntaxFor(name));
         area.setHighlightCurrentLine(false);
@@ -71,6 +72,10 @@ final class TextEditorPanel extends JPanel implements WorkbenchTab {
             if (in != null) Theme.load(in).apply(area);
         } catch (Throwable ignored) {
             // Theme is cosmetic only.
+        }
+        // JSON files get the dedicated JSON palette (distinct from the expression editor's).
+        if (SyntaxConstants.SYNTAX_STYLE_JSON.equals(area.getSyntaxEditingStyle())) {
+            SyntaxPalettes.applyJson(area, FlatLaf.isLafDark());
         }
         UiScale.installEditorZoom(area); // own size + Ctrl+wheel, decoupled from UI zoom
         java.awt.Color bg = EditorOps.editorSurface();
