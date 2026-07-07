@@ -125,10 +125,30 @@ public final class SwingSchemaEditor implements SchemaEditor {
         // Accent seeded BEFORE setup() so every accent-derived color (default button, focus
         // ring, selection, tab underline, checkbox/radio) is recomputed from it. Per-theme:
         // the fill accent is deeper on light for contrast (see EditorOps.accentFillHex()).
-        FlatLaf.setGlobalExtraDefaults(java.util.Map.of("@accentColor",
-                dark ? EditorOps.ACCENT_FILL_DARK_HEX : EditorOps.ACCENT_FILL_LIGHT_HEX));
+        // @background seeds every FlatLaf-derived surface with our panel tone (both themes), so
+        // components we don't explicitly override still land on-palette instead of the stock grey.
+        FlatLaf.setGlobalExtraDefaults(java.util.Map.of(
+                "@accentColor", dark ? EditorOps.ACCENT_FILL_DARK_HEX : EditorOps.ACCENT_FILL_LIGHT_HEX,
+                "@background", dark ? "#363841" : "#F3F3F6"));
         if (dark) FlatDarkLaf.setup(); else FlatLightLaf.setup();
         applyUiDefaults();
+    }
+
+    // -------------------- Compact layout --------------------
+
+    private static final String COMPACT_PREF_KEY = "compactLayout";
+    private static boolean compactMode = PREFS.getBoolean(COMPACT_PREF_KEY, false);
+
+    /** True when record fields stack their name above the value (narrow-screen layout). */
+    public static boolean isCompactMode() {
+        return compactMode;
+    }
+
+    /** Flip compact layout and re-lay every open record form live. Persisted across sessions. */
+    public static void toggleCompact() {
+        compactMode = !compactMode;
+        PREFS.putBoolean(COMPACT_PREF_KEY, compactMode);
+        RecordWidget.relayoutAll();
     }
 
     // -------------------- UI zoom --------------------
@@ -143,8 +163,11 @@ public final class SwingSchemaEditor implements SchemaEditor {
      * the hand-sized monospace editors. Persisted across sessions.
      */
     static void adjustZoom(int deltaPt) {
+        // Cap the TOP end at 160%: past that the toolbar/status chrome outgrows a normal window
+        // and pushes its own controls (incl. the zoom buttons) off-screen — the "buttons vanish,
+        // must use the keyboard" report. Shrinking the CODE is the editor font's job now, not this.
         fontPt = deltaPt == 0 ? DEFAULT_FONT_PT
-                : Math.max(8, Math.min(40, fontPt + deltaPt)); // 40%..200% of the 20pt base
+                : Math.max(8, Math.min(32, fontPt + deltaPt)); // 40%..160% of the 20pt base
         PREFS.putInt(FONT_PREF_KEY, fontPt);
         // Re-apply ALL defaults (not just the font): metric defaults + the UiScale zoom ratio
         // are zoom-aware now, so spacing, min heights and border insets grow with the font.
@@ -167,7 +190,29 @@ public final class SwingSchemaEditor implements SchemaEditor {
 
         // Base font in logical pt (FlatLaf further scales by flatlaf.uiScale). Mutable:
         // this is the UI zoom — bumping it makes FlatLaf recompute every component metric.
+        // SANS_SERIF is the platform UI font (Segoe UI on Windows) — matches the requested look.
         UIManager.put("defaultFont", new FontUIResource(Font.SANS_SERIF, Font.PLAIN, fontPt));
+
+        // Structured surface palette — applied to BOTH themes on the SAME keys so light and dark
+        // stay coherent and NO component is stranded on FlatLaf's default grey (the "stray panel"
+        // report on dark, "half the colors don't work" report on light). Values come from the
+        // theme-branched EditorOps palette. Structural surfaces get the panel tone; input wells
+        // get the deep editor tone. Toolbar/status/cards derive off Panel.background elsewhere.
+        ColorUIResource panel = new ColorUIResource(EditorOps.panelBg());
+        for (String k : new String[]{
+                "Panel.background", "control", "Viewport.background", "ScrollPane.background",
+                "SplitPane.background", "TabbedPane.background", "TabbedPane.contentAreaColor",
+                "List.background", "Tree.background", "Table.background",
+                "MenuBar.background", "Menu.background", "PopupMenu.background"}) {
+            UIManager.put(k, panel);
+        }
+        ColorUIResource well = new ColorUIResource(EditorOps.editorSurface());
+        for (String k : new String[]{
+                "TextField.background", "FormattedTextField.background", "PasswordField.background",
+                "TextArea.background", "EditorPane.background", "TextPane.background",
+                "Spinner.background", "ComboBox.background"}) {
+            UIManager.put(k, well);
+        }
 
         // Minimum component heights — logical px; FlatLaf scales by uiScale, zoomLogical adds
         // the font zoom so boxes grow WITH the text (otherwise big-font/short-box mismatches).

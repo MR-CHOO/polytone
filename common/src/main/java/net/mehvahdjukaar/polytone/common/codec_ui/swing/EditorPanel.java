@@ -19,8 +19,10 @@ import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JComponent;
+import javax.swing.JToggleButton;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -91,6 +93,16 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
     private @Nullable String lastRefreshKey;
     private boolean dirty;
 
+    /** How the center area is arranged — toggled by the header's Form / Split / JSON control. */
+    private enum ViewMode { FORM, SPLIT, JSON }
+    private ViewMode viewMode = ViewMode.SPLIT;
+    private double splitRatio = 0.6;
+    private JScrollPane formScroll;
+    private JComponent previewPanel;
+    private JSplitPane split;
+    private final JPanel centerHost = new JPanel(new BorderLayout());
+    private Box kindInfo;
+
     public EditorPanel(SchemaCodec<A> codec, String label, Side side) {
         super(new BorderLayout(0, UiScale.med()));
         this.codec = codec;
@@ -104,7 +116,7 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         setBorder(BorderFactory.createEmptyBorder(
                 UiScale.med(), UiScale.med(), UiScale.med(), UiScale.med()));
 
-        // ---- Kind header: what am I editing? (hidden until the shell names it) ----
+        // ---- Header row: content-kind chip (left, when named) · view toggle (right, always) ----
         kindHeader.setLayout(new BoxLayout(kindHeader, BoxLayout.X_AXIS));
         kindHeader.setOpaque(false);
         JLabel sideLabel = new JLabel(side == Side.SERVER_DATA
@@ -115,31 +127,39 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
                 setForeground(EditorOps.mutedColor());
             }
         };
-        kindHeader.add(kindChip);
-        kindHeader.add(Box.createHorizontalStrut(UiScale.med()));
-        kindHeader.add(sideLabel);
+        kindInfo = Box.createHorizontalBox();
+        kindInfo.add(kindChip);
+        kindInfo.add(Box.createHorizontalStrut(UiScale.med()));
+        kindInfo.add(sideLabel);
+        kindInfo.setVisible(false); // shown once the shell names the content kind
+        kindHeader.add(kindInfo);
         kindHeader.add(Box.createHorizontalGlue());
-        kindHeader.setVisible(false);
+        kindHeader.add(buildViewToggle());
         add(kindHeader, BorderLayout.NORTH);
 
-        // ---- Center split: scrollable form (left) | live JSON preview (right) ----
+        // ---- Center: form (left) | live JSON preview (right); arrangement per view mode ----
         JPanel scrollHost = new ScrollableFormHost(new BorderLayout());
         scrollHost.add(rootWidget.component(), BorderLayout.CENTER);
 
-        JScrollPane scroll = new JScrollPane(scrollHost);
+        formScroll = new JScrollPane(scrollHost);
         // No border of its own: the root widget's rounded card is the form's visual edge —
         // a second (square) box around it read as double-wrapping.
-        scroll.setBorder(BorderFactory.createEmptyBorder());
-        scroll.getVerticalScrollBar().setUnitIncrement(UiScale.px(16));
-        scroll.getViewport().setOpaque(false);
-        scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+        formScroll.setBorder(BorderFactory.createEmptyBorder());
+        formScroll.getVerticalScrollBar().setUnitIncrement(UiScale.px(16));
+        formScroll.getViewport().setOpaque(false);
+        formScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        formScroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 
-        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, scroll, buildJsonPreview());
-        split.setResizeWeight(0.6);
+        previewPanel = buildJsonPreview();
+
+        split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+        split.setResizeWeight(splitRatio);
         split.setContinuousLayout(true);
         split.setBorder(null);
-        add(split, BorderLayout.CENTER);
+
+        centerHost.setOpaque(false);
+        add(centerHost, BorderLayout.CENTER);
+        applyViewMode(); // seats the split (default mode) into centerHost
 
         // ---- Footer: ONE row — error text (left, empty when clean) | Load/Save (right).
         // A dedicated error line above the buttons sat there as a permanently blank strip
@@ -186,6 +206,70 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         SwingUtilities.invokeLater(this::refreshPreview);
     }
 
+    // -------------------- View mode (form / split / JSON) --------------------
+
+    /** Segmented icon control, opposite the kind chip: form-only | split | JSON-only. */
+    private JComponent buildViewToggle() {
+        JToggleButton form = viewToggleButton(WorkbenchIcons.viewForm(),
+                "Form only — hide the JSON preview", ViewMode.FORM);
+        JToggleButton splitBtn = viewToggleButton(WorkbenchIcons.viewSplit(),
+                "Split — form and JSON side by side", ViewMode.SPLIT);
+        JToggleButton json = viewToggleButton(WorkbenchIcons.viewJson(),
+                "JSON only — hide the form", ViewMode.JSON);
+        ButtonGroup group = new ButtonGroup();
+        group.add(form);
+        group.add(splitBtn);
+        group.add(json);
+        Box box = Box.createHorizontalBox();
+        box.add(form);
+        box.add(splitBtn);
+        box.add(json);
+        splitBtn.setSelected(true); // fires the accent-tint listener too
+        return box;
+    }
+
+    private JToggleButton viewToggleButton(javax.swing.Icon icon, String tooltip, ViewMode mode) {
+        JToggleButton b = new JToggleButton(icon);
+        b.putClientProperty("JButton.buttonType", "toolBarButton");
+        b.setFocusable(false);
+        b.setToolTipText(tooltip);
+        // Active mode's glyph goes accent-purple, matching the sidebar dock's highlight language.
+        b.addItemListener(e -> b.setForeground(b.isSelected() ? EditorOps.accentColor() : null));
+        b.addActionListener(e -> setViewMode(mode));
+        return b;
+    }
+
+    private void setViewMode(ViewMode mode) {
+        if (viewMode == mode) return;
+        // Remember the divider so returning to Split restores the user's ratio.
+        if (viewMode == ViewMode.SPLIT && split.getWidth() > 0) {
+            splitRatio = split.getDividerLocation() / (double) Math.max(1, split.getWidth());
+        }
+        viewMode = mode;
+        applyViewMode();
+    }
+
+    private void applyViewMode() {
+        centerHost.removeAll();
+        // Detach both from the split so they can be re-parented into centerHost directly.
+        split.setLeftComponent(null);
+        split.setRightComponent(null);
+        switch (viewMode) {
+            case FORM -> centerHost.add(formScroll, BorderLayout.CENTER);
+            case JSON -> centerHost.add(previewPanel, BorderLayout.CENTER);
+            case SPLIT -> {
+                split.setLeftComponent(formScroll);
+                split.setRightComponent(previewPanel);
+                centerHost.add(split, BorderLayout.CENTER);
+                SwingUtilities.invokeLater(() -> {
+                    if (split.getWidth() > 0) split.setDividerLocation(splitRatio);
+                });
+            }
+        }
+        centerHost.revalidate();
+        centerHost.repaint();
+    }
+
     // -------------------- Wiring --------------------
 
     /** Footer error slot: red glyph + message, or a bare space keeping the row height. */
@@ -221,11 +305,12 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
 
     /** Names the content type being edited ("Fluid modifier") — shown as a header chip. */
     public void setContentKind(@Nullable String kind) {
+        // The header row stays visible for the view toggle; only the chip+side info toggles.
         if (kind == null || kind.isBlank()) {
-            kindHeader.setVisible(false);
+            kindInfo.setVisible(false);
         } else {
             kindChip.setText(kind);
-            kindHeader.setVisible(true);
+            kindInfo.setVisible(true);
         }
     }
 
@@ -376,6 +461,7 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         previewArea.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_JSON);
         previewArea.setEditable(false);
         previewArea.setHighlightCurrentLine(false);
+        UiScale.installEditorZoom(previewArea); // Ctrl+wheel resize + live editor-font updates
         applySyntaxTheme();
         // Keep the JSON highlighting in step with a live light/dark theme switch.
         UIManager.addPropertyChangeListener(lafListener);
@@ -481,7 +567,11 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         } catch (Throwable ignored) {
             // Theme is cosmetic only.
         }
-        previewArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UiScale.px(15)));
+        // Theme.apply() resets font + background — re-assert the shared editor font and the
+        // (purple-tinted) editor surface on top of it.
+        previewArea.setFont(UiScale.editorFont());
+        Color bg = EditorOps.editorSurface();
+        if (bg != null) previewArea.setBackground(bg);
     }
 
     private final java.beans.PropertyChangeListener lafListener = e -> {

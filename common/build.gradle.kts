@@ -11,9 +11,13 @@ val exp4j_version: String by extra
 val mvel_version: String by extra
 val flatlaf_version: String by extra
 val rsyntaxtextarea_version: String by extra
+val codecui_version: String by extra
 
 
 dependencies {
+    // Declarative codec schema API — compile against the common (named-mappings) artifact.
+    compileOnly ("net.mehvahdjukaar:codecui-common:${codecui_version}")
+
     implementation ("net.objecthunter:exp4j:${exp4j_version}")
     implementation ("org.mvel:mvel2:${mvel_version}")
     // codec_ui Swing editor — needed at runtime

@@ -36,8 +36,6 @@ import java.awt.Font;
  */
 public final class OpaqueWidget implements SwingWidget, CollapsibleWidget {
 
-    private static final Color ERROR_COLOR = new Color(0xC0392B);
-
     private final JComponent textArea;     // either RSyntaxTextArea or plain JTextArea
     private final JScrollPane scroll;
     private final JLabel errorLabel = new JLabel(" ");
@@ -128,7 +126,7 @@ public final class OpaqueWidget implements SwingWidget, CollapsibleWidget {
         scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 
         defaultBorder = scroll.getBorder();
-        errorBorder = BorderFactory.createLineBorder(ERROR_COLOR, 1);
+        errorBorder = BorderFactory.createLineBorder(EditorOps.errorColor(), 1);
 
         JLabel hint = new JLabel("Raw JSON — no schema available for this field");
         hint.setFont(UiScale.deriveFont(hint.getFont(), Font.ITALIC, -1f));
@@ -138,7 +136,7 @@ public final class OpaqueWidget implements SwingWidget, CollapsibleWidget {
         hint.setAlignmentX(Component.LEFT_ALIGNMENT);
         hint.setBorder(BorderFactory.createEmptyBorder(0, 0, UiScale.small(), 0));
 
-        errorLabel.setForeground(ERROR_COLOR);
+        errorLabel.setForeground(EditorOps.errorColor());
         errorLabel.setFont(UiScale.deriveFont(errorLabel.getFont(), Font.PLAIN, -1f));
         errorLabel.setVisible(false);
         errorLabel.setAlignmentX(Component.LEFT_ALIGNMENT);

@@ -29,6 +29,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
+import javax.swing.JToggleButton;
 import javax.swing.JTextField;
 import javax.swing.JToolBar;
 import javax.swing.ScrollPaneConstants;
@@ -94,6 +95,10 @@ public final class SwingWorkbench {
     private final CardLayout centerCards = new CardLayout();
     private final JPanel centerHost = new JPanel(centerCards);
     private final PackTreePanel treePanel;
+    /** Divider location remembered while the sidebar is collapsed, so expanding restores it. */
+    private int lastSidebarDivider = -1;
+    /** Which activity-rail tool ("files" / "codecs") is currently shown. */
+    private String activeSidebarCard = "files";
     private final JLabel packLabel = new JLabel("No pack opened") {
         @Override public void updateUI() {
             super.updateUI();
@@ -124,12 +129,13 @@ public final class SwingWorkbench {
     // live theme switch swaps in that theme's fill accent. (Inside a JToolBar, FlatLaf
     // flattens children to toolbar-button style, so "buttonType=default" alone would NOT
     // paint the accent; FlatLaf.style overrides it reliably.)
-    private final JButton newContentButton = new JButton("New Content…") {
+    private final JButton newContentButton = new JButton("New Content") {
         @Override public void updateUI() {
             super.updateUI();
             String accent = EditorOps.accentFillHex();
             putClientProperty("FlatLaf.style",
-                    "background: " + accent + ";"
+                    "arc: 999;" // pill — matches the rounded pack chip
+                            + " background: " + accent + ";"
                             + " foreground: #FFFFFF;"
                             + " hoverBackground: darken(" + accent + ",6%);"
                             + " pressedBackground: darken(" + accent + ",12%);"
@@ -252,12 +258,6 @@ public final class SwingWorkbench {
         bar.add(toolbarSeparator());
         bar.add(Box.createHorizontalStrut(UiScale.med()));
 
-        JButton openPack = new JButton("Open Pack…", WorkbenchIcons.folder());
-        openPack.setToolTipText("Open a resource pack / datapack folder — any folder works");
-        openPack.addActionListener(e -> openPackChooser());
-        bar.add(openPack);
-        bar.add(Box.createHorizontalStrut(UiScale.small()));
-
         newContentButton.setIcon(WorkbenchIcons.filePlus());
         newContentButton.setToolTipText(
                 "Add content to the pack — the file lands in its correct folder automatically");
@@ -265,6 +265,16 @@ public final class SwingWorkbench {
         bar.add(newContentButton);
 
         bar.add(Box.createHorizontalGlue());
+
+        // Open-pack: a compact icon button living with the game tools on the right (the pack chip
+        // is the primary open affordance; this is the quick secondary next to the reloads).
+        JButton openPack = new JButton(WorkbenchIcons.folderOpen());
+        openPack.putClientProperty("JButton.buttonType", "toolBarButton");
+        openPack.setFocusable(false);
+        openPack.setToolTipText("Open a resource pack / datapack folder — any folder works");
+        openPack.addActionListener(e -> openPackChooser());
+        bar.add(openPack);
+        bar.add(Box.createHorizontalStrut(UiScale.small()));
 
         // Game-sync pair: green-tinted icons — "this talks to the running game".
         // Borderless like the mockup: lighter header, the tint does the signaling.
@@ -285,8 +295,21 @@ public final class SwingWorkbench {
         bar.add(Box.createHorizontalStrut(UiScale.med()));
         bar.add(toolbarSeparator());
         bar.add(Box.createHorizontalStrut(UiScale.small()));
+        bar.add(buildCompactToggle());
+        bar.add(Box.createHorizontalStrut(UiScale.small()));
         bar.add(buildThemeToggle());
         return bar;
+    }
+
+    /** Toggle for the narrow-screen compact layout (field name stacked above its value). */
+    private JToggleButton buildCompactToggle() {
+        JToggleButton toggle = new JToggleButton("☰"); // ☰ rows/compact glyph
+        toggle.putClientProperty("JButton.buttonType", "toolBarButton");
+        toggle.setFocusable(false);
+        toggle.setSelected(SwingSchemaEditor.isCompactMode());
+        toggle.setToolTipText("Compact layout — stack each field's name above its value (saves width)");
+        toggle.addActionListener(e -> SwingSchemaEditor.toggleCompact());
+        return toggle;
     }
 
     private JButton zoomButton(javax.swing.Icon icon, String tooltip, int deltaPt) {
@@ -366,12 +389,6 @@ public final class SwingWorkbench {
     }
 
     private JComponent buildCenter() {
-        JTabbedPane sidebar = new JTabbedPane();
-        sidebar.addTab("Files", WorkbenchIcons.folder(), treePanel);
-        sidebar.addTab("Codecs", WorkbenchIcons.layers(), buildCodecLibrary());
-        sidebar.setPreferredSize(new Dimension(UiScale.px(300), UiScale.px(400)));
-        sidebar.setMinimumSize(new Dimension(UiScale.px(220), UiScale.px(200)));
-
         editorTabs.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
         // Card-style file tabs — the familiar code-editor look.
         editorTabs.putClientProperty("JTabbedPane.tabType", "card");
@@ -410,6 +427,13 @@ public final class SwingWorkbench {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) { adjustZoom(0); }
         });
 
+        // ---- Sidebar body: a CardLayout the activity rail swaps between. No top tabs — the rail
+        // (VSCode-style) both names the tools and does the switching. ----
+        CardLayout sidebarCards = new CardLayout();
+        JPanel sidebarBody = new JPanel(sidebarCards);
+        sidebarBody.add(treePanel, "files");
+        sidebarBody.add(buildCodecLibrary(), "codecs");
+
         // Hairline seam so the sidebar reads as a distinct panel from the editor area.
         JPanel sidebarHost = new JPanel(new BorderLayout()) {
             @Override public void updateUI() {
@@ -417,14 +441,108 @@ public final class SwingWorkbench {
                 setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, EditorOps.dividerColor()));
             }
         };
-        sidebarHost.add(sidebar, BorderLayout.CENTER);
+        sidebarHost.add(sidebarBody, BorderLayout.CENTER);
 
-        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebarHost, centerHost);
+        // ---- Activity rail: vertical icon tools. Click shows a tool's panel (accent-highlighted);
+        // click the ACTIVE tool to collapse the sidebar and give the editor the whole width.
+        // BorderLayout ignores the hidden CENTER child, so the rail alone sets the collapsed
+        // left width — no JSplitPane min-size wrangling needed. ----
+        ActivityButton filesBtn = new ActivityButton(WorkbenchIcons.folder(), "Files");
+        ActivityButton codecsBtn = new ActivityButton(WorkbenchIcons.layers(), "Codecs");
+        JPanel rail = new JPanel() {
+            @Override public void updateUI() {
+                super.updateUI();
+                setOpaque(true);
+                setBackground(EditorOps.railBg());
+                setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, EditorOps.dividerColor()));
+            }
+        };
+        rail.setLayout(new BoxLayout(rail, BoxLayout.Y_AXIS));
+        filesBtn.setAlignmentX(0.5f);
+        codecsBtn.setAlignmentX(0.5f);
+        rail.add(Box.createVerticalStrut(UiScale.small()));
+        rail.add(filesBtn);
+        rail.add(codecsBtn);
+        rail.add(Box.createVerticalGlue());
+
+        JPanel leftWrap = new JPanel(new BorderLayout());
+        leftWrap.add(rail, BorderLayout.WEST);
+        leftWrap.add(sidebarHost, BorderLayout.CENTER);
+
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftWrap, centerHost);
         split.setResizeWeight(0);
         split.setContinuousLayout(true);
-        split.setDividerLocation(UiScale.px(300));
+        split.setDividerLocation(UiScale.px(280));
         split.setBorder(null);
+
+        Runnable expand = () -> {
+            if (!sidebarHost.isVisible()) {
+                sidebarHost.setVisible(true);
+                int w = lastSidebarDivider > UiScale.px(60) ? lastSidebarDivider : UiScale.px(280);
+                split.setDividerLocation(w);
+                split.revalidate();
+            }
+        };
+        java.util.function.Consumer<String> selectTool = card -> {
+            if (sidebarHost.isVisible() && card.equals(activeSidebarCard)) {
+                // Re-clicking the active tool collapses the sidebar.
+                lastSidebarDivider = split.getDividerLocation();
+                sidebarHost.setVisible(false);
+                split.setDividerLocation(rail.getPreferredSize().width);
+                split.revalidate();
+                filesBtn.setActive(false);
+                codecsBtn.setActive(false);
+            } else {
+                activeSidebarCard = card;
+                sidebarCards.show(sidebarBody, card);
+                filesBtn.setActive(card.equals("files"));
+                codecsBtn.setActive(card.equals("codecs"));
+                expand.run();
+            }
+        };
+        filesBtn.addActionListener(e -> selectTool.accept("files"));
+        codecsBtn.addActionListener(e -> selectTool.accept("codecs"));
+
+        // Initial state: Files tool active, sidebar shown.
+        sidebarCards.show(sidebarBody, "files");
+        activeSidebarCard = "files";
+        filesBtn.setActive(true);
+
         return split;
+    }
+
+    /**
+     * VSCode-style activity-bar button: an icon that highlights with the accent when its tool is
+     * active (accent left-bar + accent-tinted icon — {@code WorkbenchIcons} tint to the foreground).
+     */
+    private static final class ActivityButton extends JButton {
+        private boolean active;
+
+        ActivityButton(javax.swing.Icon icon, String tip) {
+            super(icon);
+            setFocusable(false);
+            setToolTipText(tip);
+            putClientProperty("JButton.buttonType", "toolBarButton");
+            setBorder(BorderFactory.createEmptyBorder(UiScale.med(), UiScale.med(), UiScale.med(), UiScale.med()));
+        }
+
+        void setActive(boolean a) {
+            active = a;
+            setForeground(a ? EditorOps.accentColor() : null); // null → inherit default; icon follows
+            repaint();
+        }
+
+        @Override public Dimension getMaximumSize() {
+            return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+        }
+
+        @Override protected void paintComponent(java.awt.Graphics g) {
+            super.paintComponent(g);
+            if (active) {
+                g.setColor(EditorOps.accentColor());
+                g.fillRect(0, UiScale.px(6), UiScale.px(3), getHeight() - UiScale.px(12));
+            }
+        }
     }
 
     private JComponent buildEmptyState() {
@@ -442,7 +560,7 @@ public final class SwingWorkbench {
         JLabel hint = new JLabel("Open a pack folder and double-click a file, or pick a codec from the library");
         hint.setAlignmentX(Component.CENTER_ALIGNMENT);
         hint.setForeground(EditorOps.mutedColor());
-        JButton open = new JButton("Open Pack…", WorkbenchIcons.folder());
+        JButton open = new JButton("Open Pack", WorkbenchIcons.folderOpen());
         open.putClientProperty("JButton.buttonType", "default");
         open.setAlignmentX(Component.CENTER_ALIGNMENT);
         open.addActionListener(e -> openPackChooser());

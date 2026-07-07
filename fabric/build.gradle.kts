@@ -12,8 +12,12 @@ val mvel_version: String by extra
 val flatlaf_version: String by extra
 val rsyntaxtextarea_version: String by extra
 val jsvg_version: String by extra
+val codecui_version: String by extra
 
 dependencies {
+    // Declarative codec schema API — remapped mod dep for dev + bundled (JiJ) into the shipped jar.
+    modImplementation("net.mehvahdjukaar:codecui-fabric:${codecui_version}")
+    include("net.mehvahdjukaar:codecui-fabric:${codecui_version}")
 
     implementation("org.ow2.asm:asm:9.5")
     implementation("org.ow2.asm:asm-commons:9.5")

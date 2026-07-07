@@ -7,19 +7,20 @@ import com.mojang.serialization.DataResult;
 import net.mehvahdjukaar.polytone.common.codec_ui.Schema;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.BorderFactory;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.UIManager;
-import java.awt.Color;
+import javax.swing.JSeparator;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.Insets;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class RecordWidget implements SwingWidget {
 
@@ -36,11 +37,29 @@ public final class RecordWidget implements SwingWidget {
         @Nullable JsonElement unsetBaseline;
         /** Red "*" shown next to a REQUIRED field while it has no picked value (see {@link #isUnset}). */
         @Nullable JLabel requiredMark;
+        /** Prettified field-name label — reused across the regular and compact layouts. */
+        JLabel name;
+        /** Trailing metadata next to the name: the "opt" pill or the required "*" (may be null). */
+        @Nullable JComponent badge;
 
         FieldEntry(Schema.Field<?, ?> field, SwingWidget widget) {
             this.field = field;
             this.widget = widget;
         }
+    }
+
+    // Live registry so SwingSchemaEditor.toggleCompact() can re-lay every open form. Weak so a
+    // closed editor tab's widget tree is collected.
+    private static final List<WeakReference<RecordWidget>> INSTANCES = new CopyOnWriteArrayList<>();
+
+    /** Re-lay every open record form after a compact-mode toggle. */
+    static void relayoutAll() {
+        INSTANCES.removeIf(ref -> {
+            RecordWidget w = ref.get();
+            if (w == null) return true;
+            w.layoutFields();
+            return false;
+        });
     }
 
     // Rounded "card": a subtly elevated surface + hairline outline so a record reads as one
@@ -66,10 +85,6 @@ public final class RecordWidget implements SwingWidget {
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
-        Color mutedColor = UIManager.getColor("Label.disabledForeground");
-        if (mutedColor == null) mutedColor = new Color(0x999999);
-
-        int row = 0;
         for (Schema.Field<?, ?> field : schema.fields()) {
             SwingWidget child = SwingWidgetFactory.create(field.schema());
             FieldEntry entry = new FieldEntry(field, child);
@@ -86,24 +101,19 @@ public final class RecordWidget implements SwingWidget {
                 entry.unsetBaseline = snapshot(child);
             }
 
-            // Right-aligned label column: prettified name (raw JSON key in the tooltip).
-            // Font set in updateUI() (re-derived FRESH from the L&F default) so it tracks a
-            // zoom / theme change — a construction-time deriveFont() freezes and would leave
-            // names at their original size while everything around them scaled.
+            // Prettified name (raw JSON key in the tooltip). Font set in updateUI() — re-derived
+            // FRESH from the L&F default so it tracks a zoom/theme change (a construction-time
+            // deriveFont() freezes) — and BOLDER in compact mode where the name acts as a title.
             JLabel name = new JLabel(prettyName(field.name())) {
                 @Override public void updateUI() {
                     super.updateUI();
-                    setFont(UiScale.labelFont(Font.PLAIN, 0f));
+                    setFont(UiScale.labelFont(
+                            SwingSchemaEditor.isCompactMode() ? Font.BOLD : Font.PLAIN, 0f));
                 }
             };
             name.setToolTipText(field.name());
+            entry.name = name;
 
-            JPanel labelCell = new JPanel(new GridBagLayout());
-            labelCell.setOpaque(false);
-            GridBagConstraints lc = new GridBagConstraints();
-            lc.gridx = 0;
-            lc.anchor = GridBagConstraints.LINE_END;
-            labelCell.add(name, lc);
             if (field.optional()) {
                 // Tiny outlined pill badge — quieter than text, clearly metadata.
                 JLabel opt = new JLabel("opt") {
@@ -112,12 +122,10 @@ public final class RecordWidget implements SwingWidget {
                         setFont(UiScale.labelFont(Font.PLAIN, -3f));
                         setForeground(EditorOps.mutedColor());
                         setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
-                                new java.awt.Insets(1, 6, 1, 6), EditorOps.dividerColor(), 1f, 999));
+                                new Insets(1, 6, 1, 6), EditorOps.dividerColor(), 1f, 999));
                     }
                 };
-                lc.gridx = 1;
-                lc.insets = new java.awt.Insets(0, UiScale.small(), 0, 0);
-                labelCell.add(opt, lc);
+                entry.badge = opt;
             } else {
                 // Required field: a red asterisk that appears only while nothing is picked
                 // (null/no selection) — the field will fail to load in that state. Visibility
@@ -133,31 +141,33 @@ public final class RecordWidget implements SwingWidget {
                 star.setToolTipText("Required — pick a value or this will fail to load");
                 star.setVisible(false);
                 entry.requiredMark = star;
-                lc.gridx = 1;
-                lc.insets = new java.awt.Insets(0, UiScale.small(), 0, 0);
-                labelCell.add(star, lc);
+                entry.badge = star;
             }
-
-            // MED vertical between rows, SMALL horizontal gap label↔widget.
-            GridBagConstraints gc = new GridBagConstraints();
-            gc.gridx = 0;
-            gc.gridy = row;
-            gc.anchor = GridBagConstraints.LINE_END;
-            gc.insets = new java.awt.Insets(UiScale.small(), UiScale.small(), UiScale.small(), UiScale.med());
-            panel.add(labelCell, gc);
-
-            gc = new GridBagConstraints();
-            gc.gridx = 1;
-            gc.gridy = row;
-            gc.weightx = 1.0;
-            gc.fill = GridBagConstraints.HORIZONTAL;
-            gc.anchor = GridBagConstraints.LINE_START;
-            gc.insets = new java.awt.Insets(UiScale.small(), 0, UiScale.small(), UiScale.small());
-            panel.add(child.component(), gc);
-
-            row++;
         }
-        // bottom filler so fields stick to the top
+
+        INSTANCES.add(new WeakReference<>(this));
+        layoutFields();
+        refreshRequiredMarks();
+    }
+
+    /**
+     * (Re)build the field layout for the current {@link SwingSchemaEditor#isCompactMode()} state.
+     * Regular = two columns (name right | value left). Compact = name stacked ABOVE the value with
+     * a hairline separator between fields, trading vertical space for horizontal (narrow screens).
+     */
+    private void layoutFields() {
+        panel.removeAll();
+        boolean compact = SwingSchemaEditor.isCompactMode();
+        int row = 0;
+        for (int i = 0; i < entries.size(); i++) {
+            FieldEntry e = entries.get(i);
+            // Keep the name style in step with the mode even outside a theme-driven updateUI().
+            e.name.setFont(UiScale.labelFont(compact ? Font.BOLD : Font.PLAIN, 0f));
+            row = compact
+                    ? addCompactField(e, row, i == entries.size() - 1)
+                    : addRegularField(e, row);
+        }
+        // Bottom filler so fields stick to the top.
         GridBagConstraints filler = new GridBagConstraints();
         filler.gridx = 0;
         filler.gridy = row;
@@ -165,7 +175,86 @@ public final class RecordWidget implements SwingWidget {
         filler.fill = GridBagConstraints.VERTICAL;
         panel.add(new JLabel(""), filler);
 
-        refreshRequiredMarks();
+        panel.revalidate();
+        panel.repaint();
+    }
+
+    /** Two-column row: right-aligned name cell | stretched value. */
+    private int addRegularField(FieldEntry e, int row) {
+        JPanel labelCell = new JPanel(new GridBagLayout());
+        labelCell.setOpaque(false);
+        GridBagConstraints lc = new GridBagConstraints();
+        lc.gridx = 0;
+        lc.anchor = GridBagConstraints.LINE_END;
+        labelCell.add(e.name, lc);
+        if (e.badge != null) {
+            lc.gridx = 1;
+            lc.insets = new Insets(0, UiScale.small(), 0, 0);
+            labelCell.add(e.badge, lc);
+        }
+
+        GridBagConstraints gc = new GridBagConstraints();
+        gc.gridx = 0;
+        gc.gridy = row;
+        gc.anchor = GridBagConstraints.LINE_END;
+        gc.insets = new Insets(UiScale.small(), UiScale.small(), UiScale.small(), UiScale.med());
+        panel.add(labelCell, gc);
+
+        gc = new GridBagConstraints();
+        gc.gridx = 1;
+        gc.gridy = row;
+        gc.weightx = 1.0;
+        gc.fill = GridBagConstraints.HORIZONTAL;
+        gc.anchor = GridBagConstraints.LINE_START;
+        gc.insets = new Insets(UiScale.small(), 0, UiScale.small(), UiScale.small());
+        panel.add(e.widget.component(), gc);
+        return row + 1;
+    }
+
+    /** Stacked block: name (title) + badge on top, value below, hairline separator between fields. */
+    private int addCompactField(FieldEntry e, int row, boolean last) {
+        JPanel header = new JPanel(new GridBagLayout());
+        header.setOpaque(false);
+        GridBagConstraints hc = new GridBagConstraints();
+        hc.gridx = 0;
+        hc.anchor = GridBagConstraints.LINE_START;
+        header.add(e.name, hc);
+        if (e.badge != null) {
+            hc.gridx = 1;
+            hc.insets = new Insets(0, UiScale.small(), 0, 0);
+            header.add(e.badge, hc);
+        }
+
+        GridBagConstraints g = new GridBagConstraints();
+        g.gridx = 0;
+        g.gridy = row++;
+        g.gridwidth = 2;
+        g.weightx = 1.0;
+        g.fill = GridBagConstraints.HORIZONTAL;
+        g.anchor = GridBagConstraints.LINE_START;
+        g.insets = new Insets(UiScale.med(), UiScale.small(), UiScale.small(), UiScale.small());
+        panel.add(header, g);
+
+        g = new GridBagConstraints();
+        g.gridx = 0;
+        g.gridy = row++;
+        g.gridwidth = 2;
+        g.weightx = 1.0;
+        g.fill = GridBagConstraints.HORIZONTAL;
+        g.anchor = GridBagConstraints.LINE_START;
+        g.insets = new Insets(0, UiScale.small(), UiScale.med(), UiScale.small());
+        panel.add(e.widget.component(), g);
+
+        if (!last) {
+            GridBagConstraints sc = new GridBagConstraints();
+            sc.gridx = 0;
+            sc.gridy = row++;
+            sc.gridwidth = 2;
+            sc.weightx = 1.0;
+            sc.fill = GridBagConstraints.HORIZONTAL;
+            panel.add(new JSeparator(), sc);
+        }
+        return row;
     }
 
     @Override

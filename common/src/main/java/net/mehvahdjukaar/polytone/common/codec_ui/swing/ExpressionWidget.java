@@ -121,7 +121,7 @@ public final class ExpressionWidget implements SwingWidget, CollapsibleWidget {
         } catch (Throwable ignored) {
             // Theme is cosmetic only.
         }
-        area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UiScale.px(15)));
+        UiScale.installEditorZoom(area); // own size + Ctrl+wheel, decoupled from UI zoom
         applyExpressionPalette(area);
 
         RTextScrollPane scroll = new RTextScrollPane(area);

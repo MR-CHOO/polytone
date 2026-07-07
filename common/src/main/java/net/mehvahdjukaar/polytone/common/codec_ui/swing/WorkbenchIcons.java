@@ -30,7 +30,8 @@ final class WorkbenchIcons {
     private static final String DIR = "polytone/codec_ui/icons/";
     private static final int SIZE = 18; // logical px; FlatSVGIcon scales for HiDPI
 
-    static Icon folder()    { return themed("folder"); }
+    static Icon folder()     { return themed("folder"); }
+    static Icon folderOpen() { return themed("folder-open"); }
     static Icon file()      { return themed("file"); }
     static Icon filePlus()  { return themed("file-plus"); }
     static Icon refresh()   { return themed("refresh-cw"); }
@@ -44,6 +45,11 @@ final class WorkbenchIcons {
     static Icon copy()      { return themed("copy"); }
     static Icon zoomIn()    { return themed("zoom-in"); }
     static Icon zoomOut()   { return themed("zoom-out"); }
+
+    /** Editor view-mode toggle glyphs: form (rows) | split (columns) | JSON (braces). */
+    static Icon viewForm()  { return themed("rows-3"); }
+    static Icon viewSplit() { return themed("columns-2"); }
+    static Icon viewJson()  { return themed("braces"); }
 
     /** Accent glyphs marking embedded-language fields: ƒ(x) = expression, &lt;/&gt; = raw JSON. */
     static Icon fx()        { return new ThemedSvgIcon("square-function", SIZE, EditorOps::accentColor); }

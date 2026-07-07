@@ -72,7 +72,9 @@ final class TextEditorPanel extends JPanel implements WorkbenchTab {
         } catch (Throwable ignored) {
             // Theme is cosmetic only.
         }
-        area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UiScale.px(15)));
+        UiScale.installEditorZoom(area); // own size + Ctrl+wheel, decoupled from UI zoom
+        java.awt.Color bg = EditorOps.editorSurface();
+        if (bg != null) area.setBackground(bg);
         area.setCaretPosition(0);
         area.discardAllEdits();
 

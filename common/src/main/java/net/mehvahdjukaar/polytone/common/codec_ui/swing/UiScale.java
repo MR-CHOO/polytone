@@ -59,6 +59,84 @@ public final class UiScale {
     public static int med()    { return px(8);  }
     public static int large()  { return px(16); }
 
+    // ---- Editor (code / JSON) font — INDEPENDENT of the UI zoom ---------------------------
+    // The monospace areas were pinned at px(15): that tracked HiDPI uiScale but NOT the user's
+    // zoom, so they read as oversized with no way to shrink them ("zoom doesn't affect it").
+    // They get their OWN persisted logical-pt size instead, adjusted with Ctrl+mouse-wheel while
+    // hovering a code area, and applied live to every registered area. Only uiScale is folded in
+    // (HiDPI crispness) — deliberately NOT the zoom, so chrome and code size move separately.
+    private static final java.util.prefs.Preferences EDITOR_PREFS =
+            java.util.prefs.Preferences.userNodeForPackage(UiScale.class);
+    private static final String EDITOR_PT_KEY = "editorFontPt";
+    private static final int EDITOR_PT_DEFAULT = 13;
+    private static final int EDITOR_PT_MIN = 8;
+    private static final int EDITOR_PT_MAX = 28;
+    private static int editorPt = clampEditorPt(EDITOR_PREFS.getInt(EDITOR_PT_KEY, EDITOR_PT_DEFAULT));
+
+    // Weak so a closed editor tab's area is collected — no listener leak.
+    private static final java.util.List<java.lang.ref.WeakReference<JComponent>> editorAreas =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+    private static String monoFamily;
+
+    private static int clampEditorPt(int pt) {
+        return Math.max(EDITOR_PT_MIN, Math.min(EDITOR_PT_MAX, pt));
+    }
+
+    /**
+     * A real, non-serif monospaced family. {@code Font.MONOSPACED} maps to Courier New on
+     * Windows (serif, dated — the "serif feels wrong" report); pick the first genuine coding
+     * font actually installed, falling back to the logical monospace only if none are present.
+     */
+    private static String monoFamily() {
+        if (monoFamily != null) return monoFamily;
+        java.util.Set<String> avail = new java.util.HashSet<>(java.util.Arrays.asList(
+                java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames()));
+        for (String f : new String[]{"JetBrains Mono", "Cascadia Code", "Cascadia Mono", "Consolas",
+                "SF Mono", "Menlo", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono"}) {
+            if (avail.contains(f)) { monoFamily = f; return monoFamily; }
+        }
+        monoFamily = Font.MONOSPACED;
+        return monoFamily;
+    }
+
+    /** The monospaced font for code/JSON areas at the user's chosen editor size (HiDPI-scaled). */
+    public static Font editorFont() {
+        return new Font(monoFamily(), Font.PLAIN, UIScale.scale(editorPt));
+    }
+
+    /** Nudge the editor font ({@code deltaPt} pt; 0 resets) and restyle every open code area. */
+    public static void adjustEditorFont(int deltaPt) {
+        editorPt = deltaPt == 0 ? EDITOR_PT_DEFAULT : clampEditorPt(editorPt + deltaPt);
+        EDITOR_PREFS.putInt(EDITOR_PT_KEY, editorPt);
+        Font f = editorFont();
+        editorAreas.removeIf(ref -> {
+            JComponent c = ref.get();
+            if (c == null) return true;
+            c.setFont(f);
+            return false;
+        });
+    }
+
+    /**
+     * Bind a code area to the shared editor font: applies it now, keeps it in step with later
+     * size changes, and wires Ctrl+mouse-wheel to zoom the code (forwarding a plain wheel to the
+     * enclosing scroll pane so normal scrolling still works). Independent of the UI zoom.
+     */
+    public static void installEditorZoom(JComponent area) {
+        area.setFont(editorFont());
+        editorAreas.add(new java.lang.ref.WeakReference<>(area));
+        area.addMouseWheelListener(e -> {
+            if (e.isControlDown()) {
+                adjustEditorFont(-e.getWheelRotation()); // wheel up (negative) => larger
+                e.consume();
+                return;
+            }
+            java.awt.Container p = area.getParent();
+            while (p != null && !(p instanceof javax.swing.JScrollPane)) p = p.getParent();
+            if (p != null) p.dispatchEvent(SwingUtilities.convertMouseEvent(area, e, p));
+        });
+    }
+
     /**
      * Initial scale factor for FlatLaf, returned as a {@code "Nx"} string
      * (e.g. {@code "2.0x"}). Pass this as the value of the {@code flatlaf.uiScale}

@@ -119,6 +119,40 @@ final class EditorOps {
     static final String ACCENT_FILL_DARK_HEX = "#7C3AED";
     static final String ACCENT_FILL_LIGHT_HEX = "#6D28D9";
 
+    // ---- Structured two-tone surface palette -------------------------------------------------
+    // ONE source of truth, defined for BOTH themes so light and dark stay coherent and every
+    // surface can be driven off the SAME UIManager keys (see SwingSchemaEditor.applyUiDefaults).
+    // Two tones per theme:
+    //   panel  — panels / chrome / lists / trees / tabs ("options" surface)
+    //   editor — code / JSON / input wells (the deepest surface)
+    // Dark is the requested cool violet-grey; light is a soft neutral pair aligned with FlatLight.
+    static final int PANEL_BG_DARK   = 0x363841;
+    static final int EDITOR_BG_DARK  = 0x292b32;
+    static final int PANEL_BG_LIGHT  = 0xF3F3F6;
+    static final int EDITOR_BG_LIGHT = 0xFFFFFF;
+    static final int RAIL_BG_DARK    = 0x2F313A; // activity rail — between panel and editor
+    static final int RAIL_BG_LIGHT   = 0xEAEAEF;
+
+    /** Hex string form (for FlatLaf {@code @background} seeding). */
+    static String panelBgHex() {
+        return FlatLaf.isLafDark() ? "#363841" : "#F3F3F6";
+    }
+
+    /** App / panel / chrome surface for the active theme. */
+    static Color panelBg() {
+        return new Color(FlatLaf.isLafDark() ? PANEL_BG_DARK : PANEL_BG_LIGHT);
+    }
+
+    /** Code/JSON/input-well surface for the active theme (the deepest tone). */
+    static Color editorSurface() {
+        return new Color(FlatLaf.isLafDark() ? EDITOR_BG_DARK : EDITOR_BG_LIGHT);
+    }
+
+    /** Activity-rail surface for the active theme. */
+    static Color railBg() {
+        return new Color(FlatLaf.isLafDark() ? RAIL_BG_DARK : RAIL_BG_LIGHT);
+    }
+
     /** The accent for hand-drawn text/glyph touches (brand text, chips, gutters). */
     static Color accentColor() {
         return FlatLaf.isLafDark() ? new Color(0xA78BFA) : new Color(0x6D28D9);

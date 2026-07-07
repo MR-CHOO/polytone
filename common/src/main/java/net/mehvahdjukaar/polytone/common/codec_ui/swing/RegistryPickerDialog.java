@@ -72,7 +72,7 @@ public final class RegistryPickerDialog extends JDialog {
 
         if (allEntries.isEmpty()) {
             JLabel warn = new JLabel("(registry not available — no entries to pick from)");
-            warn.setForeground(new Color(0xC0392B));
+            warn.setForeground(EditorOps.errorColor());
             warn.setBorder(BorderFactory.createEmptyBorder(UiScale.small(), 0, 0, 0));
             north.add(warn, BorderLayout.SOUTH);
         }
