@@ -27,12 +27,10 @@ import java.util.List;
  */
 public final class PolytoneEditor {
 
-    private PolytoneEditor() {}
-
     /** Open (or focus) the editor window. Callable from any thread. */
     public static void open() {
         forceNonHeadless();
-        SwingWorkbench.open(new Workbench(buildEntries(isDevEnv())));
+        SwingWorkbench.open(new Workbench(buildEntries(Polytone.isDevEnv)));
     }
 
     /**
@@ -41,7 +39,7 @@ public final class PolytoneEditor {
      */
     static List<CodecEntry> buildEntries(boolean includeDevExamples) {
         // Widget registrations must exist before any schema resolves (vanilla codec
-        // curation lives in internal/CuratedSchemas, bootstrapped by the resolver itself).
+        // curation lives in codecui's internal/CuratedSchemas, bootstrapped by the resolver itself).
         PolytoneSchemas.bootstrap();
         GameReloadHooks.install();
 
@@ -73,18 +71,8 @@ public final class PolytoneEditor {
      * RecordCodecBuilder-built full Codecs at runtime. The editor only decodes — widgets
      * emit JSON directly and validation parses — so the downcast is safe here.
      */
-    @SuppressWarnings("unchecked")
     private static <A> Codec<A> decoderAsCodec(Decoder<A> decoder) {
         return (Codec<A>) decoder;
-    }
-
-    /** Bare JVM (no mod init ran, or Polytone clinit failed) counts as dev. */
-    private static boolean isDevEnv() {
-        try {
-            return Polytone.isDevEnv;
-        } catch (Throwable t) {
-            return true;
-        }
     }
 
     // NeoForge launches with java.awt.headless=true and GraphicsEnvironment caches the flag.
