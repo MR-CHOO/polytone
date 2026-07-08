@@ -9,7 +9,7 @@ against DFU 8 / 1.21.1 — tier analysis still applies, version facts don't).
 ## Package layout & API boundary
 
 ```
-codec_ui/            PUBLIC API — Schema (ADT), SchemaCodec (entry point), SchemaCodecs
+codec_ui/            PUBLIC API — Schema (ADT), SchemaCodec (entry point), SchemaResolvers
                      (facade + extension registration), SchemaRecord/SchemaRecordBuilder
                      (companion DSLs), SchemaEditor, SPIs (SchemaHandler, EnumerableCodec)
 codec_ui/workbench/  UI-framework-agnostic workbench MODEL — PackWorkspace (lenient pack
@@ -38,34 +38,34 @@ list is `internal/CuratedSchemas.java` — one bootstrap class whose entries use
 public registration API below, each with a comment on WHY inference fails for it. It is the
 first place to add vanilla/DFU codecs that resolve wrong or opaque, and it doubles as the
 reference example for how external mods register their own weird codecs (they call the same
-`SchemaCodecs` methods from their own init).
+`SchemaResolvers` methods from their own init).
 
 **For codecs YOU own, don't register anything** — declare codec + schema in one go:
 `static final SchemaCodec<X> CODEC = SchemaRecord.create(X.class, i -> i.group(...).apply(i, X::new))`
 (drop-in: `SchemaCodec extends Codec`). For alternative-style codecs, state each
-alternative ONCE as `SchemaCodecs.alt(label, codec)`:
-`SchemaCodecs.withAlternative(alt("reference", A), alt("inline", B))` builds codec + schema
-together; `SchemaCodecs.labeled(existingCodec, alt(...), ...)` labels a multi-format codec
+alternative ONCE as `SchemaResolvers.alt(label, codec)`:
+`SchemaResolvers.withAlternative(alt("reference", A), alt("inline", B))` builds codec + schema
+together; `SchemaResolvers.labeled(existingCodec, alt(...), ...)` labels a multi-format codec
 you can't rebuild. Schemas resolve lazily at editor-open (never call `.schema()` or
-`SchemaCodecs.resolve` at class-init — `SchemaCodec.lazy(codec, supplier)` is the manual
+`SchemaResolvers.resolve` at class-init — `SchemaCodec.lazy(codec, supplier)` is the manual
 escape hatch). See
 `content/colormap/Colormap.java` for the reference port: its 3-layer nested alternatives
 render as ONE picker (reference / inline colormap / color / expression / biome compound).
 The registration mechanisms below are for codecs you DON'T own (vanilla, other mods) —
 plus `Schema.Custom` widget bindings, which stay out of content code.
 
-In priority order (first match wins at resolve time) — all registered via `SchemaCodecs`:
+In priority order (first match wins at resolve time) — all registered via `SchemaResolvers`:
 
-1. **Companion** — `SchemaCodecs.registerCompanion(codec, schema)`: hand-crafted schema for
+1. **Companion** — `SchemaResolvers.registerCompanion(codec, schema)`: hand-crafted schema for
    one specific codec instance. Always beats everything.
-2. **Custom handler** — `SchemaCodecs.registerHandler((codec, resolver) -> ...)`: teach the
+2. **Custom handler** — `SchemaResolvers.registerHandler((codec, resolver) -> ...)`: teach the
    resolver a whole *class* of codecs (your own `Codec` impls, third-party combinators).
    Return null to pass; use the provided `resolver` for inner codecs. Runs before the
    built-in structural tiers, so it also overrides tier-2/3 guesses.
 3. **`EnumerableCodec`** — implement on a custom codec whose values are a closed named set
    (e.g. `MapRegistry`): gives an Enum dropdown, and full variant enumeration when the
    codec is a dispatch key.
-4. **Dispatch keys** — `SchemaCodecs.registerDispatchKeys(keyType, keys, codecOf, nameOf)`
+4. **Dispatch keys** — `SchemaResolvers.registerDispatchKeys(keyType, keys, codecOf, nameOf)`
    for `Codec.dispatch` families whose key type you don't control.
 5. **Custom widget** — `MyWidget.DEF.bind(codec)` (Swing backend): bypass schema-driven
    widget selection with a domain editor (see `swing/ExpressionWidget` — the big
@@ -86,14 +86,14 @@ can't gets either a declaration-site schema (codecs we own) or a curated registr
    `i.field(name, codec, getter)`, `i.optional(name, codec, default, getter)`, and the
    `Optional<F>` flavor `i.optional(name, codec, c -> Optional<F>)`. Field type changes
    `Codec<X>` → `SchemaCodec<X>`; callers unaffected (`SchemaCodec extends Codec`).
-2. Alternatives: `SchemaCodecs.withAlternative(alt("a", A), alt("b", B))` builds
+2. Alternatives: `SchemaResolvers.withAlternative(alt("a", A), alt("b", B))` builds
    `Codec.withAlternative` + labeled picker in one go. If the multi-format codec can't be
    rebuilt (custom try-each classes, reference-or-direct), keep it and wrap with
-   `SchemaCodecs.labeled(existingCodec, alt("a", A), ...)` — labels only, wire untouched.
+   `SchemaResolvers.labeled(existingCodec, alt("a", A), ...)` — labels only, wire untouched.
 3. Simple override: `SchemaCodec.of(codec, schema)` (e.g. `ColorUtils.COLOR` → `Schema.Color`).
 
 **Rules:**
-- NEVER call `.schema()` or `SchemaCodecs.resolve(...)` in a static initializer — schemas
+- NEVER call `.schema()` or `SchemaResolvers.resolve(...)` in a static initializer — schemas
   must resolve at editor-open (wrap/DSL/`alt` are already lazy; `SchemaCodec.lazy` is the
   manual escape hatch).
 - Swing widget bindings (`Schema.Custom` + `SwingWidgetDef`) NEVER go in content code —
@@ -130,7 +130,7 @@ Three layers:
      the construction mixins. Lazy = they store the *inner codec*, not a resolved schema, so
      companions registered after MC bootstrap still win at resolve time. Never eagerly
      resolve inside a mixin.
-   - **Tier 0.5**: user-registered `SchemaHandler`s (`SchemaCodecs.registerHandler`) —
+   - **Tier 0.5**: user-registered `SchemaHandler`s (`SchemaResolvers.registerHandler`) —
      class-level handlers for codecs the built-in tiers can't or shouldn't guess.
    - **Tier 1**: identity match on primitive singletons (`Codec.INT`, `STRING`, …).
    - **Tier 2**: `instanceof` on concrete DFU/MC codec classes (+ VarHandles for private

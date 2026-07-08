@@ -45,13 +45,10 @@ final class PackTreePanel extends JPanel {
     private final JTree tree;
     // Font/color set in updateUI() so zoom (FlatLaf.updateUI) re-derives them fresh —
     // deriving from getFont() here would compound the delta on every theme/zoom change.
-    private final JLabel packLabel = new JLabel(" ") {
-        @Override public void updateUI() {
-            super.updateUI();
-            setFont(UiScale.labelFont(Font.BOLD, -1f));
-            setForeground(EditorOps.mutedColor());
-        }
-    };
+    private final JLabel packLabel = StyledLabels.of(" ", l -> {
+        l.setFont(UiScale.labelFont(Font.BOLD, -1f));
+        l.setForeground(EditorOps.mutedColor());
+    });
     private @Nullable PackWorkspace workspace;
     /** Resolves a directory to the codec content type it is the root of (colormaps, …), or null. */
     private final @Nullable Function<Path, CodecEntry> codecRootResolver;
@@ -67,17 +64,12 @@ final class PackTreePanel extends JPanel {
         JPanel header = new JPanel(new BorderLayout());
         header.add(packLabel, BorderLayout.CENTER);
 
-        JButton openPack = new JButton(WorkbenchIcons.folderOpen());
-        openPack.putClientProperty("JButton.buttonType", "toolBarButton");
-        openPack.setFocusable(false);
-        openPack.setToolTipText("Open a resource pack / datapack folder — any folder works");
-        openPack.addActionListener(e -> openPackAction.run());
+        JButton openPack = Buttons.toolbar(WorkbenchIcons.folderOpen(),
+                "Open a resource pack / datapack folder — any folder works",
+                e -> openPackAction.run());
 
-        JButton refresh = new JButton(WorkbenchIcons.refresh());
-        refresh.putClientProperty("JButton.buttonType", "toolBarButton");
-        refresh.setFocusable(false);
-        refresh.setToolTipText("Re-scan the pack folder");
-        refresh.addActionListener(e -> refresh());
+        JButton refresh = Buttons.toolbar(WorkbenchIcons.refresh(),
+                "Re-scan the pack folder", e -> refresh());
 
         Box headerActions = Box.createHorizontalBox();
         headerActions.add(openPack);

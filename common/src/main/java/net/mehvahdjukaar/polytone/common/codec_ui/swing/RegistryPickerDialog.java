@@ -78,9 +78,8 @@ public final class RegistryPickerDialog extends JDialog {
         }
 
         // ----- Footer: right-aligned action row -----
-        JButton ok = new JButton("OK");
+        JButton ok = Buttons.primary("OK", null);
         JButton cancel = new JButton("Cancel");
-        ok.putClientProperty("JButton.buttonType", "default");
         ok.addActionListener(e -> confirm());
         cancel.addActionListener(e -> dispose());
 

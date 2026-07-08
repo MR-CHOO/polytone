@@ -64,7 +64,7 @@ public final class StringWidget implements SwingWidget {
             if (text == null) text = "";
             int curLen = fb.getDocument().getLength();
             int allow = Math.max(0, maxLen - (curLen - length));
-            if (allow <= 0) {
+            if (allow == 0) {
                 super.replace(fb, offset, length, "", attrs);
                 return;
             }

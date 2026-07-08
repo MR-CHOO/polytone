@@ -104,40 +104,30 @@ public final class RecordWidget implements SwingWidget {
             // Prettified name (raw JSON key in the tooltip). Font set in updateUI() — re-derived
             // FRESH from the L&F default so it tracks a zoom/theme change (a construction-time
             // deriveFont() freezes) — and BOLDER in compact mode where the name acts as a title.
-            JLabel name = new JLabel(prettyName(field.name())) {
-                @Override public void updateUI() {
-                    super.updateUI();
-                    setFont(UiScale.labelFont(
-                            SwingSchemaEditor.isCompactMode() ? Font.BOLD : Font.PLAIN, 0f));
-                }
-            };
+            JLabel name = StyledLabels.of(prettyName(field.name()), l ->
+                    l.setFont(UiScale.labelFont(
+                            SwingSchemaEditor.isCompactMode() ? Font.BOLD : Font.PLAIN, 0f)));
             name.setToolTipText(field.name());
             entry.name = name;
 
             if (field.optional()) {
                 // Tiny outlined pill badge — quieter than text, clearly metadata.
-                JLabel opt = new JLabel("opt") {
-                    @Override public void updateUI() {
-                        super.updateUI();
-                        setFont(UiScale.labelFont(Font.PLAIN, -3f));
-                        setForeground(EditorOps.mutedColor());
-                        setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
-                                new Insets(1, 6, 1, 6), EditorOps.dividerColor(), 1f, 999));
-                    }
-                };
+                JLabel opt = StyledLabels.of("opt", l -> {
+                    l.setFont(UiScale.labelFont(Font.PLAIN, -3f));
+                    l.setForeground(EditorOps.mutedColor());
+                    l.setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
+                            new Insets(1, 6, 1, 6), EditorOps.dividerColor(), 1f, 999));
+                });
                 entry.badge = opt;
             } else {
                 // Required field: a red asterisk that appears only while nothing is picked
                 // (null/no selection) — the field will fail to load in that state. Visibility
                 // is driven by isUnset() in currentJson()/setJson(); color re-derived in
                 // updateUI() so a live theme switch keeps it readable.
-                JLabel star = new JLabel("*") {
-                    @Override public void updateUI() {
-                        super.updateUI();
-                        setFont(UiScale.labelFont(Font.BOLD, 1f));
-                        setForeground(EditorOps.errorColor());
-                    }
-                };
+                JLabel star = StyledLabels.of("*", l -> {
+                    l.setFont(UiScale.labelFont(Font.BOLD, 1f));
+                    l.setForeground(EditorOps.errorColor());
+                });
                 star.setToolTipText("Required — pick a value or this will fail to load");
                 star.setVisible(false);
                 entry.requiredMark = star;

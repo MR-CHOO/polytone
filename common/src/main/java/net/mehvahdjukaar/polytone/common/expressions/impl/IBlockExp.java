@@ -17,11 +17,11 @@ public interface IBlockExp {
             iBlockExp -> 0.0);
 
     // Same wire codec; labels name the editor's picker options.
-    Codec<IBlockExp> CODEC = Codec.lazyInitialized(() -> net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs.labeled(
+    Codec<IBlockExp> CODEC = Codec.lazyInitialized(() -> net.mehvahdjukaar.codecui.SchemaCodecs.labeled(
             CodecUtils.alternatives(CONSTANT_CODEC, BlockContextExpression.CODEC, BlockExp.TYPE.codec()),
-            net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs.alt("constant", CONSTANT_CODEC),
-            net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs.alt("legacy expression", BlockContextExpression.CODEC),
-            net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs.alt("expression", BlockExp.TYPE.codec())));
+            net.mehvahdjukaar.codecui.SchemaCodecs.alt("constant", CONSTANT_CODEC),
+            net.mehvahdjukaar.codecui.SchemaCodecs.alt("legacy expression", BlockContextExpression.CODEC),
+            net.mehvahdjukaar.codecui.SchemaCodecs.alt("expression", BlockExp.TYPE.codec())));
 
     double evaluate(LevelReader level, Vec3 pos, @Nullable BlockState state);
 

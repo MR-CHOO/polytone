@@ -1,5 +1,4 @@
 package net.mehvahdjukaar.polytone.editor;
-import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs;
 
 import com.mojang.serialization.Codec;
 import net.mehvahdjukaar.codecui.SchemaCodec;
@@ -58,6 +57,6 @@ public final class UiPreviewLauncher {
     }
 
     private static CodecEntry entry(String label, String group, Codec<?> codec) {
-        return new CodecEntry(label, group, SchemaCodecs.wrap(codec), Side.CLIENT_RESOURCES);
+        return new CodecEntry(label, group, SchemaCodec.wrap(codec), Side.CLIENT_RESOURCES);
     }
 }

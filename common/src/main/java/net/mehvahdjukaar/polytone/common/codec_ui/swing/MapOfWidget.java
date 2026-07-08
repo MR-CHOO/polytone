@@ -40,13 +40,10 @@ public final class MapOfWidget implements SwingWidget {
         }
     };
     private final JPanel rowsHost = new JPanel();
-    private final JLabel emptyHint = new JLabel("(empty)") {
-        @Override public void updateUI() {
-            super.updateUI();
-            setFont(UiScale.labelFont(Font.ITALIC, -1f));
-            setForeground(EditorOps.mutedColor());
-        }
-    };
+    private final JLabel emptyHint = StyledLabels.of("(empty)", l -> {
+        l.setFont(UiScale.labelFont(Font.ITALIC, -1f));
+        l.setForeground(EditorOps.mutedColor());
+    });
     private final JButton addButton = new JButton(WorkbenchIcons.plusAccent());
     private final List<SwingWidget> keyWidgets = new ArrayList<>();
     private final List<SwingWidget> valueWidgets = new ArrayList<>();

@@ -252,10 +252,8 @@ public final class ExpressionWidget implements SwingWidget, CollapsibleWidget {
     }
 
     private JButton chip(String label, String insertion) {
-        JButton chip = new JButton(label);
-        chip.putClientProperty("JButton.buttonType", "toolBarButton");
+        JButton chip = Buttons.asToolbar(new JButton(label));
         chip.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UiScale.px(12)));
-        chip.setFocusable(false);
         chip.setToolTipText("Insert at cursor");
         chip.addActionListener(e -> {
             int caret = area.getCaretPosition();

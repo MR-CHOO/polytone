@@ -71,16 +71,13 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
     private final javax.swing.Timer previewTimer;
     private final JPanel kindHeader = new JPanel();
     /** Accent-outlined chip naming the content type being edited ("Fluid modifier"). */
-    private final JLabel kindChip = new JLabel() {
-        @Override public void updateUI() {
-            super.updateUI();
-            setForeground(EditorOps.accentColor());
-            setFont(UiScale.labelFont(Font.BOLD, -1f));
-            setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
-                    new java.awt.Insets(2, 8, 2, 8),
-                    EditorOps.mix(EditorOps.dividerColor(), EditorOps.accentColor(), 0.5f), 1f, 999));
-        }
-    };
+    private final JLabel kindChip = StyledLabels.of("", l -> {
+        l.setForeground(EditorOps.accentColor());
+        l.setFont(UiScale.labelFont(Font.BOLD, -1f));
+        l.setBorder(new com.formdev.flatlaf.ui.FlatLineBorder(
+                new java.awt.Insets(2, 8, 2, 8),
+                EditorOps.mix(EditorOps.dividerColor(), EditorOps.accentColor(), 0.5f), 1f, 999));
+    });
 
     private @Nullable Path boundFile;
     private @Nullable Path defaultDir;
@@ -119,14 +116,8 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         // ---- Header row: content-kind chip (left, when named) · view toggle (right, always) ----
         kindHeader.setLayout(new BoxLayout(kindHeader, BoxLayout.X_AXIS));
         kindHeader.setOpaque(false);
-        JLabel sideLabel = new JLabel(side == Side.SERVER_DATA
-                ? "datapack side" : "resource pack side") {
-            @Override public void updateUI() {
-                super.updateUI();
-                setFont(UiScale.labelFont(Font.PLAIN, -1f));
-                setForeground(EditorOps.mutedColor());
-            }
-        };
+        JLabel sideLabel = StyledLabels.mutedSmall(side == Side.SERVER_DATA
+                ? "datapack side" : "resource pack side");
         kindInfo = Box.createHorizontalBox();
         kindInfo.add(kindChip);
         kindInfo.add(Box.createHorizontalStrut(UiScale.med()));
@@ -168,8 +159,7 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
         errorLabel.setIconTextGap(UiScale.small());
 
         JButton load = new JButton("Load JSON…", WorkbenchIcons.file());
-        JButton save = new JButton("Save", WorkbenchIcons.save());
-        save.putClientProperty("JButton.buttonType", "default");
+        JButton save = Buttons.primary("Save", WorkbenchIcons.save());
         save.setToolTipText("Save (Ctrl+S)");
         load.setToolTipText("Load a JSON file into the form");
 
@@ -229,9 +219,7 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
     }
 
     private JToggleButton viewToggleButton(javax.swing.Icon icon, String tooltip, ViewMode mode) {
-        JToggleButton b = new JToggleButton(icon);
-        b.putClientProperty("JButton.buttonType", "toolBarButton");
-        b.setFocusable(false);
+        JToggleButton b = Buttons.asToolbar(new JToggleButton(icon));
         b.setToolTipText(tooltip);
         // Active mode's glyph goes accent-purple, matching the sidebar dock's highlight language.
         b.addItemListener(e -> b.setForeground(b.isSelected() ? EditorOps.accentColor() : null));
@@ -477,12 +465,9 @@ public final class EditorPanel<A> extends JPanel implements WorkbenchTab {
 
         validityPill = new ValidityLabel();
 
-        JButton copy = new JButton(WorkbenchIcons.copy());
-        copy.putClientProperty("JButton.buttonType", "toolBarButton");
-        copy.setFocusable(false);
-        copy.setToolTipText("Copy JSON to clipboard");
-        copy.addActionListener(e -> Toolkit.getDefaultToolkit().getSystemClipboard().setContents(
-                new java.awt.datatransfer.StringSelection(previewArea.getText()), null));
+        JButton copy = Buttons.toolbar(WorkbenchIcons.copy(), "Copy JSON to clipboard",
+                e -> Toolkit.getDefaultToolkit().getSystemClipboard().setContents(
+                        new java.awt.datatransfer.StringSelection(previewArea.getText()), null));
 
         Box header = Box.createHorizontalBox();
         header.add(title);

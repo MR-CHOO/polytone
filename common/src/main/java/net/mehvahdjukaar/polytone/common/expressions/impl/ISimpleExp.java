@@ -10,10 +10,10 @@ public interface ISimpleExp {
             iBlockExp -> 0.0);
 
     // Same wire codec; labels name the editor's picker options.
-    Codec<ISimpleExp> CODEC = Codec.lazyInitialized(() -> net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs.labeled(
+    Codec<ISimpleExp> CODEC = Codec.lazyInitialized(() -> net.mehvahdjukaar.codecui.SchemaCodecs.labeled(
             CodecUtils.alternatives(CONSTANT_CODEC, SimpleExp.TYPE.codec()),
-            net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs.alt("constant", CONSTANT_CODEC),
-            net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs.alt("expression", SimpleExp.TYPE.codec())));
+            net.mehvahdjukaar.codecui.SchemaCodecs.alt("constant", CONSTANT_CODEC),
+            net.mehvahdjukaar.codecui.SchemaCodecs.alt("expression", SimpleExp.TYPE.codec())));
 
     double evaluate();
 

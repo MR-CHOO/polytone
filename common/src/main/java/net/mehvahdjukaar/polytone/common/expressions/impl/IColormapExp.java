@@ -3,7 +3,7 @@ package net.mehvahdjukaar.polytone.common.expressions.impl;
 import com.mojang.serialization.Codec;
 import net.mehvahdjukaar.polytone.common.ClientFrameTicker;
 import net.mehvahdjukaar.polytone.common.codec.CodecUtils;
-import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs;
+import net.mehvahdjukaar.codecui.SchemaCodecs;
 import net.mehvahdjukaar.polytone.common.expressions.ExpTicker;
 import net.mehvahdjukaar.polytone.common.struc.MapRegistry;
 import net.mehvahdjukaar.polytone.content.biome.BiomeIdMapper;

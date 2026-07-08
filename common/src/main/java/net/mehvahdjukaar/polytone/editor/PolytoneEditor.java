@@ -1,5 +1,4 @@
 package net.mehvahdjukaar.polytone.editor;
-import net.mehvahdjukaar.polytone.common.codec_ui.SchemaCodecs;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.Decoder;
@@ -58,11 +57,11 @@ public final class PolytoneEditor {
         String g = "Polytone content";
         return List.of(
                 entry("Colormap",           g, Colormap.DIRECT_CODEC,                "polytone/colormaps"),
-                entry("Lightmap",           g, SchemaCodecs.wrap(Lightmap.CODEC),     "polytone/lightmaps"),
-                entry("Block modifier",     g, SchemaCodecs.wrap(decoderAsCodec(BlockPropertyModifier.CODEC)), "polytone/block_modifiers"),
-                entry("Fluid modifier",     g, SchemaCodecs.wrap(decoderAsCodec(FluidPropertyModifier.CODEC)), "polytone/fluid_modifiers"),
-                entry("Item modifier",      g, SchemaCodecs.wrap(ItemModifier.CODEC), "polytone/item_modifiers"),
-                entry("Dimension modifier", g, SchemaCodecs.wrap(DimensionEffectsModifier.CODEC), "polytone/dimension_modifiers"));
+                entry("Lightmap",           g, SchemaCodec.wrap(Lightmap.CODEC),     "polytone/lightmaps"),
+                entry("Block modifier",     g, SchemaCodec.wrap(decoderAsCodec(BlockPropertyModifier.CODEC)), "polytone/block_modifiers"),
+                entry("Fluid modifier",     g, SchemaCodec.wrap(decoderAsCodec(FluidPropertyModifier.CODEC)), "polytone/fluid_modifiers"),
+                entry("Item modifier",      g, SchemaCodec.wrap(ItemModifier.CODEC), "polytone/item_modifiers"),
+                entry("Dimension modifier", g, SchemaCodec.wrap(DimensionEffectsModifier.CODEC), "polytone/dimension_modifiers"));
     }
 
     private static CodecEntry entry(String label, String group, SchemaCodec<?> codec, String containerDir) {

@@ -167,7 +167,7 @@ public final class SwingSchemaEditor implements SchemaEditor {
         // and pushes its own controls (incl. the zoom buttons) off-screen — the "buttons vanish,
         // must use the keyboard" report. Shrinking the CODE is the editor font's job now, not this.
         fontPt = deltaPt == 0 ? DEFAULT_FONT_PT
-                : Math.max(8, Math.min(32, fontPt + deltaPt)); // 40%..160% of the 20pt base
+                : Math.clamp(fontPt + deltaPt, 8, 32); // 40%..160% of the 20pt base
         PREFS.putInt(FONT_PREF_KEY, fontPt);
         // Re-apply ALL defaults (not just the font): metric defaults + the UiScale zoom ratio
         // are zoom-aware now, so spacing, min heights and border insets grow with the font.

@@ -99,32 +99,10 @@ public final class SwingWorkbench {
     private int lastSidebarDivider = -1;
     /** Which activity-rail tool ("files" / "codecs") is currently shown. */
     private String activeSidebarCard = "files";
-    private final JLabel packLabel = new JLabel("No pack opened") {
-        @Override public void updateUI() {
-            super.updateUI();
-            setForeground(EditorOps.mutedColor());
-        }
-    };
-    private final JLabel packKindLabel = new JLabel() {
-        @Override public void updateUI() {
-            super.updateUI();
-            setFont(UiScale.labelFont(Font.PLAIN, -1f));
-            setForeground(EditorOps.accentColor());
-        }
-    };
-    private final JLabel statusLabel = new JLabel(" ") {
-        @Override public void updateUI() {
-            super.updateUI();
-            setFont(UiScale.labelFont(Font.PLAIN, -1f));
-        }
-    };
-    private final JLabel pathLabel = new JLabel() {
-        @Override public void updateUI() {
-            super.updateUI();
-            setFont(UiScale.labelFont(Font.PLAIN, -1f));
-            setForeground(EditorOps.mutedColor());
-        }
-    };
+    private final JLabel packLabel = StyledLabels.muted("No pack opened");
+    private final JLabel packKindLabel = StyledLabels.accentSmall("");
+    private final JLabel statusLabel = StyledLabels.small(" ");
+    private final JLabel pathLabel = StyledLabels.mutedSmall("");
     // THE primary action — a NATIVE FlatLaf "default" (accent-filled) button, identical to the
     // accent buttons in dialogs (e.g. the unsaved-changes prompt): same computed text color, same
     // native padding. The old hand-rolled FlatLaf.style forced #FFFFFF text and manual margins that
@@ -228,13 +206,10 @@ public final class SwingWorkbench {
         bar.setFloatable(false);
 
         // Accent brand mark, left-aligned like an app title bar.
-        JLabel brand = new JLabel("Polytone") {
-            @Override public void updateUI() {
-                super.updateUI();
-                setFont(UiScale.labelFont(Font.BOLD, 2f));
-                setForeground(EditorOps.accentColor());
-            }
-        };
+        JLabel brand = StyledLabels.of("Polytone", l -> {
+            l.setFont(UiScale.labelFont(Font.BOLD, 2f));
+            l.setForeground(EditorOps.accentColor());
+        });
         brand.setBorder(BorderFactory.createEmptyBorder(0, UiScale.small(), 0, UiScale.large()));
         bar.add(brand);
 
@@ -290,22 +265,15 @@ public final class SwingWorkbench {
 
     /** Toggle for the narrow-screen compact layout (field name stacked above its value). */
     private JToggleButton buildCompactToggle() {
-        JToggleButton toggle = new JToggleButton("☰"); // ☰ rows/compact glyph
-        toggle.putClientProperty("JButton.buttonType", "toolBarButton");
-        toggle.setFocusable(false);
+        JToggleButton toggle = Buttons.toolbarToggle("☰", // ☰ rows/compact glyph
+                "Compact layout — stack each field's name above its value (saves width)");
         toggle.setSelected(SwingSchemaEditor.isCompactMode());
-        toggle.setToolTipText("Compact layout — stack each field's name above its value (saves width)");
         toggle.addActionListener(e -> SwingSchemaEditor.toggleCompact());
         return toggle;
     }
 
     private JButton zoomButton(javax.swing.Icon icon, String tooltip, int deltaPt) {
-        JButton button = new JButton(icon);
-        button.putClientProperty("JButton.buttonType", "toolBarButton");
-        button.setFocusable(false);
-        button.setToolTipText(tooltip);
-        button.addActionListener(e -> adjustZoom(deltaPt));
-        return button;
+        return Buttons.toolbar(icon, tooltip, e -> adjustZoom(deltaPt));
     }
 
     private void adjustZoom(int deltaPt) {
@@ -358,9 +326,7 @@ public final class SwingWorkbench {
 
     /** Sun/moon button flipping the whole workbench between the light and dark FlatLaf themes. */
     private JButton buildThemeToggle() {
-        JButton toggle = new JButton();
-        toggle.putClientProperty("JButton.buttonType", "toolBarButton");
-        toggle.setFocusable(false);
+        JButton toggle = Buttons.asToolbar(new JButton());
         Runnable sync = () -> {
             boolean dark = SwingSchemaEditor.isDarkTheme();
             // Show the destination: a sun while dark (click → light), a moon while light.
@@ -507,9 +473,8 @@ public final class SwingWorkbench {
 
         ActivityButton(javax.swing.Icon icon, String tip) {
             super(icon);
-            setFocusable(false);
+            Buttons.asToolbar(this);
             setToolTipText(tip);
-            putClientProperty("JButton.buttonType", "toolBarButton");
             setBorder(BorderFactory.createEmptyBorder(UiScale.med(), UiScale.med(), UiScale.med(), UiScale.med()));
         }
 
@@ -574,8 +539,7 @@ public final class SwingWorkbench {
         bar.add(statusLabel, BorderLayout.CENTER);
 
         // Right side: pack path readout | – 100% + zoom cluster (the percent resets).
-        zoomResetButton.putClientProperty("JButton.buttonType", "toolBarButton");
-        zoomResetButton.setFocusable(false);
+        Buttons.asToolbar(zoomResetButton);
         zoomResetButton.setToolTipText("Reset zoom to 100% (Ctrl+0)");
         zoomResetButton.setText(SwingSchemaEditor.zoomPercent() + "%");
         zoomResetButton.addActionListener(e -> adjustZoom(0));
