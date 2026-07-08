@@ -2,7 +2,8 @@ package net.mehvahdjukaar.polytone.common;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
-import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.mehvahdjukaar.codecui.SchemaCodec;
+import net.mehvahdjukaar.codecui.SchemaRecord;
 import net.mehvahdjukaar.polytone.PlatStuff;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.common.codec.CodecUtils;
@@ -113,9 +114,9 @@ public record Targets(List<Entry> entries) {
             .xmap(Targets::new, t -> t.entries);
 
     private record OptionalEntry(Entry entry, boolean required) implements Entry {
-        public static final Codec<OptionalEntry> OPTIONAL_CODEC = RecordCodecBuilder.create(i -> i.group(
-                SIMPLE_TAG_OR_REGEX_ENTRY_CODEC.fieldOf("id").forGetter(OptionalEntry::entry),
-                com.mojang.serialization.Codec.BOOL.optionalFieldOf("required", true).forGetter(OptionalEntry::required)
+        public static final SchemaCodec<OptionalEntry> OPTIONAL_CODEC = SchemaRecord.create(OptionalEntry.class, i -> i.group(
+                i.field("id", SIMPLE_TAG_OR_REGEX_ENTRY_CODEC, OptionalEntry::entry),
+                i.optional("required", Codec.BOOL, true, OptionalEntry::required)
         ).apply(i, OptionalEntry::new));
 
         @Override

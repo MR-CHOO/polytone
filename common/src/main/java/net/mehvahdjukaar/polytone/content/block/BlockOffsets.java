@@ -1,7 +1,8 @@
 package net.mehvahdjukaar.polytone.content.block;
 
 import com.mojang.serialization.Codec;
-import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.mehvahdjukaar.codecui.SchemaCodec;
+import net.mehvahdjukaar.codecui.SchemaRecord;
 import net.mehvahdjukaar.polytone.common.codec.CodecUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
@@ -43,12 +44,12 @@ public class BlockOffsets {
 
 
     private record CustomOffset(float maxX, float maxY, float maxZ) implements BlockBehaviour.OffsetFunction {
-        public static final Codec<CustomOffset> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+        public static final SchemaCodec<CustomOffset> CODEC = SchemaRecord.create(CustomOffset.class, i -> i.group(
 
-                Codec.FLOAT.fieldOf("max_x").orElse(0.25f).forGetter(CustomOffset::maxX),
-                Codec.FLOAT.fieldOf("max_y").orElse(0.2f).forGetter(CustomOffset::maxY),
-                Codec.FLOAT.fieldOf("max_z").orElse(0.25f).forGetter(CustomOffset::maxZ)
-        ).apply(instance, CustomOffset::new));
+                i.optional("max_x", Codec.FLOAT, 0.25f, CustomOffset::maxX),
+                i.optional("max_y", Codec.FLOAT, 0.2f, CustomOffset::maxY),
+                i.optional("max_z", Codec.FLOAT, 0.25f, CustomOffset::maxZ)
+        ).apply(i, CustomOffset::new));
 
         @Override
         public Vec3 evaluate(BlockState blockState , BlockPos blockPos) {

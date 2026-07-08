@@ -2,8 +2,8 @@ package net.mehvahdjukaar.polytone.content.noise;
 
 import com.google.gson.JsonElement;
 import com.mojang.serialization.Codec;
-import com.mojang.serialization.Decoder;
-import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.mehvahdjukaar.codecui.SchemaCodec;
+import net.mehvahdjukaar.codecui.SchemaRecord;
 import net.mehvahdjukaar.polytone.common.struc.MapRegistry;
 import net.mehvahdjukaar.polytone.common.exp.ExpressionUtils;
 import net.mehvahdjukaar.polytone.common.reloader.JsonPartialReloader;
@@ -19,10 +19,10 @@ import java.util.Map;
 
 public class NoiseManager extends JsonPartialReloader {
 
-    public static final Decoder<PerlinSimplexNoise> NOISE_CODEC = RecordCodecBuilder.create((instance) -> instance.group(
-            Codec.INT.fieldOf("seed").forGetter(p -> 0),
-            Codec.INT.listOf().fieldOf("octaves").forGetter(p -> List.of())
-    ).apply(instance, (s, l) -> new PerlinSimplexNoise(RandomSource.create(s), l)));
+    public static final SchemaCodec<PerlinSimplexNoise> NOISE_CODEC = SchemaRecord.create(PerlinSimplexNoise.class, i -> i.group(
+            i.field("seed", Codec.INT, p -> 0),
+            i.field("octaves", Codec.INT.listOf(), p -> List.of())
+    ).apply(i, (s, l) -> new PerlinSimplexNoise(RandomSource.create(s), l)));
 
     public static final PerlinSimplexNoise DEFAULT =  new PerlinSimplexNoise(RandomSource.create(0), List.of(1));
 

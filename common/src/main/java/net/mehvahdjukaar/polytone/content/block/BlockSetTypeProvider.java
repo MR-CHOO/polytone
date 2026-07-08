@@ -1,7 +1,8 @@
 package net.mehvahdjukaar.polytone.content.block;
 
 import com.mojang.serialization.Codec;
-import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.mehvahdjukaar.codecui.SchemaCodec;
+import net.mehvahdjukaar.codecui.SchemaRecord;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.common.codec.CodecUtils;
 import net.minecraft.sounds.SoundEvent;
@@ -107,18 +108,18 @@ public interface BlockSetTypeProvider {
                   Optional<SoundEvent> fanceGateClose
     ) implements BlockSetTypeProvider {
 
-        public static final Codec<Custom> CODEC = RecordCodecBuilder.create((instance) -> instance.group(
-                CodecUtils.forwardAwareSoundEvent().optionalFieldOf("door_close").forGetter(Custom::doorClose),
-                CodecUtils.forwardAwareSoundEvent().optionalFieldOf("door_open").forGetter(Custom::doorOpen),
-                CodecUtils.forwardAwareSoundEvent().optionalFieldOf("trapdoor_close").forGetter(Custom::trapdoorClose),
-                CodecUtils.forwardAwareSoundEvent().optionalFieldOf("trapdoor_open").forGetter(Custom::trapdoorOpen),
-                CodecUtils.forwardAwareSoundEvent().optionalFieldOf("pressure_plate_click_off").forGetter(Custom::pressurePlateClickOff),
-                CodecUtils.forwardAwareSoundEvent().optionalFieldOf("pressure_plate_click_on").forGetter(Custom::pressurePlateClickOn),
-                CodecUtils.forwardAwareSoundEvent().optionalFieldOf("button_click_off").forGetter(Custom::buttonClickOff),
-                CodecUtils.forwardAwareSoundEvent().optionalFieldOf("button_click_on").forGetter(Custom::buttonClickOn),
-                CodecUtils.forwardAwareSoundEvent().optionalFieldOf("fence_gate_open").forGetter(Custom::fanceGateOpen),
-                CodecUtils.forwardAwareSoundEvent().optionalFieldOf("fence_gate_close").forGetter(Custom::fanceGateClose)
-        ).apply(instance, Custom::new));
+        public static final SchemaCodec<Custom> CODEC = SchemaRecord.create(Custom.class, (i) -> i.group(
+                i.optional("door_close", CodecUtils.forwardAwareSoundEvent(), Custom::doorClose),
+                i.optional("door_open", CodecUtils.forwardAwareSoundEvent(), Custom::doorOpen),
+                i.optional("trapdoor_close", CodecUtils.forwardAwareSoundEvent(), Custom::trapdoorClose),
+                i.optional("trapdoor_open", CodecUtils.forwardAwareSoundEvent(), Custom::trapdoorOpen),
+                i.optional("pressure_plate_click_off", CodecUtils.forwardAwareSoundEvent(), Custom::pressurePlateClickOff),
+                i.optional("pressure_plate_click_on", CodecUtils.forwardAwareSoundEvent(), Custom::pressurePlateClickOn),
+                i.optional("button_click_off", CodecUtils.forwardAwareSoundEvent(), Custom::buttonClickOff),
+                i.optional("button_click_on", CodecUtils.forwardAwareSoundEvent(), Custom::buttonClickOn),
+                i.optional("fence_gate_open", CodecUtils.forwardAwareSoundEvent(), Custom::fanceGateOpen),
+                i.optional("fence_gate_close", CodecUtils.forwardAwareSoundEvent(), Custom::fanceGateClose)
+        ).apply(i, Custom::new));
 
 
         @Override

@@ -54,7 +54,6 @@ public abstract class AbstractContainerScreenMixin<T extends AbstractContainerMe
 
     @Inject(method = "init", at = @At("TAIL"))
     public void polytone$modifyLabels(CallbackInfo ci) {
-        NoiseGeneratorSettings
         var m = Polytone.SLOTIFY.getGuiModifier(this);
         if (m != null) {
             this.titleLabelX += m.titleX();

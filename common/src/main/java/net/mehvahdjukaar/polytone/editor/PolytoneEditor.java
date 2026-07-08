@@ -1,7 +1,5 @@
 package net.mehvahdjukaar.polytone.editor;
 
-import com.mojang.serialization.Codec;
-import com.mojang.serialization.Decoder;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.codecui.SchemaCodec;
 import net.mehvahdjukaar.polytone.common.codec_ui.SchemaEditor.Side;
@@ -53,26 +51,19 @@ public final class PolytoneEditor {
      */
     private static List<CodecEntry> contentEntries() {
         String g = "Polytone content";
+        // Each content codec now carries its own Schema (declared via SchemaRecord.create),
+        // so the picker uses it directly — no SchemaCodec.wrap inference fallback needed.
         return List.of(
-                entry("Colormap",           g, Colormap.DIRECT_CODEC,                "polytone/colormaps"),
-                entry("Lightmap",           g, SchemaCodec.wrap(Lightmap.CODEC),     "polytone/lightmaps"),
-                entry("Block modifier",     g, SchemaCodec.wrap(decoderAsCodec(BlockPropertyModifier.CODEC)), "polytone/block_modifiers"),
-                entry("Fluid modifier",     g, SchemaCodec.wrap(decoderAsCodec(FluidPropertyModifier.CODEC)), "polytone/fluid_modifiers"),
-                entry("Item modifier",      g, SchemaCodec.wrap(ItemModifier.CODEC), "polytone/item_modifiers"),
-                entry("Dimension modifier", g, SchemaCodec.wrap(DimensionEffectsModifier.CODEC), "polytone/dimension_modifiers"));
+                entry("Colormap",           g, Colormap.DIRECT_CODEC,             "polytone/colormaps"),
+                entry("Lightmap",           g, Lightmap.DIRECT_CODEC,             "polytone/lightmaps"),
+                entry("Block modifier",     g, BlockPropertyModifier.CODEC,       "polytone/block_modifiers"),
+                entry("Fluid modifier",     g, FluidPropertyModifier.CODEC,       "polytone/fluid_modifiers"),
+                entry("Item modifier",      g, ItemModifier.CODEC,                "polytone/item_modifiers"),
+                entry("Dimension modifier", g, DimensionEffectsModifier.CODEC,    "polytone/dimension_modifiers"));
     }
 
     private static CodecEntry entry(String label, String group, SchemaCodec<?> codec, String containerDir) {
         return new CodecEntry(label, group, codec, Side.CLIENT_RESOURCES, containerDir);
-    }
-
-    /**
-     * Some content codecs are declared {@code Decoder}-only (encode unsupported) but are
-     * RecordCodecBuilder-built full Codecs at runtime. The editor only decodes — widgets
-     * emit JSON directly and validation parses — so the downcast is safe here.
-     */
-    private static <A> Codec<A> decoderAsCodec(Decoder<A> decoder) {
-        return (Codec<A>) decoder;
     }
 
     // NeoForge launches with java.awt.headless=true and GraphicsEnvironment caches the flag.

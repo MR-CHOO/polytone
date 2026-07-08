@@ -1,7 +1,8 @@
 package net.mehvahdjukaar.polytone.content.biome;
 
 import com.mojang.serialization.Codec;
-import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.mehvahdjukaar.codecui.SchemaCodec;
+import net.mehvahdjukaar.codecui.SchemaRecord;
 import net.mehvahdjukaar.polytone.PlatStuff;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.common.ClientFrameTicker;
@@ -36,16 +37,16 @@ public record BiomeEffectModifier(Optional<Integer> waterColor,
                                   BiomeEnvAttributeModifications attributeModifications,
                                   Targets targets) {
 
-    public static final Codec<BiomeEffectModifier> DIRECT_CODEC = RecordCodecBuilder.create((instance) -> instance.group(
-            ColorUtils.COLOR.optionalFieldOf("water_color").forGetter(BiomeEffectModifier::waterColor),
-            ColorUtils.COLOR.optionalFieldOf("foliage_color").forGetter(BiomeEffectModifier::foliageColorOverride),
-            ColorUtils.COLOR.optionalFieldOf("dry_foliage_color").forGetter(BiomeEffectModifier::foliageColorOverride),
-            ColorUtils.COLOR.optionalFieldOf("grass_color").forGetter(BiomeEffectModifier::grassColorOverride),
-            BiomeSpecialEffects.GrassColorModifier.CODEC.optionalFieldOf("grass_color_modifier").forGetter(BiomeEffectModifier::grassColorModifier),
-            BiomeEnvAttributeModifications.CODEC.optionalFieldOf("attributes_modifiers",
-                    BiomeEnvAttributeModifications.EMPTY).forGetter(BiomeEffectModifier::attributeModifications),
-            Targets.CODEC.optionalFieldOf("targets", Targets.EMPTY).forGetter(BiomeEffectModifier::targets)
-    ).apply(instance, BiomeEffectModifier::new));
+    public static final SchemaCodec<BiomeEffectModifier> DIRECT_CODEC = SchemaRecord.create(BiomeEffectModifier.class, (i) -> i.group(
+            i.optional("water_color", ColorUtils.COLOR, BiomeEffectModifier::waterColor),
+            i.optional("foliage_color", ColorUtils.COLOR, BiomeEffectModifier::foliageColorOverride),
+            i.optional("dry_foliage_color", ColorUtils.COLOR, BiomeEffectModifier::foliageColorOverride),
+            i.optional("grass_color", ColorUtils.COLOR, BiomeEffectModifier::grassColorOverride),
+            i.optional("grass_color_modifier", BiomeSpecialEffects.GrassColorModifier.CODEC, BiomeEffectModifier::grassColorModifier),
+            i.optional("attributes_modifiers", BiomeEnvAttributeModifications.CODEC,
+                    BiomeEnvAttributeModifications.EMPTY, BiomeEffectModifier::attributeModifications),
+            i.optional("targets", Targets.CODEC, Targets.EMPTY, BiomeEffectModifier::targets)
+    ).apply(i, BiomeEffectModifier::new));
 
     public static final Codec<BiomeEffectModifier> CODEC = CodecUtils.postProcess(DIRECT_CODEC,
             ColorUtils.COLOR.optionalFieldOf("fog_color"),
@@ -219,13 +220,13 @@ public record BiomeEffectModifier(Optional<Integer> waterColor,
     public record BiomeEnvAttributeModifications(EnvironmentAttributeMapMod baseMod,
                                                  EnvironmentAttributeMapMod postProcess) { //here we dont use removals
 
-        public static final Codec<BiomeEnvAttributeModifications> DIRECT_CODEC = RecordCodecBuilder.create(
-                instance -> instance.group(
-                        EnvironmentAttributeMapMod.CODEC.optionalFieldOf("base",
-                                EnvironmentAttributeMapMod.EMPTY).forGetter(m -> m.baseMod),
-                        EnvironmentAttributeMapMod.CODEC.optionalFieldOf("post_process",
-                                EnvironmentAttributeMapMod.EMPTY).forGetter(m -> m.postProcess)
-                ).apply(instance, BiomeEnvAttributeModifications::new)
+        public static final SchemaCodec<BiomeEnvAttributeModifications> DIRECT_CODEC = SchemaRecord.create(
+                BiomeEnvAttributeModifications.class, i -> i.group(
+                        i.optional("base", EnvironmentAttributeMapMod.CODEC,
+                                EnvironmentAttributeMapMod.EMPTY, m -> m.baseMod),
+                        i.optional("post_process", EnvironmentAttributeMapMod.CODEC,
+                                EnvironmentAttributeMapMod.EMPTY, m -> m.postProcess)
+                ).apply(i, BiomeEnvAttributeModifications::new)
         );
 
         public static final Codec<BiomeEnvAttributeModifications> CODEC = CodecUtils.bestAlternative(
