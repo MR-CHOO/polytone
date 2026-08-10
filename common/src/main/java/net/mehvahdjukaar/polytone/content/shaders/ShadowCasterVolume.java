@@ -32,7 +32,8 @@ public final class ShadowCasterVolume {
     private final float[] planes = new float[MAX_PLANES * 4];
     private int planeCount;
 
-    ShadowCasterVolume(Matrix4f lightView, float coverage, float depthRange) {
+    // public so viewpoints can reuse the same volume test; the class is otherwise unchanged.
+    public ShadowCasterVolume(Matrix4f lightView, float coverage, float depthRange) {
         this.xx = lightView.m00(); this.xy = lightView.m10(); this.xz = lightView.m20();
         this.yx = lightView.m01(); this.yy = lightView.m11(); this.yz = lightView.m21();
         this.zx = lightView.m02(); this.zy = lightView.m12(); this.zz = lightView.m22();

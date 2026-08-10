@@ -25,6 +25,7 @@ import org.joml.Matrix4f;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,12 +37,24 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
     public static final String GLOBALS_NAME = "PolyGlobals";
     public static final String SHADOW_UBO_NAME = "PolyShadow";
     public static final String SHADOW_SAMPLER_NAME = "InShadow";
-    // SPIKE (throwaway, see HeightMapRenderer)
-    public static final String HEIGHT_SAMPLER_NAME = "InHeight";
-    // Samplers Polytone binds at runtime (not declared in the pipeline). GlProgram only allocates a
-    // texture unit for samplers it knows about, so GlProgramMixin registers these on any program that
-    // actually declares them - otherwise the sampler defaults to unit 0 and reads the scene texture.
-    public static final List<String> DYNAMIC_SAMPLERS = List.of(SHADOW_SAMPLER_NAME, HEIGHT_SAMPLER_NAME);
+
+    /**
+     * Samplers Polytone binds at runtime (not declared in the pipeline). GlProgram only allocates a
+     * texture unit for samplers it knows about, so GlProgramMixin registers these on any program that
+     * actually declares them - otherwise the sampler defaults to unit 0 and reads the scene texture.
+     *
+     * <p>Now DATA-DRIVEN: the builtin shadow sampler plus every loaded viewpoint's
+     * {@code depth_sampler}. Programs are compiled during the resource reload, so the viewpoint
+     * manager has to have parsed by then - if a viewpoint sampler ever reads the scene instead of its
+     * texture, that ordering is the first thing to check.</p>
+     */
+    public static List<String> dynamicSamplers() {
+        if (Polytone.VIEWPOINTS.isEmpty()) return List.of(SHADOW_SAMPLER_NAME);
+        List<String> all = new ArrayList<>();
+        all.add(SHADOW_SAMPLER_NAME);
+        all.addAll(Polytone.VIEWPOINTS.samplerNames());
+        return all;
+    }
     private PolytoneGlobalUniforms globalUniforms = null;
 
     private final List<PostChainActivator> activators = new ArrayList<>();
@@ -113,14 +126,13 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         return false;
     }
 
-    /** SPIKE: whether the throwaway top-down height pass should render this frame. */
-    public boolean anyActiveEffectUsesHeightMap() {
+    /** Union of the viewpoints every currently-active chain asked for. */
+    public Set<Identifier> wantedViewpoints() {
+        Set<Identifier> out = new HashSet<>();
         synchronized (activators) {
-            for (var a : activators) {
-                if (a.wantsHeightMap()) return true;
-            }
+            for (var a : activators) out.addAll(a.wantedViewpoints());
         }
-        return false;
+        return out;
     }
 
     /** External callers (PostChainActivator) register their custom samplers under a pass shader id. */
@@ -149,12 +161,12 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
                         RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
             }
         }
-        // SPIKE: the top-down depth map, same contract as InShadow
-        if (declaredUniforms.contains(HEIGHT_SAMPLER_NAME)) {
-            GpuTextureView heightMap = Polytone.HEIGHT_MAP.getHeightTexture();
-            if (heightMap != null) {
-                pass.bindTexture(HEIGHT_SAMPLER_NAME, heightMap,
-                        RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
+        // Viewpoint depth samplers, same contract as InShadow: bound by name, only where declared.
+        for (String name : Polytone.VIEWPOINTS.samplerNames()) {
+            if (!declaredUniforms.contains(name)) continue;
+            GpuTextureView tex = Polytone.VIEWPOINTS.textureForSampler(name);
+            if (tex != null) {
+                pass.bindTexture(name, tex, RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
             }
         }
         if (samplersByShader.isEmpty()) return;

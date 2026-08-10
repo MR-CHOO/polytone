@@ -1,0 +1,13 @@
+{
+  "x": "c.x()",
+  "y": 320,
+  "z": "c.z()",
+  "x_rot": 90,
+  "orthographic": 320,
+  "near": 0,
+  "far": 512,
+  "terrain": ["solid", "cutout"],
+  "resolution": 1024,
+  "depth_sampler": "InHeight",
+  "update_interval": 0
+}
