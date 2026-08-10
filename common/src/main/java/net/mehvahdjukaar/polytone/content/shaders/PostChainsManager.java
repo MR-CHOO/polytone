@@ -36,10 +36,12 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
     public static final String GLOBALS_NAME = "PolyGlobals";
     public static final String SHADOW_UBO_NAME = "PolyShadow";
     public static final String SHADOW_SAMPLER_NAME = "InShadow";
+    // SPIKE (throwaway, see HeightMapRenderer)
+    public static final String HEIGHT_SAMPLER_NAME = "InHeight";
     // Samplers Polytone binds at runtime (not declared in the pipeline). GlProgram only allocates a
     // texture unit for samplers it knows about, so GlProgramMixin registers these on any program that
     // actually declares them - otherwise the sampler defaults to unit 0 and reads the scene texture.
-    public static final List<String> DYNAMIC_SAMPLERS = List.of(SHADOW_SAMPLER_NAME);
+    public static final List<String> DYNAMIC_SAMPLERS = List.of(SHADOW_SAMPLER_NAME, HEIGHT_SAMPLER_NAME);
     private PolytoneGlobalUniforms globalUniforms = null;
 
     private final List<PostChainActivator> activators = new ArrayList<>();
@@ -111,7 +113,17 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         return false;
     }
 
-    // External callers (PostChainActivator) register their custom samplers under a pass shader id.
+    /** SPIKE: whether the throwaway top-down height pass should render this frame. */
+    public boolean anyActiveEffectUsesHeightMap() {
+        synchronized (activators) {
+            for (var a : activators) {
+                if (a.wantsHeightMap()) return true;
+            }
+        }
+        return false;
+    }
+
+    /** External callers (PostChainActivator) register their custom samplers under a pass shader id. */
     public void registerSamplers(Identifier shaderId, Map<String, Identifier> samplers) {
         if (samplers.isEmpty()) return;
         samplersByShader.computeIfAbsent(shaderId, k -> new ArrayList<>()).add(samplers);
@@ -134,6 +146,14 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
             GpuTextureView shadowMap = Polytone.SHADOWS.renderer().getShadowTexture();
             if (shadowMap != null) {
                 pass.bindTexture(SHADOW_SAMPLER_NAME, shadowMap,
+                        RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
+            }
+        }
+        // SPIKE: the top-down depth map, same contract as InShadow
+        if (declaredUniforms.contains(HEIGHT_SAMPLER_NAME)) {
+            GpuTextureView heightMap = Polytone.HEIGHT_MAP.getHeightTexture();
+            if (heightMap != null) {
+                pass.bindTexture(HEIGHT_SAMPLER_NAME, heightMap,
                         RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
             }
         }

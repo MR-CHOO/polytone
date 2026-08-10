@@ -29,6 +29,7 @@ import net.mehvahdjukaar.polytone.content.lightmap.LightmapsManager;
 import net.mehvahdjukaar.polytone.content.noise.NoiseManager;
 import net.mehvahdjukaar.polytone.content.particle.custom.CustomParticlesManager;
 import net.mehvahdjukaar.polytone.content.particle.modifiers.ParticleModifiersManager;
+import net.mehvahdjukaar.polytone.content.shaders.HeightMapRenderer;
 import net.mehvahdjukaar.polytone.content.shaders.PostChainsManager;
 import net.mehvahdjukaar.polytone.content.shaders.PostTargetsManager;
 import net.mehvahdjukaar.polytone.content.shaders.ShaderUniformsManager;
@@ -97,6 +98,9 @@ public class Polytone {
     public static final PostTargetsManager POST_TARGETS = new PostTargetsManager();
     public static final PostChainsManager POST_CHAINS = new PostChainsManager();
     public static final ShadowMapManager SHADOWS = new ShadowMapManager();
+    // SPIKE (throwaway, see HeightMapRenderer): a plain field, not a ContentManager - it has no
+    // settings file to reload. Not in MANAGERS for the same reason.
+    public static final HeightMapRenderer HEIGHT_MAP = new HeightMapRenderer();
     public static final ShaderUniformsManager SHADER_EFFECTS = new ShaderUniformsManager();
     public static final BlockSetManager BLOCK_SET = new BlockSetManager();
     public static final CreativeTabsModifiersManager CREATIVE_TABS_MODIFIERS = new CreativeTabsModifiersManager();

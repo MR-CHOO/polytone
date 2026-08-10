@@ -30,7 +30,10 @@ public final class PostChainActivator {
                             new ExpressionUniformBuffers(Map.of()), p -> p.buffers),
                     i.optional("samplers", Codec.unboundedMap(Codec.STRING, Identifier.CODEC),
                             Map.of(), p -> p.samplers),
-                    i.optional("use_shadow_map", Codec.BOOL, false, p -> p.useShadowMap)
+                    i.optional("use_shadow_map", Codec.BOOL, false, p -> p.useShadowMap),
+                    // SPIKE (throwaway, see HeightMapRenderer): gates a second geometry pass so the
+                    // two-passes-in-one-frame behaviour can be measured. Goes away with the spike.
+                    i.optional("use_height_map", Codec.BOOL, false, p -> p.useHeightMap)
             ).apply(i, PostChainActivator::new));
 
     private final Identifier postChain;
@@ -38,6 +41,7 @@ public final class PostChainActivator {
     private final ExpressionUniformBuffers buffers;
     private final Map<String, Identifier> samplers;
     private final boolean useShadowMap;
+    private final boolean useHeightMap;
 
     private boolean cachedOn = false;
     private PostChain cachedPostChain = null;
@@ -45,12 +49,13 @@ public final class PostChainActivator {
 
     public PostChainActivator(Identifier postChain, ISimpleExp turnOnCondition,
                               ExpressionUniformBuffers buffers, Map<String, Identifier> samplers,
-                              boolean useShadowMap) {
+                              boolean useShadowMap, boolean useHeightMap) {
         this.postChain = postChain;
         this.turnOnCondition = turnOnCondition;
         this.buffers = buffers;
         this.samplers = samplers;
         this.useShadowMap = useShadowMap;
+        this.useHeightMap = useHeightMap;
     }
 
     public void refreshEnabled() {
@@ -61,6 +66,11 @@ public final class PostChainActivator {
     // rendered this frame (see ShadowMapRenderer).
     public boolean wantsShadowMap() {
         return cachedOn && useShadowMap;
+    }
+
+    /** SPIKE: same contract as {@link #wantsShadowMap()}, for the throwaway height-map pass. */
+    public boolean wantsHeightMap() {
+        return cachedOn && useHeightMap;
     }
 
     @Nullable

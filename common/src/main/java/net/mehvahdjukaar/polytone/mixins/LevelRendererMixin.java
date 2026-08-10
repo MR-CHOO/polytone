@@ -78,6 +78,10 @@ public class LevelRendererMixin {
         // cullingProjection is vanilla's own culling projection (the one prepareCullFrustum uses), which
         // is the conservative choice for narrowing the caster volume.
         Polytone.SHADOWS.renderer().renderShadowPassIfNeeded(gpuBufferSlice, camera, modelView, cullingProjection);
+        // SPIKE (throwaway, see HeightMapRenderer): deliberately AFTER the shadow pass and in the
+        // same hook, so the two run back to back under identical conditions - that adjacency is the
+        // thing being tested.
+        Polytone.HEIGHT_MAP.renderIfNeeded(gpuBufferSlice, camera);
     }
 
     @Inject(method = "renderLevel", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/LevelRenderer;addLateDebugPass(Lcom/mojang/blaze3d/framegraph/FrameGraphBuilder;Lnet/minecraft/client/renderer/state/CameraRenderState;Lcom/mojang/blaze3d/buffers/GpuBufferSlice;Lorg/joml/Matrix4f;)V",
