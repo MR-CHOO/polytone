@@ -1,5 +1,6 @@
 package net.mehvahdjukaar.polytone.content.viewpoint;
 
+import com.mojang.blaze3d.ProjectionType;
 import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.buffers.Std140Builder;
@@ -11,6 +12,8 @@ import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.textures.TextureFormat;
+import com.mojang.blaze3d.platform.Lighting;
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.compat.CompatHandler;
@@ -19,8 +22,16 @@ import net.mehvahdjukaar.polytone.content.shaders.sodium.SodiumShadowRenderer;
 import net.mehvahdjukaar.polytone.mixins.accessor.LevelRendererShadowAccessor;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.DynamicUniforms;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderBuffers;
 import net.minecraft.client.renderer.ViewArea;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
+import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.client.renderer.entity.state.EntityRenderState;
+import net.minecraft.client.renderer.feature.FeatureRenderDispatcher;
+import net.minecraft.client.renderer.state.CameraRenderState;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.renderer.chunk.SectionBuffers;
 import net.minecraft.client.renderer.chunk.SectionMesh;
@@ -29,9 +40,12 @@ import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.util.Util;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fStack;
 import org.joml.Vector3f;
 import org.lwjgl.system.MemoryStack;
 
@@ -66,7 +80,7 @@ public class ViewpointInstance {
     private boolean insidePass = false;
 
     private final List<SectionRenderDispatcher.RenderSection> sections = new ArrayList<>();
-    private final List<BlockEntity> ignoredBlockEntities = new ArrayList<>();
+    private final List<BlockEntity> capturedBlockEntities = new ArrayList<>();
 
     public GpuTextureView getDepthTexture() {
         return depthTextureView;
@@ -168,12 +182,142 @@ public class ViewpointInstance {
         RenderSystem.setShaderFog(shaderFog);
 
         if (CompatHandler.SODIUM) {
-            ignoredBlockEntities.clear();
+            capturedBlockEntities.clear();
+            // Sodium owns the block entities of the re-culled set (the vanilla section meshes are
+            // empty under it), so this is where they come from on that path.
             SodiumShadowRenderer.replayTerrain(mc, cam, camPos, view, proj,
-                    volume, colorTexture, depthTexture, ignoredBlockEntities);
-            ignoredBlockEntities.clear();
+                    volume, colorTexture, depthTexture, capturedBlockEntities);
+            if (!vp.blockEntities()) capturedBlockEntities.clear();
         } else {
             drawTerrain(mc, view, vp.terrainLayers());
+        }
+
+        if (vp.entities() || vp.blockEntities()) {
+            drawEntitiesAndBlockEntities(vp, mc, camPos, eye, view, volume, orthoSize > 0);
+        } else {
+            capturedBlockEntities.clear();
+        }
+    }
+
+    /**
+     * Entities and block entities are not part of the section meshes, so they are extracted and
+     * submitted like the main pass does, with this viewpoint's matrices and output target swapped
+     * onto the RenderSystem globals. Structure follows {@code ShadowMapRenderer} closely, including
+     * the parts that are easy to get wrong.
+     *
+     * <p>WHY THIS MATTERS FOR A HEIGHT MAP: without it, a boat, a mob or a chest beside the water
+     * contributes nothing to the height field, so a reflection ray passes straight through it to the
+     * sky. Note the height-field caveat though — one height per column means an entity occludes
+     * EVERYTHING below its top surface, which is right for anything standing on the ground and wrong
+     * for anything flying.</p>
+     */
+    private void drawEntitiesAndBlockEntities(Viewpoint vp, Minecraft mc, Vec3 camPos, Vector3f eye,
+                                              Matrix4f view, ShadowCasterVolume volume, boolean ortho) {
+        ClientLevel level = mc.level;
+        if (level == null) return;
+
+        EntityRenderDispatcher dispatcher = mc.getEntityRenderDispatcher();
+        BlockEntityRenderDispatcher beDispatcher = mc.getBlockEntityRenderDispatcher();
+        FeatureRenderDispatcher featureDispatcher = mc.gameRenderer.getFeatureRenderDispatcher();
+        MultiBufferSource.BufferSource bufferSource = mc.renderBuffers().bufferSource();
+        CameraRenderState camState = mc.levelRenderer.levelRenderState.cameraRenderState;
+
+        // Swap this viewpoint's matrices + output target onto the globals the feature draws read.
+        // EVERYTHING here is restored in the finally: an unbalanced push leaks the viewpoint's basis
+        // into later frames and renders the world from it.
+        RenderSystem.backupProjectionMatrix();
+        RenderSystem.setProjectionMatrix(projectionBuffer.slice(),
+                ortho ? ProjectionType.ORTHOGRAPHIC : ProjectionType.PERSPECTIVE);
+        Matrix4fStack mvStack = RenderSystem.getModelViewStack();
+        mvStack.pushMatrix();
+        mvStack.set(view);
+        RenderSystem.outputColorTextureOverride = colorTextureView;
+        RenderSystem.outputDepthTextureOverride = depthTextureView;
+        // Only depth matters for an occlusion capture, but entity shaders still evaluate diffuse
+        // light; use the level setup rather than leaving whatever was last bound.
+        mc.gameRenderer.getLighting().setupFor(Lighting.Entry.LEVEL);
+        try {
+            PoseStack poseStack = new PoseStack();
+
+            if (vp.entities()) {
+                for (Entity entity : level.entitiesForRendering()) {
+                    if (entity.isSpectator()) continue;
+                    AABB bb = entity.getBoundingBox();
+                    float radius = (float) Math.max(bb.getXsize(), Math.max(bb.getYsize(), bb.getZsize()));
+                    Vec3 c = bb.getCenter();
+                    if (!volume.intersects((float) (c.x - camPos.x) - eye.x,
+                            (float) (c.y - camPos.y) - eye.y,
+                            (float) (c.z - camPos.z) - eye.z, radius, radius, radius)) continue;
+
+                    float partial = mc.getDeltaTracker().getGameTimeDeltaPartialTick(
+                            !level.tickRateManager().isEntityFrozen(entity));
+                    try {
+                        EntityRenderState state = dispatcher.extractEntity(entity, partial);
+                        dispatcher.submit(state, camState, state.x - camPos.x, state.y - camPos.y,
+                                state.z - camPos.z, poseStack, featureDispatcher.getSubmitNodeStorage());
+                    } catch (Exception e) {
+                        // One broken entity renderer, called outside its usual pass, must not kill the frame.
+                    }
+                }
+            }
+
+            if (vp.blockEntities()) {
+                float partial = mc.getDeltaTracker().getGameTimeDeltaPartialTick(false);
+                for (BlockEntity be : capturedBlockEntities) {
+                    BlockPos pos = be.getBlockPos();
+                    poseStack.pushPose();
+                    poseStack.translate(pos.getX() - camPos.x, pos.getY() - camPos.y, pos.getZ() - camPos.z);
+                    try {
+                        var state = beDispatcher.tryExtractRenderState(be, partial, null);
+                        if (state != null) {
+                            beDispatcher.submit(state, poseStack, featureDispatcher.getSubmitNodeStorage(), camState);
+                        }
+                    } catch (Exception e) {
+                        // As above.
+                    }
+                    poseStack.popPose();
+                }
+            }
+
+            featureRenderSafely(mc, featureDispatcher, bufferSource);
+        } finally {
+            capturedBlockEntities.clear();
+            RenderSystem.outputColorTextureOverride = null;
+            RenderSystem.outputDepthTextureOverride = null;
+            mvStack.popMatrix();
+            RenderSystem.restoreProjectionMatrix();
+        }
+    }
+
+    /**
+     * Flush what this pass submitted, and make sure NOTHING it produced survives into the main pass.
+     * Both halves matter: {@code renderAllFeatures} clears the submit-node storage on its last line,
+     * so a throw partway through would leave our nodes queued for the main pass to draw a second time
+     * with the camera's matrices; and the feature renderers also write into the outline and crumbling
+     * buffer sources, which the main {@code endBatch()} never touches. Drain all three.
+     */
+    private static void featureRenderSafely(Minecraft mc, FeatureRenderDispatcher featureDispatcher,
+                                            MultiBufferSource.BufferSource bufferSource) {
+        try {
+            featureDispatcher.renderAllFeatures();
+        } catch (Exception e) {
+            Polytone.LOGGER.error("Error rendering polytone viewpoint features", e);
+            try {
+                featureDispatcher.getSubmitNodeStorage().clear();
+            } catch (Exception ignored) {
+            }
+        }
+        RenderBuffers buffers = mc.renderBuffers();
+        drainSafely(bufferSource::endBatch);
+        drainSafely(buffers.outlineBufferSource()::endOutlineBatch);
+        drainSafely(buffers.crumblingBufferSource()::endBatch);
+    }
+
+    private static void drainSafely(Runnable endBatch) {
+        try {
+            endBatch.run();
+        } catch (Exception e) {
+            Polytone.LOGGER.error("Error flushing polytone viewpoint batch", e);
         }
     }
 
@@ -322,6 +466,6 @@ public class ViewpointInstance {
         allocatedResolution = -1;
         hasRendered = false;
         sections.clear();
-        ignoredBlockEntities.clear();
+        capturedBlockEntities.clear();
     }
 }

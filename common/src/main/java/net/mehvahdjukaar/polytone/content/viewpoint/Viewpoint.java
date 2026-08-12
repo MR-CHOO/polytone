@@ -38,6 +38,7 @@ public record Viewpoint(ISimpleExp x, ISimpleExp y, ISimpleExp z,
                         ISimpleExp orthographic, ISimpleExp fov,
                         ISimpleExp near, ISimpleExp far,
                         List<ChunkSectionLayer> terrainLayers,
+                        boolean entities, boolean blockEntities,
                         int resolution,
                         String depthSampler,
                         ISimpleExp updateInterval,
@@ -73,6 +74,11 @@ public record Viewpoint(ISimpleExp x, ISimpleExp y, ISimpleExp z,
                     i.optional("near", ISimpleExp.CODEC, DEFAULT_NEAR, Viewpoint::near),
                     i.optional("far", ISimpleExp.CODEC, DEFAULT_FAR, Viewpoint::far),
                     i.optional("terrain", LAYER_CODEC.listOf(), DEFAULT_LAYERS, Viewpoint::terrainLayers),
+                    // Default FALSE, unlike the shadow map. Entity model state is rebuilt on the CPU
+                    // per viewpoint per render - the shadow map's single biggest expense - and it
+                    // scales with the number of viewpoints, so this is opt-in rather than opt-out.
+                    i.optional("entities", Codec.BOOL, false, Viewpoint::entities),
+                    i.optional("block_entities", Codec.BOOL, false, Viewpoint::blockEntities),
                     i.optional("resolution", Codec.INT, 1024, Viewpoint::resolution),
                     i.optional("depth_sampler", Codec.STRING, "", Viewpoint::depthSampler),
                     // Expression on purpose: a pack can scale the rate by config, weather or dimension.
