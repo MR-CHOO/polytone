@@ -94,8 +94,17 @@ public class PostTargetsManager extends ContentManager<PostTargetsManager.Target
         }
     }
 
-    // Wraps the vanilla bundle so custom ids resolve to the persistent targets
-    public PostChain.TargetBundle wrap(LevelTargetBundle vanilla, FrameGraphBuilder builder) {
+    // Ids of the custom targets currently declared. These live in persistent RenderTargets this manager
+    // owns, so unlike the vanilla level targets they can be imported into ANY frame graph at any point in
+    // the frame - which is what lets post chains run after the hand and still reach them.
+    public Set<Identifier> customTargetIds() {
+        return this.specs.keySet();
+    }
+
+    // Wraps a base bundle so custom ids resolve to the persistent targets. Takes the interface rather than
+    // LevelTargetBundle so this also works from a main-only base, which is all that exists once the level
+    // frame graph has finished (see PostChainsManager.runAfterHand).
+    public PostChain.TargetBundle wrap(PostChain.TargetBundle vanilla, FrameGraphBuilder builder) {
         if (targets.isEmpty()) return vanilla;
         Map<Identifier, ResourceHandle<RenderTarget>> handles = new HashMap<>();
         for (var e : targets.entrySet()) {

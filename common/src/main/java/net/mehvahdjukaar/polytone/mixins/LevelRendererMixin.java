@@ -94,9 +94,11 @@ public class LevelRendererMixin {
                                     ChunkSectionsToRender chunkSectionsToRender,
                                     CallbackInfo ci,
                                     @Local FrameGraphBuilder frameGraphBuilder) {
-        // Standard placement only. When post_chains_after_hand is on (default), chains run later,
-        // after the first-person hand, from GameRendererMixin so held items occlude depth effects.
-        if (Polytone.CONFIGS.postChainsAfterHand.get()) return;
+        // Always invoked, even when post_chains_after_hand is on. The vanilla sorting targets
+        // (minecraft:translucent and friends) exist ONLY inside this frame graph - their handles are dead
+        // once it finishes - so a chain reading one can never run after the hand and has to be hosted here.
+        // addPostPass decides per chain which stage owns it; with the config on it takes only that subset,
+        // and the rest still run later from GameRendererMixin so held items occlude depth effects.
         int i = this.minecraft.getMainRenderTarget().width;
         int j = this.minecraft.getMainRenderTarget().height;
         Polytone.POST_CHAINS.addPostPass(i, j, this.targets, frameGraphBuilder, terrainFog, this.levelRenderState.cameraRenderState);

@@ -17,6 +17,7 @@ import net.mehvahdjukaar.polytone.PolytoneRenderTypes;
 import net.mehvahdjukaar.polytone.common.ClientFrameTicker;
 import net.mehvahdjukaar.polytone.common.reloader.ContentManager;
 import net.mehvahdjukaar.polytone.common.struc.AssetsFiles;
+import net.mehvahdjukaar.polytone.mixins.accessor.PostChainAccessor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelTargetBundle;
 import net.minecraft.client.renderer.PostChain;
@@ -29,7 +30,9 @@ import net.minecraft.server.packs.resources.PreparableReloadListener;
 import org.joml.Matrix4fc;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
@@ -94,6 +97,8 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
             activators.clear();
         }
         samplersByShader.clear();
+        // Chains are rebuilt on reload, so a pack that fixed its targets must be able to report again
+        warnedChains.clear();
     }
 
     private PolytoneGlobalUniforms getOrCreateUniforms() {
@@ -217,21 +222,57 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         }
     }
 
-    // Standard placement: add every active chain to the level FrameGraph. Runs before the first-person hand is
-    // drawn, so depth-reading chains don't see held items. Used when post_chains_after_hand is off. See
-    // runAfterHand for the default path.
+    // Level-FrameGraph placement. Runs before the first-person hand is drawn, so depth-reading chains here
+    // don't see held items. Always invoked: when post_chains_after_hand is off it hosts every chain, and when
+    // it is on it hosts only the chains runAfterHand cannot (see canRunAfterHand) - the vanilla sorting
+    // targets live in this graph and nowhere else, so a chain reading minecraft:translucent has to run here.
     public void addPostPass(int width, int height, LevelTargetBundle targets, FrameGraphBuilder frameGraphBuilder, GpuBufferSlice gpuBufferSlice, CameraRenderState cameraRenderState) {
         ShaderManager sm = Minecraft.getInstance().getShaderManager();
         Polytone.POST_TARGETS.ensureAllocated(width, height);
         PostChain.TargetBundle bundle = Polytone.POST_TARGETS.wrap(targets, frameGraphBuilder);
+        boolean afterHand = Polytone.CONFIGS.postChainsAfterHand.get();
         synchronized (activators) {
             for (var a : activators) {
                 PostChain pc = a.getPostChain(sm);
-                if (pc != null) {
-                    pc.addToFrame(frameGraphBuilder, width, height, bundle);
-                }
+                if (pc == null) continue;
+                if (afterHand && canRunAfterHand(pc)) continue; // runAfterHand will host it
+                if (!bundleSatisfies(bundle, pc, "the level frame graph")) continue;
+                pc.addToFrame(frameGraphBuilder, width, height, bundle);
             }
         }
+    }
+
+    // Whether every external target a chain reads can be supplied after the level frame graph has finished.
+    // Only two kinds survive that long: the main target, and our own post_targets, which are persistent
+    // RenderTargets this mod owns and can re-import into any graph. The vanilla sorting targets
+    // (minecraft:translucent and friends) are transient level-graph resources whose handles are dead by then,
+    // so a chain touching one must stay on the level path.
+    private static boolean canRunAfterHand(PostChain pc) {
+        for (Identifier id : ((PostChainAccessor) pc).polytone$getExternalTargets()) {
+            if (id.equals(PostChain.MAIN_TARGET_ID)) continue;
+            if (Polytone.POST_TARGETS.customTargetIds().contains(id)) continue;
+            return false;
+        }
+        return true;
+    }
+
+    // Guard against PostChain.TargetBundle#getOrThrow, which throws MID-FRAME and takes the game down. A
+    // target can be declared and still be absent at runtime (the sorting targets are only populated when
+    // transparency sorting actually runs), so declaration-time validation is not enough. Skip the chain and
+    // say which target and which stage, once per chain, rather than crashing.
+    private boolean bundleSatisfies(PostChain.TargetBundle bundle, PostChain pc, String stage) {
+        for (Identifier id : ((PostChainAccessor) pc).polytone$getExternalTargets()) {
+            if (bundle.get(id) == null) {
+                if (warnedChains.add(pc)) {
+                    Polytone.LOGGER.error(
+                            "Skipping a Polytone post chain: it reads target {}, which is not available in {}. " +
+                            "Check that the target exists and, for vanilla sorting targets, that transparency " +
+                            "sorting is enabled.", id, stage);
+                }
+                return false;
+            }
+        }
+        return true;
     }
 
     // ---- Depth-aware post chains -------------------------------------------------------------
@@ -243,6 +284,10 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
     //   2) runAfterHand() folds that world depth back into the (hand-only) main depth via a
     //      LEQUAL depth-write pass -> min(world, hand) -> then processes each chain.
     // The chains sample the main target's depth exactly as before, so pack shaders are unchanged.
+
+    // Chains already reported as unsatisfiable, so the error is logged once instead of every frame. Identity-
+    // based: PostChain has no id and does not override equals, and the instance is what we are gating on.
+    private final Set<PostChain> warnedChains = Collections.newSetFromMap(new IdentityHashMap<>());
 
     private TextureTarget worldDepthSnapshot;
     private boolean worldDepthCaptured = false;
@@ -256,7 +301,7 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         worldDepthCaptured = true;
     }
 
-    // Fold the saved world depth back into the main depth, then run every active chain
+    // Fold the saved world depth back into the main depth, then run every chain this stage can host.
     public void runAfterHand(RenderTarget main, GraphicsResourceAllocator resourceAllocator) {
         if (!worldDepthCaptured) return;
         worldDepthCaptured = false;
@@ -266,15 +311,33 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         synchronized (activators) {
             for (var a : activators) {
                 PostChain pc = a.getPostChain(sm);
-                if (pc != null) active.add(pc);
+                // Chains needing a vanilla sorting target already ran in the level frame graph
+                if (pc != null && canRunAfterHand(pc)) active.add(pc);
             }
         }
         if (active.isEmpty()) return;
 
         combineHandDepthIntoWorld(main);
+
+        // Build the graph ourselves instead of calling PostChain#process per chain. process() hands the chain
+        // a bundle holding ONLY minecraft:main, so any chain writing to one of our post_targets - which is
+        // most of them, since a pack declares those as the pass output rather than as an internal target -
+        // died on getOrThrow. Wrapping the bundle the same way addPostPass does splices them back in, and
+        // sharing one graph across all the chains also lets them read each other's outputs, exactly as they
+        // can on the level path.
+        Polytone.POST_TARGETS.ensureAllocated(main.width, main.height);
+        FrameGraphBuilder builder = new FrameGraphBuilder();
+        var mainHandle = builder.importExternal(PostChain.MAIN_TARGET_ID.toString(), main);
+        PostChain.TargetBundle bundle = Polytone.POST_TARGETS.wrap(
+                PostChain.TargetBundle.of(PostChain.MAIN_TARGET_ID, mainHandle), builder);
+
+        boolean any = false;
         for (PostChain pc : active) {
-            pc.process(main, resourceAllocator);
+            if (!bundleSatisfies(bundle, pc, "the after-hand stage")) continue;
+            pc.addToFrame(builder, main.width, main.height, bundle);
+            any = true;
         }
+        if (any) builder.execute(resourceAllocator);
     }
 
     private boolean hasActiveChains() {
