@@ -94,8 +94,11 @@ public class LevelRendererMixin {
                                     boolean shouldRenderSky,
                                     CallbackInfo ci,
                                     @Local FrameGraphBuilder frameGraphBuilder) {
-        // with post_chains_after_hand (default) GameRendererMixin runs the chains after the hand instead
-        if (Polytone.CONFIGS.postChainsAfterHand.get()) return;
+        // Always invoked, even when post_chains_after_hand is on. The vanilla sorting targets
+        // (minecraft:translucent and friends) exist ONLY inside this frame graph - their handles are dead
+        // once it finishes - so a chain reading one can never run after the hand and has to be hosted here.
+        // addChainsToFrameGraph decides per chain which stage owns it; with the config on it takes only that
+        // subset, and the rest still run later from GameRendererMixin so held items occlude depth effects.
         RenderTarget mainTarget = Minecraft.getInstance().gameRenderer.mainRenderTarget();
         Polytone.POST_CHAINS.addChainsToFrameGraph(mainTarget.width, mainTarget.height, this.targets, frameGraphBuilder,
                 terrainFog, this.levelRenderState.cameraRenderState);
