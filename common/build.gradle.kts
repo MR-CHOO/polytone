@@ -18,7 +18,9 @@ dependencies {
     compileOnly ("net.mehvahdjukaar:codecui-common:${codecui_version}")
     // The pack editor UI is a SEPARATE mod (not bundled) - compile against it; the in-game
     // "open editor" button grays out at runtime when it isn't installed.
-    compileOnly ("net.mehvahdjukaar:nautilus_studio-common:${nautilus_studio_version}")
+    // FORK-LOCAL: nautilus_studio has no public artifact or source; compat/nautilus is deleted and
+    // PackEditor is a stub. Restore with: git checkout upstream/1.21.11 -- common/src/.../compat/
+    // compileOnly ("net.mehvahdjukaar:nautilus_studio-common:${nautilus_studio_version}")
 
     implementation ("net.objecthunter:exp4j:${exp4j_version}")
     implementation ("org.mvel:mvel2:${mvel_version}")

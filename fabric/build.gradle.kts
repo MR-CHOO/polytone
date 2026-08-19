@@ -20,7 +20,9 @@ dependencies {
     include("net.mehvahdjukaar:codecui-fabric:${codecui_version}")
 
     // The editor UI is a SEPARATE mod - mod dep for dev, NOT bundled (users install it themselves).
-    modImplementation("net.mehvahdjukaar:nautilus_studio-fabric:${nautilus_studio_version}")
+    // FORK-LOCAL: nautilus_studio has no public artifact or source; compat/nautilus is deleted and
+    // PackEditor is a stub. Restore with: git checkout upstream/1.21.11 -- common/src/.../compat/
+    // modImplementation("net.mehvahdjukaar:nautilus_studio-fabric:${nautilus_studio_version}")
 
     apiInclude("net.objecthunter:exp4j:${exp4j_version}")
     apiInclude("org.mvel:mvel2:${mvel_version}")
