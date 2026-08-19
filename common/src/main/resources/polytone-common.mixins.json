@@ -69,6 +69,8 @@
     "SmithingScreenMixin",
     "SodiumBlockRendererMixin",
     "SodiumChunkRendererMixin",
+    "SodiumShaderConstantsMixin",
+    "SodiumShaderLoaderMixin",
     "SpatialAttributeInterpolatorMixin",
     "SpriteContentsMixin",
     "SubmitNodeStorageMixin",
