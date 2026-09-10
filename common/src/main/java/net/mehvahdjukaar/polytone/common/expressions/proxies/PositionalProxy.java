@@ -61,7 +61,14 @@ public abstract class PositionalProxy {
         BlockPos newPos = getPosInternal();
         if (newPos == posCache) return posCache;
         if (posCache == null || !posCache.equals(newPos)) {
-            posCache = newPos;
+            // Store an IMMUTABLE copy, never the reference we were handed. Camera.blockPosition is a
+            // single final MutableBlockPos that is mutated IN PLACE every frame, so caching that
+            // reference makes both guards above compare the object to ITSELF: the caches then never
+            // invalidate, and CameraProxy (a static singleton) keeps answering about the first block it
+            // ever resolved for the rest of the process. That is how c.hasFluid() latches to a stale
+            // value and silently zeroes every gate built on it. Entity.blockPosition() is already
+            // immutable, so immutable() returns this and the == fast path above still short-circuits.
+            posCache = newPos == null ? null : newPos.immutable();
             //invalidate caches
             stateCache = null;
             beCache = null;
