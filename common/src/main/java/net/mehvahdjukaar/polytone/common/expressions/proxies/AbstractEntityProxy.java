@@ -161,5 +161,28 @@ public abstract class AbstractEntityProxy extends PositionalProxy {
         return entity().getDeltaMovement().lengthSqr();
     }
 
+    // The entity's own block, as a queryable neighbourhood — the bridge from an entity
+    // to BlockProxy's relative()/up()/down()/... family.
+    //
+    // WHY THIS IS NEEDED AT ALL: every positional query an entity inherits resolves at
+    // getPosInternal(), i.e. Entity.blockPosition(), which is the block the FEET ARE IN.
+    // For anything standing on the ground that is the AIR block above it, so p.block()
+    // answers "air" for a player in the middle of a desert. "What am I walking on" is
+    // p.at().down(), and there was previously no way to express it.
+    //
+    // ⚠ DELIBERATELY ON AbstractEntityProxy, NOT PositionalProxy. BlockProxy also extends
+    // PositionalProxy, and its MAX_NEIGHBOR_DEPTH cap works by keeping the ORIGIN of the
+    // chain fixed while relative() clamps against it. Putting at() on the shared parent
+    // would hand BlockProxy a way to mint a fresh proxy whose origin is its CURRENT
+    // position, so o.down().at().down().at()... would walk the world without limit and
+    // the cap would be decorative. Entities are not reachable from a block expression,
+    // so exposing it here cannot be chained into that escape.
+    //
+    // Null state is intentional: PositionalProxy resolves stateCache lazily from
+    // level + pos on first use, so nothing is read unless the expression asks.
+    public BlockProxy at() {
+        return new BlockProxy(getLevelInternal(), getPosInternal(), null);
+    }
+
 
 }
