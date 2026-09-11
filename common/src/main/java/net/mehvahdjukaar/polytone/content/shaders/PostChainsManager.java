@@ -114,6 +114,8 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
                 pass.setUniform(SHADOW_UBO_NAME, shadowSlice);
             }
         }
+        // each viewpoint's uniform_block (its rendered + reprojected ViewProj), same declared-only gating
+        Polytone.VIEWPOINTS.setupUniformBlocks(pass, declaredUniforms);
     }
 
     // Whether the shadow map should be rendered this frame (some active chain declared use_shadow_map).

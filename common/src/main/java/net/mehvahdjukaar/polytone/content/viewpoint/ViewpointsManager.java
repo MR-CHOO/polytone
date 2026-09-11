@@ -1,15 +1,20 @@
 package net.mehvahdjukaar.polytone.content.viewpoint;
 
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
+import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.common.reloader.ContentManager;
 import net.mehvahdjukaar.polytone.common.struc.AssetsFiles;
+import net.mehvahdjukaar.polytone.content.shaders.PolytoneBuiltInUniformsSet;
 import net.minecraft.client.Camera;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
+import net.minecraft.server.packs.resources.PreparableReloadListener;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -17,6 +22,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Loads {@code polytone/viewpoints/<name>.json} and drives the per-viewpoint renderers.
@@ -43,6 +49,21 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
     }
 
     @Override
+    protected AssetsFiles prepare(PreparableReloadListener.SharedState sharedState) {
+        AssetsFiles resources = super.prepare(sharedState);
+        // uniform_block names must be known BEFORE any program declaring them compiles, or GlProgram
+        // logs "Found unknown and unsupported uniform" and never gives the block a binding point.
+        // Parsing happens later, with the level, so read the raw json here - the same trick
+        // PostChainsManager uses for expression uniforms.
+        for (JsonElement e : resources.jsons().values()) {
+            if (e instanceof JsonObject obj && obj.get("uniform_block") instanceof JsonPrimitive p && p.isString()) {
+                PolytoneBuiltInUniformsSet.register(p.getAsString());
+            }
+        }
+        return resources;
+    }
+
+    @Override
     protected void parseWithLevel(AssetsFiles resources, RegistryOps<JsonElement> ops, HolderLookup.Provider access) {
         for (var j : parseEnabledJsons(resources.jsons(), ops)) {
             if (j == null) continue;
@@ -51,6 +72,7 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
                 Polytone.LOGGER.warn("Viewpoint {} declares no depth_sampler, so nothing can ever read it - skipping", j.getKey());
                 continue;
             }
+            if (vp.hasUniformBlock()) PolytoneBuiltInUniformsSet.register(vp.uniformBlock());
             viewpoints.put(j.getKey(), vp);
         }
         rebuildSamplerNames();
@@ -90,6 +112,22 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
             }
         }
         return null;
+    }
+
+    /**
+     * Binds each viewpoint's {@code uniform_block} to a pass whose program declares it - same gating
+     * as the samplers, never a block the program doesn't have. Skipped until that viewpoint has
+     * completed a render, exactly like its depth sampler.
+     */
+    public void setupUniformBlocks(RenderPass pass, Set<String> declaredUniforms) {
+        if (viewpoints.isEmpty()) return;
+        for (var e : viewpoints.entrySet()) {
+            Viewpoint vp = e.getValue();
+            if (!vp.hasUniformBlock() || !declaredUniforms.contains(vp.uniformBlock())) continue;
+            ViewpointInstance inst = instances.get(e.getKey());
+            GpuBufferSlice slice = inst == null ? null : inst.getUniformsSlice();
+            if (slice != null) pass.setUniform(vp.uniformBlock(), slice);
+        }
     }
 
     public boolean isEmpty() {

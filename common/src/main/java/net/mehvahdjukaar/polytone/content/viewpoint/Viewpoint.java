@@ -28,10 +28,15 @@ import java.util.Locale;
  * {@code c.yaw()}, {@code sun_angle}) is already degrees.</p>
  *
  * <p>This is the barebones slice: enough for a height map. No colour capture, no shader variants, no
- * entity filters, no {@code reuse} modes, no uniform block — consumers hardcode the projection
- * constants for now. The viewpoint owns its texture internally rather than writing into a named
+ * entity filters. The viewpoint owns its texture internally rather than writing into a named
  * {@code post_target}, because {@code post_targets} has no {@code format} field yet and so cannot
  * express depth32.</p>
+ *
+ * <p>{@code uniform_block} names a std140 block ({@link ViewpointUniforms}) publishing the matrix the
+ * map was ACTUALLY rendered with, reprojected to the live camera every frame — so consumers never
+ * re-derive the projection from the json's constants. There is deliberately no {@code reuse} knob:
+ * reprojection is unconditional, because holding the matrix would make the addressing slide with the
+ * player, which is the bug reprojection exists to fix.</p>
  */
 public record Viewpoint(ISimpleExp x, ISimpleExp y, ISimpleExp z,
                         ISimpleExp xRot, ISimpleExp yRot, ISimpleExp zRot,
@@ -41,6 +46,7 @@ public record Viewpoint(ISimpleExp x, ISimpleExp y, ISimpleExp z,
                         boolean entities, boolean blockEntities,
                         int resolution,
                         String depthSampler,
+                        String uniformBlock,
                         ISimpleExp updateInterval,
                         ISimpleExp activationCondition) {
 
@@ -81,6 +87,9 @@ public record Viewpoint(ISimpleExp x, ISimpleExp y, ISimpleExp z,
                     i.optional("block_entities", Codec.BOOL, false, Viewpoint::blockEntities),
                     i.optional("resolution", Codec.INT, 1024, Viewpoint::resolution),
                     i.optional("depth_sampler", Codec.STRING, "", Viewpoint::depthSampler),
+                    // GLSL uniform BLOCK name, not an instance name: the shader picks its own instance
+                    // name (`} vp;`), which is what lets two viewpoints share member names.
+                    i.optional("uniform_block", Codec.STRING, "", Viewpoint::uniformBlock),
                     // Expression on purpose: a pack can scale the rate by config, weather or dimension.
                     // Anything rate-DEPENDENT downstream must be re-evaluated per frame, never cached
                     // at parse time, because this can change at runtime.
@@ -100,5 +109,9 @@ public record Viewpoint(ISimpleExp x, ISimpleExp y, ISimpleExp z,
     /** A viewpoint nothing can sample is a no-op; the manager skips it and warns. */
     public boolean isSamplable() {
         return !depthSampler.isEmpty();
+    }
+
+    public boolean hasUniformBlock() {
+        return !uniformBlock.isEmpty();
     }
 }

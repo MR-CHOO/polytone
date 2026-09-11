@@ -44,6 +44,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fStack;
 import org.joml.Vector3f;
@@ -79,6 +80,19 @@ public class ViewpointInstance {
     private boolean hasRendered = false;
     private boolean insidePass = false;
 
+    // ---- uniform_block state: the matrix the map was ACTUALLY rendered with, and from where ----
+    private ViewpointUniforms uniforms = null;
+    private final Matrix4f renderedViewProj = new Matrix4f();
+    private final Matrix4f viewProj = new Matrix4f(); // renderedViewProj reprojected to the live camera
+    private final Vector3f renderedDir = new Vector3f(0, -1, 0);
+    private final Vector3f camFract = new Vector3f();
+    private Vec3 renderedCamPos = Vec3.ZERO;
+    @Nullable
+    private ClientLevel renderedLevel = null;
+    private float renderedLateralHalf = 0f;
+    private float renderedNear = 0f;
+    private float renderedFar = 0f;
+
     private final List<SectionRenderDispatcher.RenderSection> sections = new ArrayList<>();
     private final List<BlockEntity> capturedBlockEntities = new ArrayList<>();
 
@@ -86,35 +100,89 @@ public class ViewpointInstance {
         return depthTextureView;
     }
 
+    /** Null until the first completed render; bind sites skip a null slice. */
+    @Nullable
+    public GpuBufferSlice getUniformsSlice() {
+        return uniforms == null ? null : uniforms.getSlice();
+    }
+
     /**
-     * Renders if due. {@code update_interval} is an EXPRESSION, so it is re-read every frame and may
-     * change at runtime — never cache a decision derived from it.
+     * Renders if due, then publishes the uniform block — EVERY frame, reuse frames included, so the
+     * reprojected matrix and {@code CamFract} track the live camera. {@code update_interval} is an
+     * EXPRESSION, so it is re-read every frame and may change at runtime — never cache a decision
+     * derived from it.
      */
     public void renderIfNeeded(Viewpoint vp, GpuBufferSlice shaderFog, Camera cam) {
         if (insidePass) return; // a nested level render must not re-enter and clear our section list
 
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || !cam.isInitialized()) return;
+        ClientLevel level = mc.level;
+        if (level == null || !cam.isInitialized()) return;
 
+        Vec3 camPos = cam.position();
         double interval = vp.updateInterval().evaluate();
         long now = Util.getMillis();
-        boolean due = !hasRendered || interval <= 0 || (now - lastUpdateMs) >= interval * 50.0;
-        if (!due) return;
 
-        insidePass = true;
-        boolean ok = true;
-        try {
-            render(vp, mc, cam, cam.position(), shaderFog);
-        } catch (Exception e) {
-            ok = false;
-            Polytone.LOGGER.error("Polytone viewpoint render failed", e);
-        } finally {
-            insidePass = false;
+        // DRIFT BAIL-OUT. Reprojection is an exact change of origin, but the map only COVERS what was
+        // around the viewpoint at render time: walk far enough and lookups run off its edge. Past half
+        // the lateral extent, re-render regardless of the interval. At heightmap settings (ortho 320,
+        // interval 20) that is 80 blocks inside one second, so in practice it only fires on a
+        // teleport. A level change can never be reprojected at all.
+        float maxDrift = renderedLateralHalf * 0.5f;
+        boolean reusable = hasRendered && level == renderedLevel
+                && camPos.distanceToSqr(renderedCamPos) <= (double) maxDrift * maxDrift;
+        boolean due = !reusable || interval <= 0 || (now - lastUpdateMs) >= interval * 50.0;
+
+        boolean renderedThisFrame = false;
+        if (due) {
+            insidePass = true;
+            boolean ok = true;
+            try {
+                render(vp, mc, cam, camPos, shaderFog);
+            } catch (Exception e) {
+                ok = false;
+                Polytone.LOGGER.error("Polytone viewpoint render failed", e);
+            } finally {
+                insidePass = false;
+            }
+            // Only a completed pass counts as rendered; a half-drawn map must not be held for a whole
+            // interval.
+            hasRendered = ok;
+            if (ok) {
+                lastUpdateMs = now;
+                renderedCamPos = camPos;
+                renderedLevel = level;
+                renderedThisFrame = true;
+            }
         }
-        // Only a completed pass counts as rendered; a half-drawn map must not be held for a whole
-        // interval.
-        hasRendered = ok;
-        if (ok) lastUpdateMs = now;
+        if (!hasRendered) return; // nothing valid to publish; the previous block contents stay bound
+
+        publishUniforms(camPos, now, interval, renderedThisFrame);
+    }
+
+    /**
+     * REPROJECTION. {@code renderedViewProj} expects positions camera-relative to RENDER time, while
+     * every consumer hands in positions camera-relative to NOW. Those differ by exactly the camera
+     * delta, so {@code M·translate(camNow − camAtRender)} is exact, not an approximation — and it is
+     * independent of where the pack snapped the viewpoint's x/z, since an origin shift doesn't care
+     * where the eye is. On a render frame the delta is zero and this is just the rendered matrix.
+     */
+    private void publishUniforms(Vec3 camPos, long now, double interval, boolean renderedThisFrame) {
+        viewProj.set(renderedViewProj).translate(
+                (float) (camPos.x - renderedCamPos.x),
+                (float) (camPos.y - renderedCamPos.y),
+                (float) (camPos.z - renderedCamPos.z));
+        camFract.set((float) Mth.frac(camPos.x), (float) Mth.frac(camPos.y), (float) Mth.frac(camPos.z));
+
+        float ageSeconds = (now - lastUpdateMs) / 1000f;
+        // Ticks -> seconds on the WALL clock, because that is the clock the due check runs on
+        // (Util.getMillis(), interval * 50 ms) - not game time, which drifts from it with TPS.
+        float intervalSeconds = (float) Math.max(interval, 0.0) * 0.05f;
+        float phase = intervalSeconds > 0f ? Mth.clamp(ageSeconds / intervalSeconds, 0f, 1f) : 0f;
+
+        if (uniforms == null) uniforms = new ViewpointUniforms();
+        uniforms.update(viewProj, renderedDir, camFract, renderedNear, renderedFar,
+                allocatedResolution, allocatedResolution, renderedThisFrame, ageSeconds, intervalSeconds, phase);
     }
 
     private void render(Viewpoint vp, Minecraft mc, Camera cam, Vec3 camPos, GpuBufferSlice shaderFog) {
@@ -163,6 +231,14 @@ public class ViewpointInstance {
             // too generous, never too tight.
             lateralHalf = (float) (far * Math.tan(Math.toRadians(vp.fov().evaluate()) * 0.5));
         }
+
+        // What the uniform block publishes: the matrix this pass ACTUALLY renders with. Only read once
+        // the pass completes (hasRendered), so a failed pass cannot leak a half-applied basis.
+        proj.mul(view, renderedViewProj);
+        renderedDir.set(dir);
+        renderedLateralHalf = lateralHalf;
+        renderedNear = near;
+        renderedFar = far;
 
         // The caster box is axis-symmetric around a point, so it must reach far enough to contain an
         // asymmetric near..far span (e.g. a world-pinned band seen from below it).
@@ -463,8 +539,14 @@ public class ViewpointInstance {
             projectionBuffer.close();
             projectionBuffer = null;
         }
+        if (uniforms != null) {
+            uniforms.close();
+            uniforms = null;
+        }
         allocatedResolution = -1;
         hasRendered = false;
+        renderedLevel = null;
+        renderedLateralHalf = 0f;
         sections.clear();
         capturedBlockEntities.clear();
     }
