@@ -83,11 +83,24 @@ public final class ExpressionUniformBuffers {
     // driven through Mojang's RenderPass (e.g. Sodium's chunk shader). Only blocks the program actually
     // declares are bound (gated by glGetUniformBlockIndex), so passing a program without our blocks is a no-
     // op.
-    public int bindBlocksToProgram(int program, int nextBindingPoint) {
+    //
+    // alreadyBound carries the block NAMES that already have a binding point on THIS program, across every
+    // ExpressionUniformBuffers the caller walks. Without it, each modifier file that mentions a name burns
+    // its own binding point on the same block. That is not a rare case: a uniform read by both core shaders
+    // and Sodium terrain needs one file per target shader, so in a pack with 13 files declaring the
+    // dynamic-light uniforms and 22 declaring PolyFogMode, a single terrain program asked for 120 binding
+    // points to fill 13 distinct blocks - well past GL_MAX_UNIFORM_BUFFER_BINDINGS (84 on NVIDIA).
+    // Everything over the limit fails with GL_INVALID_VALUE, which leaves that block on binding point 0 -
+    // for a Sodium chunk shader, Sodium's OWN ChunkData - so the shader silently reads garbage instead of
+    // the expression's value. Skipping the duplicates is exact rather than a heuristic: every copy of a
+    // given name carries the same expression, because they exist to target different shaders, not to hold
+    // different values.
+    public int bindBlocksToProgram(int program, int nextBindingPoint, Set<String> alreadyBound) {
         if (buffers == null) return nextBindingPoint;
         for (var e : buffers.entrySet()) {
             int blockIndex = GL32C.glGetUniformBlockIndex(program, e.getKey());
             if (blockIndex < 0) continue; // GL_INVALID_INDEX: block not declared in this program
+            if (!alreadyBound.add(e.getKey())) continue; // another file already bound this block here
             int glId = ((GlBufferAccessor) (Object) e.getValue()).polytone$getHandle();
             GL32C.glUniformBlockBinding(program, blockIndex, nextBindingPoint);
             GL30C.glBindBufferBase(GL31C.GL_UNIFORM_BUFFER, nextBindingPoint, glId);

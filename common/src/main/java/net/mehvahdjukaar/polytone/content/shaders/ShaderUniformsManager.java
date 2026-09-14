@@ -17,6 +17,7 @@ import org.lwjgl.opengl.GL20C;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -130,9 +131,13 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
         if (program == 0) return;
         int point = 1;
         Set<ExpressionUniformBuffers> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        // ONE binding point per block NAME, not one per file that declares it. seen dedupes the buffer
+        // OBJECTS; this dedupes the block names across them, which is a different and much larger set -
+        // see bindBlocksToProgram for the overflow this prevents.
+        Set<String> boundNames = new HashSet<>();
         for (List<ExpressionUniformBuffers> list : byShader.values()) {
             for (ExpressionUniformBuffers b : list) {
-                if (seen.add(b)) point = b.bindBlocksToProgram(program, point);
+                if (seen.add(b)) point = b.bindBlocksToProgram(program, point, boundNames);
             }
         }
     }
