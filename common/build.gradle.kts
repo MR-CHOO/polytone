@@ -19,7 +19,6 @@ val packed_packs_api_version: String by extra
 
 dependencies {
     compileOnly ("net.mehvahdjukaar:codecui-common:${codecui_version}")
-    compileOnly ("net.mehvahdjukaar:nautilus_studio-common:${nautilus_studio_version}")
 
     implementation ("net.objecthunter:exp4j:${exp4j_version}")
     implementation ("org.mvel:mvel2:${mvel_version}")

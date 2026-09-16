@@ -1,21 +1,16 @@
 package net.mehvahdjukaar.polytone.compat.nautilus;
 
-import net.mehvahdjukaar.nautilus.NautilusStudioApi;
-import net.mehvahdjukaar.nautilus.compat.polytone.PolytoneCompat;
-
-//other side of compat in nautilus. Not here not to clutter files and avoid extra very optional dep.
+// Local build stub: nautilus_studio has no public artifact, so the editor hooks are no-ops.
+// The real version calls PolytoneCompat.init(), registers NautilusEnvironment and forwards to NautilusStudioApi.
 public final class PolytoneNautilus {
 
     public static void init() {
-        PolytoneCompat.init();
-        NautilusEnvironment.register();
     }
 
     public static void open() {
-        NautilusStudioApi.openEditor();
     }
 
     public static boolean isOpen() {
-        return NautilusStudioApi.isOpen();
+        return false;
     }
 }

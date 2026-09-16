@@ -18,7 +18,6 @@ dependencies {
     implementation("net.mehvahdjukaar:codecui-neoforge:${codecui_version}")
     jarJar("net.mehvahdjukaar:codecui-neoforge:${codecui_version}")
 
-    implementation("net.mehvahdjukaar:nautilus_studio-neoforge:${nautilus_studio_version}")
 
     apiInclude("net.objecthunter:exp4j:${exp4j_version}")
     //forgeRuntimeLibrary ( "net.objecthunter:exp4j:${exp4j_version}")
