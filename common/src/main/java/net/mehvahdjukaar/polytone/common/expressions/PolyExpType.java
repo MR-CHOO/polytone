@@ -1,66 +1,56 @@
 package net.mehvahdjukaar.polytone.common.expressions;
 
-
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
-import hollowpoint.nexp.api.ExpCompletion;
-import hollowpoint.nexp.api.ExpEngine;
-import hollowpoint.nexp.api.ExpProgram;
-import hollowpoint.nexp.api.ExpScope;
-import net.mehvahdjukaar.polytone.Polytone;
+import org.mvel2.MVEL;
+import org.mvel2.ParserContext;
 
+import java.io.Serializable;
 import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 public final class PolyExpType<T extends PolyExp> {
 
-    //sandbox package
-    private static final ExpEngine ENGINE = new ExpEngine(
-            "net.mehvahdjukaar.polytone.common.expressions"
-    ).importStatic(ExpMath.class);
+    private final BiFunction<Serializable, String, T> constructor;
+    private final ParserContext context;
+    private final Codec<T> codec = Codec.STRING.flatXmap(
+            this::create,
+            exp -> DataResult.success("0") //unsupported
+    );
+    public PolyExpType( Function<Serializable, T> constructor, Consumer<ParserContext> inputs) {
+        this( (expr, str) -> constructor.apply(expr), inputs);
+    }
 
-    private final BiFunction<ExpProgram, String, T> constructor;
-    private final ExpScope inputs;
-    private final Codec<T> codec = Codec.STRING.flatXmap(this::create, exp -> DataResult.success(exp.source));
-
-    public PolyExpType(BiFunction<ExpProgram, String, T> constructor, Consumer<ExpScope> inputs) {
+    public PolyExpType( BiFunction<Serializable, String, T> constructor, Consumer<ParserContext> inputs) {
         this.constructor = constructor;
-        this.inputs = ExpUtils.commonScope();
-        inputs.accept(this.inputs);
+        this.context = new ParserContext();
+        this.context.setStrongTyping(true);
+        this.context.setStrictTypeEnforcement(true);
+        inputs.accept(this.context);
     }
 
     public Codec<T> codec() {
         return codec;
     }
 
-    private ExpScope scope() {
-        ExpScope scope = inputs.copy();
-        Polytone.GLOBAL_EXPRESSION.slots().forEach(scope::number);
-        return scope;
+    public List<String> inputNames() {
+        var inputs = context.getInputs();
+        return inputs == null ? List.of()
+                : inputs.keySet().stream().sorted().toList();
     }
 
-    public DataResult<T> create(String source) {
+    public DataResult<T> create(String expressionStr) {
         try {
-            return DataResult.success(constructor.apply(ENGINE.compile(source, scope()), source));
+            String upgraded = ExpUtils.upgrade(expressionStr);
+            Serializable expr = MVEL.compileExpression(upgraded, this.context);
+            T result = constructor.apply(expr, upgraded);
+            result.unparsed = expressionStr; // keep the original for readable error messages
+            return DataResult.success(result);
         } catch (Exception e) {
             return DataResult.error(() -> "Failed to compile expression: " + e.getMessage());
         }
     }
 
-    public List<String> inputNames() {
-        return scope().names();
-    }
-
-    public List<ExpCompletion> complete(String source, int caret) {
-        return ENGINE.complete(source, caret, scope());
-    }
-
-    public static List<String> functionNames() {
-        return ENGINE.functions();
-    }
-
-    public static List<String> constantNames() {
-        return ENGINE.constants();
-    }
 }

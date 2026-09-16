@@ -4,6 +4,7 @@ package net.mehvahdjukaar.polytone.content.particle.custom;
 import com.mojang.serialization.Codec;
 import net.mehvahdjukaar.codecui.SchemaCodec;
 import net.mehvahdjukaar.codecui.SchemaRecord;
+import net.mehvahdjukaar.polytone.common.expressions.ParticleExpEnv;
 import net.mehvahdjukaar.polytone.common.expressions.impl.IParticleExp;
 import net.minecraft.client.multiplayer.ClientLevel;
 import org.jetbrains.annotations.Nullable;
@@ -27,21 +28,21 @@ public record MultiExpressionParticleTicker(@Nullable IParticleExp x,
                                             @Nullable IParticleExp removeIf) implements ICustomParticleTicker {
 
     public static final SchemaCodec<MultiExpressionParticleTicker> CODEC = SchemaRecord.create(MultiExpressionParticleTicker.class, i -> i.group(
-            i.optional("x", IParticleExp.CODEC_LEGACY, p -> Optional.ofNullable(p.x)),
-            i.optional("y", IParticleExp.CODEC_LEGACY, p -> Optional.ofNullable(p.y)),
-            i.optional("z", IParticleExp.CODEC_LEGACY, p -> Optional.ofNullable(p.z)),
-            i.optional("dx", IParticleExp.CODEC_LEGACY, p -> Optional.ofNullable(p.dx)),
-            i.optional("dy", IParticleExp.CODEC_LEGACY, p -> Optional.ofNullable(p.dy)),
-            i.optional("dz", IParticleExp.CODEC_LEGACY, p -> Optional.ofNullable(p.dz)),
-            i.optional("size", IParticleExp.CODEC_LEGACY, p -> Optional.ofNullable(p.size)),
-            i.optional("red", IParticleExp.CODEC_LEGACY, p -> Optional.ofNullable(p.red)),
-            i.optional("green", IParticleExp.CODEC_LEGACY, p -> Optional.ofNullable(p.green)),
-            i.optional("blue", IParticleExp.CODEC_LEGACY, p -> Optional.ofNullable(p.blue)),
-            i.optional("alpha", IParticleExp.CODEC_LEGACY, p -> Optional.ofNullable(p.alpha)),
-            i.optional("roll", IParticleExp.CODEC_LEGACY, p -> Optional.ofNullable(p.roll)),
-            i.optional("custom", IParticleExp.CODEC_LEGACY, p -> Optional.ofNullable(p.custom)),
-            i.optional("customs", Codec.unboundedMap(Codec.STRING, IParticleExp.CODEC_LEGACY), Map.of(), p -> p.customs),
-            i.optional("remove_condition", IParticleExp.CODEC_LEGACY, p -> Optional.ofNullable(p.removeIf))
+            i.optional("x", IParticleExp.CODEC, p -> Optional.ofNullable(p.x)),
+            i.optional("y", IParticleExp.CODEC, p -> Optional.ofNullable(p.y)),
+            i.optional("z", IParticleExp.CODEC, p -> Optional.ofNullable(p.z)),
+            i.optional("dx", IParticleExp.CODEC, p -> Optional.ofNullable(p.dx)),
+            i.optional("dy", IParticleExp.CODEC, p -> Optional.ofNullable(p.dy)),
+            i.optional("dz", IParticleExp.CODEC, p -> Optional.ofNullable(p.dz)),
+            i.optional("size", IParticleExp.CODEC, p -> Optional.ofNullable(p.size)),
+            i.optional("red", IParticleExp.CODEC, p -> Optional.ofNullable(p.red)),
+            i.optional("green", IParticleExp.CODEC, p -> Optional.ofNullable(p.green)),
+            i.optional("blue", IParticleExp.CODEC, p -> Optional.ofNullable(p.blue)),
+            i.optional("alpha", IParticleExp.CODEC, p -> Optional.ofNullable(p.alpha)),
+            i.optional("roll", IParticleExp.CODEC, p -> Optional.ofNullable(p.roll)),
+            i.optional("custom", IParticleExp.CODEC, p -> Optional.ofNullable(p.custom)),
+            i.optional("customs", Codec.unboundedMap(Codec.STRING, IParticleExp.CODEC), Map.of(), p -> p.customs),
+            i.optional("remove_condition", IParticleExp.CODEC, p -> Optional.ofNullable(p.removeIf))
     ).apply(i, MultiExpressionParticleTicker::new));
 
     private MultiExpressionParticleTicker(Optional<IParticleExp> x, Optional<IParticleExp> y,
@@ -63,50 +64,52 @@ public record MultiExpressionParticleTicker(@Nullable IParticleExp x,
     }
 
     public void tick(CustomParticleInstance particle, ClientLevel level) {
+        // one reusable per-thread var environment for all field expressions of this tick
+        ParticleExpEnv env = ParticleExpEnv.get();
         if (this.roll != null) {
-            particle.roll = (float) this.roll.evaluate(particle, level);
+            particle.roll = (float) this.roll.evaluateAsync(particle, level, env);
         }
         if (this.size != null) {
-            particle.quadSize = (float) this.size.evaluate(particle, level);
+            particle.quadSize = (float) this.size.evaluateAsync(particle, level, env);
         }
         if (this.red != null) {
-            particle.rCol = (float) this.red.evaluate(particle, level);
+            particle.rCol = (float) this.red.evaluateAsync(particle, level, env);
         }
         if (this.green != null) {
-            particle.gCol = (float) this.green.evaluate(particle, level);
+            particle.gCol = (float) this.green.evaluateAsync(particle, level, env);
         }
         if (this.blue != null) {
-            particle.bCol = (float) this.blue.evaluate(particle, level);
+            particle.bCol = (float) this.blue.evaluateAsync(particle, level, env);
         }
         if (this.alpha != null) {
-            particle.alpha = (float) this.alpha.evaluate(particle, level);
+            particle.alpha = (float) this.alpha.evaluateAsync(particle, level, env);
         }
         if (this.x != null) {
-            particle.x = this.x.evaluate(particle, level);
+            particle.x = this.x.evaluateAsync(particle, level, env);
         }
         if (this.y != null) {
-            particle.y = this.y.evaluate(particle, level);
+            particle.y = this.y.evaluateAsync(particle, level, env);
         }
         if (this.z != null) {
-            particle.z = this.z.evaluate(particle, level);
+            particle.z = this.z.evaluateAsync(particle, level, env);
         }
         if (this.dx != null) {
-            particle.xd = this.dx.evaluate(particle, level);
+            particle.xd = this.dx.evaluateAsync(particle, level, env);
         }
         if (this.dy != null) {
-            particle.yd = this.dy.evaluate(particle, level);
+            particle.yd = this.dy.evaluateAsync(particle, level, env);
         }
         if (this.dz != null) {
-            particle.zd = this.dz.evaluate(particle, level);
+            particle.zd = this.dz.evaluateAsync(particle, level, env);
         }
         if (this.custom != null) {
-            particle.custom = this.custom.evaluate(particle, level);
+            particle.custom = this.custom.evaluateAsync(particle, level, env);
         }
         for (var entry : this.customs.entrySet()) {
-            particle.setCustom(entry.getKey(), entry.getValue().evaluate(particle, level));
+            particle.setCustom(entry.getKey(), entry.getValue().evaluateAsync(particle, level, env));
         }
         if (this.removeIf != null) {
-            if (this.removeIf.evaluate(particle, level) > 0) {
+            if (this.removeIf.evaluateAsync(particle, level, env) > 0) {
                 particle.remove();
             }
         }

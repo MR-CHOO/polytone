@@ -1,6 +1,6 @@
 package net.mehvahdjukaar.polytone.common.expressions.impl;
 
-import hollowpoint.nexp.api.ExpProgram;
+import net.mehvahdjukaar.polytone.common.expressions.ExpUtils;
 import net.mehvahdjukaar.polytone.common.expressions.PolyExp;
 import net.mehvahdjukaar.polytone.common.expressions.PolyExpType;
 import net.mehvahdjukaar.polytone.common.expressions.proxies.BlockProxy;
@@ -11,13 +11,25 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
+import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
+
 public class BlockExp extends PolyExp implements IBlockExp {
 
-    public static final PolyExpType<BlockExp> TYPE = new PolyExpType<>(BlockExp::new,
-            c -> c.input(BlockProxy.class, "o", "object").input(RandomProxy.class, "r", "random").input(double.class, "v"));
+    public static final PolyExpType<BlockExp> TYPE =
+            new PolyExpType<>(
+                    BlockExp::new,
+                    c -> {
+                        ExpUtils.addCommonInputs(c);
+                        c.addInput("o", BlockProxy.class);
+                        c.addInput("object", BlockProxy.class);
+                        c.addInput("v", double.class);
+                    }
+            );
 
-    protected BlockExp(ExpProgram program, String source) {
-        super(program, source);
+    protected BlockExp(Serializable expr) {
+        super(expr);
     }
 
     @Override
@@ -27,7 +39,16 @@ public class BlockExp extends PolyExp implements IBlockExp {
 
     @Override
     public double evaluate(ClientLevel level, Vec3 pos, @Nullable BlockState state, double v) {
-        return executeDouble(new BlockProxy(level, pos, state), RandomProxy.posSeeded(BlockPos.containing(pos)), v);
+        BlockProxy obj = new BlockProxy(level, pos, state);
+        Map<String, Object> vars = new HashMap<>();
+        ExpUtils.addCommonVars(vars);
+        vars.put("o", obj);
+        vars.put("object", obj);
+        RandomProxy rand = RandomProxy.posSeeded(BlockPos.containing(pos));
+        vars.put("random", rand);
+        vars.put("r", rand);
+        vars.put("v", v);
+        return executeDouble(vars);
     }
 
 }

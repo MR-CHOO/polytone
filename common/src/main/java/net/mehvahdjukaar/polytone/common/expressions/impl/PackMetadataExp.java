@@ -1,19 +1,31 @@
 package net.mehvahdjukaar.polytone.common.expressions.impl;
 
-import hollowpoint.nexp.api.ExpProgram;
+import net.mehvahdjukaar.polytone.common.expressions.ExpUtils;
 import net.mehvahdjukaar.polytone.common.expressions.PolyExp;
 import net.mehvahdjukaar.polytone.common.expressions.PolyExpType;
 
+import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
+
 public class PackMetadataExp extends PolyExp implements IPackMetadataExp {
 
-    public static final PolyExpType<PackMetadataExp> TYPE = new PolyExpType<>(PackMetadataExp::new, c -> {});
+    public static final PolyExpType<PackMetadataExp> TYPE =
+            new PolyExpType<>(
+                    PackMetadataExp::new,
+                    ExpUtils::addCommonInputs
+            );
 
-    protected PackMetadataExp(ExpProgram program, String source) {
-        super(program, source);
+    protected PackMetadataExp(Serializable expr, String originalString) {
+        super(expr);
     }
 
     @Override
     public boolean evaluate() {
-        return executeBool();
+        Map<String, Object> vars = new HashMap<>();
+        ExpUtils.addCommonVars(vars);
+        return executeBool(vars);
     }
+
+
 }
