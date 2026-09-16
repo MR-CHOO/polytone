@@ -39,9 +39,21 @@ public final class ExpressionModel {
 
     public static Selector bake(List<Case> cases, Optional<BlockExp> selector,
                                 BlockStateModel.Unbaked fallback, ModelBaker baker) {
+        return new Selector(bakeAll(cases, baker), selector.orElse(null), fallback.bake(baker));
+    }
+
+    // Baked before it is known which block model the cases will wrap (block model modifiers). Without an
+    // explicit fallback the result has none, and withFallback must supply one before it is used.
+    public static Selector bakeCases(List<Case> cases, Optional<BlockExp> selector,
+                                     Optional<BlockStateModel.Unbaked> fallback, ModelBaker baker) {
+        return new Selector(bakeAll(cases, baker), selector.orElse(null),
+                fallback.map(f -> f.bake(baker)).orElse(null));
+    }
+
+    private static List<BakedCase> bakeAll(List<Case> cases, ModelBaker baker) {
         List<BakedCase> baked = new ArrayList<>(cases.size());
         for (Case c : cases) baked.add(new BakedCase(c.when(), c.model().bake(baker)));
-        return new Selector(List.copyOf(baked), selector.orElse(null), fallback.bake(baker));
+        return List.copyOf(baked);
     }
 
     public static void resolveDependencies(List<Case> cases, BlockStateModel.Unbaked fallback, ResolvableModel.Resolver resolver) {
@@ -49,16 +61,38 @@ public final class ExpressionModel {
         fallback.resolveDependencies(resolver);
     }
 
+    public static void resolveCaseDependencies(List<Case> cases, Optional<BlockStateModel.Unbaked> fallback,
+                                               ResolvableModel.Resolver resolver) {
+        for (Case c : cases) c.model().resolveDependencies(resolver);
+        fallback.ifPresent(f -> f.resolveDependencies(resolver));
+    }
+
     // Baked selection logic shared by every loader's wrapper model
     public static final class Selector {
         private final List<BakedCase> cases;
         private final BlockExp selector; // nullable
-        private final BlockStateModel fallback;
+        private final BlockStateModel fallback; // null only for bakeCases without an explicit fallback
 
         private Selector(List<BakedCase> cases, BlockExp selector, BlockStateModel fallback) {
             this.cases = cases;
             this.selector = selector;
             this.fallback = fallback;
+        }
+
+        public boolean hasFallback() {
+            return fallback != null;
+        }
+
+        // same cases and selector, rendering fallback when nothing matches
+        public Selector withFallback(BlockStateModel fallback) {
+            return new Selector(cases, selector, fallback);
+        }
+
+        // flags of every model this can render, so meshing is prepared for whichever case gets picked
+        public int allMaterialFlags() {
+            int flags = fallback.materialFlags();
+            for (BakedCase c : cases) flags |= c.model().materialFlags();
+            return flags;
         }
 
         // index of the first matching case, or -1 to mean the fallback
