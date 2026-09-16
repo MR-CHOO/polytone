@@ -76,7 +76,6 @@
     "SodiumChunkRendererMixin",
     "SodiumDefaultChunkRendererMixin",
     "SodiumShaderConstantsMixin",
-    "SodiumShaderLoaderMixin",
     "SpatialAttributeInterpolatorMixin",
     "SpriteContentsMixin",
     "SubmitNodeStorageMixin",
