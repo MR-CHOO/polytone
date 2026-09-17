@@ -9,11 +9,13 @@ import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.renderer.GameRenderer;
+import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
@@ -49,6 +51,17 @@ public abstract class GameRendererMixin {
         if (!CompatHandler.NAUTILUS) return; // the preview that sets this only exists with the editor
         RenderTarget preview = PreviewRenderTarget.current();
         if (preview != null) cir.setReturnValue(preview);
+    }
+
+    // PolyProjMat/PolyInvViewProjMat must describe the matrix the world is actually rasterised with.
+    // Vanilla builds it here - cameraState.projectionMatrix copied, then view bob and the nausea skew
+    // multiplied in - and hands it straight to the projection UBO. Grab that argument on its way past,
+    // before LevelRenderer.render runs and LevelRendererMixin writes the globals.
+    @ModifyArg(method = "renderLevel", index = 0, at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/renderer/ProjectionMatrixBuffer;getBuffer(Lorg/joml/Matrix4f;)Lcom/mojang/blaze3d/buffers/GpuBufferSlice;"))
+    private Matrix4f polytone$captureRenderedProjection(Matrix4f projectionMatrix) {
+        Polytone.POST_CHAINS.captureRenderedProjection(projectionMatrix);
+        return projectionMatrix; // unmodified - this is a capture, not an edit
     }
 
     @Inject(method = "close", at = @At(value = "TAIL"))

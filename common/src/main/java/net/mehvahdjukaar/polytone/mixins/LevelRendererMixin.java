@@ -50,7 +50,11 @@ public class LevelRendererMixin {
                                Vector4f fogColor,
                                boolean shouldRenderSky,
                                CallbackInfo ci) {
-        // no render pass is open here, which the UBO writes below need
+        // no render pass is open here, which the UBO writes below need.
+        // cameraState.projectionMatrix is the UN-BOBBED matrix; updateGlobalUniforms prefers the bobbed one
+        // GameRendererMixin captured for this frame and only falls back to this. The shadow pass and the
+        // viewpoints below deliberately keep the un-bobbed matrix - they fit their own frusta and must not
+        // inherit the camera's bob.
         Polytone.POST_CHAINS.updateGlobalUniforms(cameraState.projectionMatrix, modelViewMatrix,
                 deltaTracker.getGameTimeDeltaTicks());
         Polytone.SHADER_EFFECTS.updateAll();

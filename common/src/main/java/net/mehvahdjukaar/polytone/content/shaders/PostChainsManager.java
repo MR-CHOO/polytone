@@ -30,6 +30,7 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.server.packs.resources.PreparableReloadListener;
+import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.lwjgl.system.MemoryStack;
 
@@ -84,6 +85,10 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
     private final List<ActiveChain> deferredAfterHand = new ArrayList<>();
     private List<Identifier> lastStagingIds = List.of();
     private int lastStagingSplit = -1;
+
+    // See captureRenderedProjection: the bobbed projection this frame is rendered with.
+    private final Matrix4f renderedProjection = new Matrix4f();
+    private boolean renderedProjectionValid = false;
 
     public PostChainsManager() {
         super(Spec.of("Post chain", () -> PostChainActivator.CODEC)
@@ -248,7 +253,27 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         Polytone.POST_TARGETS.close();
     }
 
+    // The projection vanilla actually rasterises the world with. GameRenderer.renderLevel takes
+    // cameraState.projectionMatrix and multiplies the view-bob pose (and the nausea skew) into a COPY,
+    // then renders with that; the CameraRenderState field keeps the un-bobbed matrix. PolyProjMat has to
+    // be the bobbed one, or PolyInvViewProjMat doesn't invert the matrix the depth buffer was written
+    // with and every depth reconstruction (fog, VL, shadows, AO, water) swims while walking.
+    // Captured by GameRendererMixin, which runs before LevelRenderer.render in the same frame.
+    public void captureRenderedProjection(Matrix4fc projection) {
+        renderedProjection.set(projection);
+        renderedProjectionValid = true;
+    }
+
+    // Consumes the capture: a frame that somehow didn't capture falls back to the un-bobbed matrix rather
+    // than silently reusing the previous frame's.
+    private Matrix4fc renderedProjectionOr(Matrix4fc fallback) {
+        if (!renderedProjectionValid) return fallback;
+        renderedProjectionValid = false;
+        return renderedProjection;
+    }
+
     public void updateGlobalUniforms(Matrix4fc projectionMatrix, Matrix4fc viewMatrix, float deltaTime) {
+        projectionMatrix = renderedProjectionOr(projectionMatrix);
         if (!globalsDeclared && !Polytone.isDevEnv) return;
         Minecraft mc = Minecraft.getInstance();
         float sunAngle = mc.levelRenderer.levelRenderState.skyRenderState.sunAngle;
