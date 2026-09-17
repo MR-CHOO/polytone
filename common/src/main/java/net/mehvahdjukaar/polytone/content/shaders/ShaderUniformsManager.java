@@ -5,12 +5,14 @@ import com.google.gson.JsonObject;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.systems.RenderPass;
 import net.mehvahdjukaar.codecui.SchemaCodec;
+import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.common.reloader.ContentManager;
 import net.mehvahdjukaar.polytone.common.struc.AssetsFiles;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.server.packs.resources.PreparableReloadListener;
+import net.minecraft.server.packs.resources.ResourceManager;
 import org.lwjgl.opengl.GL11C;
 import org.lwjgl.opengl.GL20C;
 
@@ -26,6 +28,8 @@ import java.util.Set;
 // under polytone/shader_modifiers is the target shader id.
 public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffers> {
 
+    private static final String[] SHADER_EXTENSIONS = {".vsh", ".fsh"};
+
     private final List<ExpressionUniformBuffers> owned = new ArrayList<>();
     private final Map<Identifier, List<ExpressionUniformBuffers>> byShader = new HashMap<>();
 
@@ -37,7 +41,33 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
     protected AssetsFiles prepare(PreparableReloadListener.SharedState sharedState) {
         AssetsFiles resources = super.prepare(sharedState);
         registerUniformNames(resources.jsons());
+        warnAboutOrphanedTargets(sharedState.resourceManager(), resources.jsons());
         return resources;
+    }
+
+    // These files are keyed BY SHADER ID, and a modifier for an id nothing provides simply never binds:
+    // every shader still compiles, links and renders, and nothing is logged. A vanilla shader rename
+    // therefore kills a pack's modifiers silently - 26.1/26.2's core shader renames orphaned 12 of
+    // Recrafted's, taking dynamic lights off all text and all items with no symptom in the log.
+    // A shader id resolves to shaders/<path>.vsh / .fsh, so an orphan is detectable right here.
+    private static void warnAboutOrphanedTargets(ResourceManager resourceManager,
+                                                 Map<Identifier, JsonElement> jsons) {
+        for (Identifier shaderId : jsons.keySet()) {
+            if (shaderExists(resourceManager, shaderId)) continue;
+            Polytone.LOGGER.warn(
+                    "Polytone shader modifier '{}' targets a shader that no loaded pack provides " +
+                    "(looked for shaders/{}.vsh and .fsh). It will never bind, silently. Was the shader " +
+                    "renamed in this Minecraft version, or does it belong to a mod that isn't installed?",
+                    shaderId, shaderId.getPath());
+        }
+    }
+
+    private static boolean shaderExists(ResourceManager resourceManager, Identifier shaderId) {
+        for (String extension : SHADER_EXTENSIONS) {
+            Identifier file = shaderId.withPath("shaders/" + shaderId.getPath() + extension);
+            if (resourceManager.getResource(file).isPresent()) return true;
+        }
+        return false;
     }
 
     // post chain files: block names are the expression_uniforms keys
