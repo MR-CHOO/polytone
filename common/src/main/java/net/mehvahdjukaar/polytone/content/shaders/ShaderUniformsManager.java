@@ -19,7 +19,9 @@ import org.lwjgl.opengl.GL20C;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -32,6 +34,11 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
 
     private final List<ExpressionUniformBuffers> owned = new ArrayList<>();
     private final Map<Identifier, List<ExpressionUniformBuffers>> byShader = new HashMap<>();
+
+    // Written off-thread during prepare, read on the render thread at link time
+    private volatile Set<String> modifierBlockNames = Set.of();
+    private final Map<PipelineKey, Set<String>> pendingChecks = new LinkedHashMap<>();
+    private final Set<String> warnedPairs = new HashSet<>();
 
     public ShaderUniformsManager() {
         super("Shader uniforms", () -> SchemaCodec.wrap(ExpressionUniformBuffers.CODEC), "shader_modifiers");
@@ -84,13 +91,96 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
     }
 
     // shader_modifiers files: block names are the top-level keys
-    private static void registerUniformNames(Map<Identifier, JsonElement> jsons) {
+    private void registerUniformNames(Map<Identifier, JsonElement> jsons) {
+        Set<String> names = new HashSet<>();
         for (var e : jsons.values()) {
             if (e instanceof JsonObject obj) {
                 for (String name : obj.keySet()) {
                     PolytoneBuiltInUniformsSet.register(name);
+                    names.add(name);
                 }
             }
+        }
+        // Every key in any loaded modifier file - names the PACK ITSELF declared as Polytone expression
+        // blocks. Using that as the ownership set is what makes the checks below false-positive free: no
+        // prefix convention, no guessing. Vanilla's blocks (Fog, DynamicTransforms, Projection, Globals,
+        // LightmapInfo) and Sodium's never appear as modifier keys, so they can never be flagged.
+        modifierBlockNames = Set.copyOf(names);
+    }
+
+    // Called once per pipeline when its program links, on both backends. Deliberately NOT per pass: a
+    // pipeline that simply hasn't drawn yet would otherwise look broken. The check itself is deferred to
+    // the next frame because pipelines can link during the same reload that parses the modifier files,
+    // and running it before byShader is filled would flag everything.
+    public void onPipelineLinked(Identifier vertexShader, Identifier fragmentShader, Set<String> declaredBlocks) {
+        if (declaredBlocks.isEmpty() || modifierBlockNames.isEmpty()) return;
+        synchronized (pendingChecks) {
+            pendingChecks.put(new PipelineKey(vertexShader, fragmentShader), Set.copyOf(declaredBlocks));
+        }
+    }
+
+    private void runPendingChecks() {
+        List<Map.Entry<PipelineKey, Set<String>>> pending;
+        synchronized (pendingChecks) {
+            if (pendingChecks.isEmpty()) return;
+            pending = new ArrayList<>(pendingChecks.entrySet());
+            pendingChecks.clear();
+        }
+        for (var entry : pending) {
+            PipelineKey key = entry.getKey();
+            Set<String> declared = entry.getValue();
+            Set<String> supplied = new HashSet<>();
+            for (Identifier shaderId : key.shaderIds()) {
+                List<ExpressionUniformBuffers> list = byShader.get(shaderId);
+                if (list == null) continue;
+                for (ExpressionUniformBuffers b : list) supplied.addAll(b.expressions().keySet());
+            }
+
+            // Declared by the shader, owned by Polytone, supplied by nobody: the block exists in the
+            // program and is never written, silently. This is the shape of a shader rename or a modifier
+            // file that was never written for this shader id.
+            for (String name : declared) {
+                if (!modifierBlockNames.contains(name) || supplied.contains(name)) continue;
+                if (!warnedPairs.add(key + "|" + name)) continue;
+                Polytone.LOGGER.warn(
+                        "Shader {} declares Polytone expression block '{}', but no shader_modifiers file " +
+                        "supplies it for that shader, so it is never written. A modifier applies only to " +
+                        "the shader id its file is named after. '{}' is currently supplied for: {}",
+                        key, name, name, suppliersOf(name));
+            }
+
+            // NOT checked: the inverse ("supplies a block the program doesn't have"). It looks like it
+            // would catch typos and stale keys, but `declared` here is what vanilla RESOLVED as ACTIVE
+            // uniforms of this compiled program, not what the source declares. A block behind an #ifdef -
+            // Sodium compiles a variant per terrain pass - is legitimately inactive in some variants, and
+            // an unused block is optimised out entirely, so that direction warns on healthy packs.
+        }
+    }
+
+    // Where a block IS supplied, so the warning above points straight at the mismatch
+    private List<Identifier> suppliersOf(String blockName) {
+        List<Identifier> ids = new ArrayList<>();
+        for (var e : byShader.entrySet()) {
+            for (ExpressionUniformBuffers b : e.getValue()) {
+                if (b.expressions().containsKey(blockName)) {
+                    ids.add(e.getKey());
+                    break;
+                }
+            }
+        }
+        return ids;
+    }
+
+    private record PipelineKey(Identifier vertexShader, Identifier fragmentShader) {
+        List<Identifier> shaderIds() {
+            return vertexShader.equals(fragmentShader) ? List.of(vertexShader)
+                    : List.of(vertexShader, fragmentShader);
+        }
+
+        @Override
+        public String toString() {
+            return vertexShader.equals(fragmentShader) ? vertexShader.toString()
+                    : vertexShader + " / " + fragmentShader;
         }
     }
 
@@ -115,6 +205,11 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
             owned.clear();
             byShader.clear();
         }
+        // Pipelines relink on a reload, so a pack that fixed a block name must be able to report again
+        synchronized (pendingChecks) {
+            pendingChecks.clear();
+        }
+        warnedPairs.clear();
     }
 
     public void onClose() {
@@ -137,6 +232,7 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
 
     // once per frame while no render pass is open; tryApply only binds what this uploaded
     public void updateAll() {
+        runPendingChecks();
         if (byShader.isEmpty()) return;
         // one buffer set can be registered under several shader ids
         Set<ExpressionUniformBuffers> seen = Collections.newSetFromMap(new IdentityHashMap<>());

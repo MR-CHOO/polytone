@@ -7,6 +7,7 @@ import com.mojang.blaze3d.shaders.UniformType;
 import com.mojang.blaze3d.vulkan.VulkanBindGroupLayout;
 import com.mojang.blaze3d.vulkan.glsl.GlslCompiler;
 import com.mojang.blaze3d.vulkan.glsl.IntermediaryShaderModule;
+import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.content.shaders.PolytoneBuiltInUniformsSet;
 import net.mehvahdjukaar.polytone.content.shaders.PostChainsManager;
 import org.spongepowered.asm.mixin.Mixin;
@@ -49,5 +50,12 @@ public class GlslCompilerMixin {
         for (String name : PostChainsManager.dynamicSamplers()) {
             if (declared.contains(name)) PostChainsManager.onDynamicSamplerDeclared(name);
         }
+        // Vulkan half of the shader_modifiers block check; GlDeviceMixin is the GL half. Blocks only:
+        // samplers and texel buffers are not what a modifier supplies.
+        Set<String> blocks = new HashSet<>(entries.size());
+        for (var e : entries) {
+            if (e.type() == VulkanBindGroupLayout.VulkanBindGroupEntryType.UNIFORM_BUFFER) blocks.add(e.name());
+        }
+        Polytone.SHADER_EFFECTS.onPipelineLinked(pipeline.getVertexShader(), pipeline.getFragmentShader(), blocks);
     }
 }
