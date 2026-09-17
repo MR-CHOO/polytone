@@ -36,7 +36,7 @@ public class GlslCompilerMixin {
             target = "Lcom/mojang/blaze3d/pipeline/BindGroupLayout;flattenSamplers(Ljava/util/List;)Ljava/util/List;"))
     private static List<String> poly$addDynamicSamplers(List<String> original) {
         List<String> withOurs = new ArrayList<>(original);
-        withOurs.addAll(PostChainsManager.DYNAMIC_SAMPLERS);
+        withOurs.addAll(PostChainsManager.dynamicSamplers());
         return withOurs;
     }
 
@@ -46,7 +46,7 @@ public class GlslCompilerMixin {
         Set<String> declared = new HashSet<>(entries.size());
         for (var e : entries) declared.add(e.name());
         PostChainsManager.onProgramLinked(declared);
-        for (String name : PostChainsManager.DYNAMIC_SAMPLERS) {
+        for (String name : PostChainsManager.dynamicSamplers()) {
             if (declared.contains(name)) PostChainsManager.onDynamicSamplerDeclared(name);
         }
     }

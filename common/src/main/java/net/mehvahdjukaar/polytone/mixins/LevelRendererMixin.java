@@ -57,6 +57,8 @@ public class LevelRendererMixin {
         // shadow map goes first so the post chains built into this frame's graph sample this frame's map
         Polytone.SHADOWS.renderer().renderShadowPassIfNeeded(terrainFog, Minecraft.getInstance().gameRenderer.mainCamera(),
                 modelViewMatrix, cameraState.projectionMatrix);
+        // viewpoints right after, for the same reason: no render pass is open for their UBO writes
+        Polytone.VIEWPOINTS.renderActive(terrainFog, Minecraft.getInstance().gameRenderer.mainCamera());
     }
 
     // after weather, the last world pass that depth tests

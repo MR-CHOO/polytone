@@ -28,7 +28,11 @@ public final class PostChainActivator {
                             new ExpressionUniformBuffers(Map.of()), p -> p.expressionUniforms),
                     i.optional("samplers", Codec.unboundedMap(Codec.STRING, Identifier.CODEC),
                             Map.of(), p -> p.samplers),
-                    i.optional("use_shadow_map", Codec.BOOL, false, p -> p.useShadowMap)
+                    i.optional("use_shadow_map", Codec.BOOL, false, p -> p.useShadowMap),
+                    // Ids of polytone/viewpoints/*.json this chain wants rendered. Explicit rather than
+                    // inferred: a viewpoint's sampler is bound dynamically by name and isn't visible in the
+                    // chain's declared inputs until bind time - far too late to decide whether to render it.
+                    i.optional("uses_viewpoints", Identifier.CODEC.listOf(), List.of(), p -> p.usesViewpoints)
             ).apply(i, PostChainActivator::new));
 
     private final Identifier postChainId;
@@ -36,6 +40,7 @@ public final class PostChainActivator {
     private final ExpressionUniformBuffers expressionUniforms;
     private final Map<String, Identifier> samplers;
     private final boolean useShadowMap;
+    private final List<Identifier> usesViewpoints;
 
     private boolean active = false;
     private PostChain cachedPostChain = null;
@@ -43,12 +48,13 @@ public final class PostChainActivator {
 
     public PostChainActivator(Identifier postChainId, ISimpleExp activationCondition,
                               ExpressionUniformBuffers expressionUniforms, Map<String, Identifier> samplers,
-                              boolean useShadowMap) {
+                              boolean useShadowMap, List<Identifier> usesViewpoints) {
         this.postChainId = postChainId;
         this.activationCondition = activationCondition;
         this.expressionUniforms = expressionUniforms;
         this.samplers = samplers;
         this.useShadowMap = useShadowMap;
+        this.usesViewpoints = usesViewpoints;
     }
 
     public void refreshActive() {
@@ -61,6 +67,11 @@ public final class PostChainActivator {
 
     public boolean wantsShadowMap() {
         return active && useShadowMap;
+    }
+
+    // viewpoints this chain wants rendered, empty while the chain is off
+    public List<Identifier> wantedViewpoints() {
+        return active ? usesViewpoints : List.of();
     }
 
     @Nullable

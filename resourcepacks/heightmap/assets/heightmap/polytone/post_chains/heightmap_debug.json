@@ -1,0 +1,5 @@
+{
+  "post_chain": "heightmap:heightmap_debug",
+  "activation_condition": 1,
+  "uses_viewpoints": ["heightmap:heightmap"]
+}

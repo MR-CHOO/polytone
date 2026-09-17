@@ -1,0 +1,10 @@
+{
+  "pack": {
+    "min_format": 88,
+    "max_format": 88,
+    "description": [
+      "§eHEIGHTMAP §r§8viewpoint test",
+      "§7Top-down depth viewpoint, debug view"
+    ]
+  }
+}

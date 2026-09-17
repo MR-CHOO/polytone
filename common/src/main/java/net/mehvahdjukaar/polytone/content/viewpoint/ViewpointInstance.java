@@ -1,0 +1,558 @@
+package net.mehvahdjukaar.polytone.content.viewpoint;
+
+import com.mojang.blaze3d.GpuFormat;
+import com.mojang.blaze3d.IndexType;
+import com.mojang.blaze3d.PrimitiveTopology;
+import com.mojang.blaze3d.ProjectionType;
+import com.mojang.blaze3d.buffers.GpuBuffer;
+import com.mojang.blaze3d.buffers.GpuBufferSlice;
+import com.mojang.blaze3d.buffers.Std140Builder;
+import com.mojang.blaze3d.platform.Lighting;
+import com.mojang.blaze3d.systems.GpuDevice;
+import com.mojang.blaze3d.systems.RenderPass;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.textures.FilterMode;
+import com.mojang.blaze3d.textures.GpuSampler;
+import com.mojang.blaze3d.textures.GpuTexture;
+import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import net.mehvahdjukaar.polytone.Polytone;
+import net.mehvahdjukaar.polytone.compat.CompatHandler;
+import net.mehvahdjukaar.polytone.content.shaders.ShadowCasterVolume;
+import net.mehvahdjukaar.polytone.content.shaders.sodium.SodiumShadowRenderer;
+import net.mehvahdjukaar.polytone.mixins.accessor.LevelRendererShadowAccessor;
+import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.DynamicUniforms;
+import net.minecraft.client.renderer.SubmitNodeStorage;
+import net.minecraft.client.renderer.ViewArea;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
+import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
+import net.minecraft.client.renderer.chunk.SectionMesh;
+import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
+import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.client.renderer.entity.state.EntityRenderState;
+import net.minecraft.client.renderer.feature.FeatureRenderDispatcher;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.core.BlockPos;
+import net.minecraft.util.Mth;
+import net.minecraft.util.Util;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
+import org.joml.Matrix4f;
+import org.joml.Matrix4fStack;
+import org.joml.Vector3f;
+import org.joml.Vector4f;
+import org.lwjgl.system.MemoryStack;
+
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Optional;
+import java.util.OptionalDouble;
+
+/**
+ * The live GPU state and render logic for ONE {@link Viewpoint}. The parsed viewpoint is immutable
+ * data; everything mutable (textures, timing) lives here, keyed by viewpoint id in
+ * {@link ViewpointsManager}.
+ *
+ * <p>Generalised from the throwaway height-map spike, which proved the two things this rests on:
+ * a second geometry pass coexists with the shadow pass in one frame (the singletons it looked like
+ * it would collide with are all set and cleared within each call), and the cost of the extra Sodium
+ * re-cull is not measurable at two passes.</p>
+ */
+public class ViewpointInstance {
+
+    private GpuTexture depthTexture = null;
+    private GpuTextureView depthTextureView = null;
+    private GpuTexture colorTexture = null;   // never sampled yet; a render pass requires one
+    private GpuTextureView colorTextureView = null;
+    private GpuBuffer projectionBuffer = null;
+    private int allocatedResolution = -1;
+
+    private long lastUpdateMs = 0L;
+    private boolean hasRendered = false;
+    private boolean insidePass = false;
+
+    // ---- uniform_block state: the matrix the map was ACTUALLY rendered with, and from where ----
+    private ViewpointUniforms uniforms = null;
+    private final Matrix4f renderedViewProj = new Matrix4f();
+    private final Matrix4f viewProj = new Matrix4f(); // renderedViewProj reprojected to the live camera
+    private final Vector3f renderedDir = new Vector3f(0, -1, 0);
+    private final Vector3f camFract = new Vector3f();
+    private Vec3 renderedCamPos = Vec3.ZERO;
+    @Nullable
+    private ClientLevel renderedLevel = null;
+    private float renderedLateralHalf = 0f;
+    private float renderedNear = 0f;
+    private float renderedFar = 0f;
+
+    private final List<SectionRenderDispatcher.RenderSection> sections = new ArrayList<>();
+    private final List<BlockEntity> capturedBlockEntities = new ArrayList<>();
+
+    public GpuTextureView getDepthTexture() {
+        return depthTextureView;
+    }
+
+    /** Null until the first completed render; bind sites skip a null slice. */
+    @Nullable
+    public GpuBufferSlice getUniformsSlice() {
+        return uniforms == null ? null : uniforms.getSlice();
+    }
+
+    /**
+     * Renders if due, then publishes the uniform block — EVERY frame, reuse frames included, so the
+     * reprojected matrix and {@code CamFract} track the live camera. {@code update_interval} is an
+     * EXPRESSION, so it is re-read every frame and may change at runtime — never cache a decision
+     * derived from it.
+     */
+    public void renderIfNeeded(Viewpoint vp, GpuBufferSlice shaderFog, Camera cam) {
+        if (insidePass) return; // a nested level render must not re-enter and clear our section list
+
+        Minecraft mc = Minecraft.getInstance();
+        ClientLevel level = mc.level;
+        if (level == null || !cam.isInitialized()) return;
+
+        Vec3 camPos = cam.position();
+        double interval = vp.updateInterval().evaluate();
+        long now = Util.getMillis();
+
+        // DRIFT BAIL-OUT. Reprojection is an exact change of origin, but the map only COVERS what was
+        // around the viewpoint at render time: walk far enough and lookups run off its edge. Past half
+        // the lateral extent, re-render regardless of the interval. At heightmap settings (ortho 320,
+        // interval 20) that is 80 blocks inside one second, so in practice it only fires on a
+        // teleport. A level change can never be reprojected at all.
+        float maxDrift = renderedLateralHalf * 0.5f;
+        boolean reusable = hasRendered && level == renderedLevel
+                && camPos.distanceToSqr(renderedCamPos) <= (double) maxDrift * maxDrift;
+        boolean due = !reusable || interval <= 0 || (now - lastUpdateMs) >= interval * 50.0;
+
+        boolean renderedThisFrame = false;
+        if (due) {
+            insidePass = true;
+            boolean ok = true;
+            try {
+                render(vp, mc, cam, camPos, shaderFog);
+            } catch (Exception e) {
+                ok = false;
+                Polytone.LOGGER.error("Polytone viewpoint render failed", e);
+            } finally {
+                insidePass = false;
+            }
+            // Only a completed pass counts as rendered; a half-drawn map must not be held for a whole
+            // interval.
+            hasRendered = ok;
+            if (ok) {
+                lastUpdateMs = now;
+                renderedCamPos = camPos;
+                renderedLevel = level;
+                renderedThisFrame = true;
+            }
+        }
+        if (!hasRendered) return; // nothing valid to publish; the previous block contents stay bound
+
+        publishUniforms(camPos, now, interval, renderedThisFrame);
+    }
+
+    /**
+     * REPROJECTION. {@code renderedViewProj} expects positions camera-relative to RENDER time, while
+     * every consumer hands in positions camera-relative to NOW. Those differ by exactly the camera
+     * delta, so {@code M·translate(camNow − camAtRender)} is exact, not an approximation — and it is
+     * independent of where the pack snapped the viewpoint's x/z, since an origin shift doesn't care
+     * where the eye is. On a render frame the delta is zero and this is just the rendered matrix.
+     */
+    private void publishUniforms(Vec3 camPos, long now, double interval, boolean renderedThisFrame) {
+        viewProj.set(renderedViewProj).translate(
+                (float) (camPos.x - renderedCamPos.x),
+                (float) (camPos.y - renderedCamPos.y),
+                (float) (camPos.z - renderedCamPos.z));
+        camFract.set((float) Mth.frac(camPos.x), (float) Mth.frac(camPos.y), (float) Mth.frac(camPos.z));
+
+        float ageSeconds = (now - lastUpdateMs) / 1000f;
+        // Ticks -> seconds on the WALL clock, because that is the clock the due check runs on
+        // (Util.getMillis(), interval * 50 ms) - not game time, which drifts from it with TPS.
+        float intervalSeconds = (float) Math.max(interval, 0.0) * 0.05f;
+        float phase = intervalSeconds > 0f ? Mth.clamp(ageSeconds / intervalSeconds, 0f, 1f) : 0f;
+
+        if (uniforms == null) uniforms = new ViewpointUniforms();
+        uniforms.update(viewProj, renderedDir, camFract, renderedNear, renderedFar,
+                allocatedResolution, allocatedResolution, renderedThisFrame, ageSeconds, intervalSeconds, phase);
+    }
+
+    private void render(Viewpoint vp, Minecraft mc, Camera cam, Vec3 camPos, GpuBufferSlice shaderFog) {
+        ensureTarget(vp.resolution());
+
+        // ---- placement: ABSOLUTE world space in, camera-relative out ----------------------------
+        // This subtraction is the ONLY place the two spaces meet. Packs author world coordinates;
+        // the geometry on the GPU is camera-relative because section origins are uploaded that way.
+        // Keeping the conversion here (rather than expecting packs to write "320 - c.y()") is what
+        // makes a fixed viewpoint a literal constant, which is what makes caching it sound.
+        Vector3f eye = new Vector3f(
+                (float) (vp.x().evaluate() - camPos.x),
+                (float) (vp.y().evaluate() - camPos.y),
+                (float) (vp.z().evaluate() - camPos.z));
+
+        // MINECRAFT's pitch convention: +90 looks DOWN, -90 up. Chosen so that pointing a viewpoint
+        // where the player looks is `"x_rot": "c.pitch()"` with no negation - matching the proxy is
+        // what fixes the sign. (The draft wiki page says -90 looks down; it is WRONG.)
+        float pitch = (float) Math.toRadians(vp.xRot().evaluate());
+        float yaw = (float) Math.toRadians(vp.yRot().evaluate());
+        float roll = (float) Math.toRadians(vp.zRot().evaluate());
+
+        float cosPitch = Mth.cos(pitch);
+        Vector3f dir = new Vector3f(-Mth.sin(yaw) * cosPitch, -Mth.sin(pitch), Mth.cos(yaw) * cosPitch);
+        // Straight up/down leaves the world-up degenerate as a reference; same guard the shadow map
+        // uses. Roll is authored, so there is no gimbal ambiguity to resolve beyond this.
+        Vector3f up = Math.abs(dir.y) > 0.99f ? new Vector3f(0, 0, 1) : new Vector3f(0, 1, 0);
+
+        Matrix4f view = new Matrix4f().rotateZ(roll)
+                .lookAlong(dir.x, dir.y, dir.z, up.x, up.y, up.z)
+                .translate(-eye.x, -eye.y, -eye.z);
+
+        // ---- projection -------------------------------------------------------------------------
+        float near = (float) vp.near().evaluate();
+        float far = (float) vp.far().evaluate();
+        double orthoSize = vp.orthographicSize();
+
+        Matrix4f proj;
+        float lateralHalf;
+        if (orthoSize > 0) {
+            lateralHalf = (float) (orthoSize * 0.5);
+            proj = new Matrix4f().ortho(-lateralHalf, lateralHalf, -lateralHalf, lateralHalf, near, far);
+        } else {
+            proj = new Matrix4f().perspective((float) Math.toRadians(vp.fov().evaluate()), 1.0f, near, far);
+            // A cone doesn't fit a box; use the far-plane half-width so the cull can only ever be
+            // too generous, never too tight.
+            lateralHalf = (float) (far * Math.tan(Math.toRadians(vp.fov().evaluate()) * 0.5));
+        }
+
+        // What the uniform block publishes: the matrix this pass ACTUALLY renders with. Only read once
+        // the pass completes (hasRendered), so a failed pass cannot leak a half-applied basis.
+        proj.mul(view, renderedViewProj);
+        renderedDir.set(dir);
+        renderedLateralHalf = lateralHalf;
+        renderedNear = near;
+        renderedFar = far;
+
+        // The caster box is axis-symmetric around a point, so it must reach far enough to contain an
+        // asymmetric near..far span (e.g. a world-pinned band seen from below it).
+        float depthHalf = Math.max(Math.abs(near), Math.abs(far));
+        ShadowCasterVolume volume = new ShadowCasterVolume(view, lateralHalf, depthHalf);
+
+        collectSections(mc, volume, camPos, eye, vp.terrainLayers());
+
+        GpuDevice device = RenderSystem.getDevice();
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            ByteBuffer bb = Std140Builder.onStack(stack, RenderSystem.PROJECTION_MATRIX_UBO_SIZE)
+                    .putMat4f(proj).get();
+            device.createCommandEncoder().writeToBuffer(projectionBuffer.slice(), bb);
+        }
+        device.createCommandEncoder().clearColorAndDepthTextures(colorTexture, new Vector4f(0, 0, 0, 0), depthTexture, 1.0);
+
+        RenderSystem.setShaderFog(shaderFog);
+
+        if (CompatHandler.SODIUM) {
+            capturedBlockEntities.clear();
+            // Sodium owns the block entities of the re-culled set (the vanilla section meshes are
+            // empty under it), so this is where they come from on that path.
+            SodiumShadowRenderer.replayTerrain(mc, cam, camPos, view, proj,
+                    volume, colorTextureView, depthTextureView, capturedBlockEntities);
+            if (!vp.blockEntities()) capturedBlockEntities.clear();
+        } else {
+            drawTerrain(mc, view, vp.terrainLayers());
+        }
+
+        if (vp.entities() || vp.blockEntities()) {
+            drawEntitiesAndBlockEntities(vp, mc, camPos, eye, view, volume, orthoSize > 0);
+        } else {
+            capturedBlockEntities.clear();
+        }
+    }
+
+    /**
+     * Entities and block entities are not part of the section meshes, so they are extracted and
+     * submitted like the main pass does, with this viewpoint's matrices and output target swapped
+     * onto the RenderSystem globals. Structure follows {@code ShadowMapRenderer} closely, including
+     * the parts that are easy to get wrong.
+     *
+     * <p>WHY THIS MATTERS FOR A HEIGHT MAP: without it, a boat, a mob or a chest beside the water
+     * contributes nothing to the height field, so a reflection ray passes straight through it to the
+     * sky. Note the height-field caveat though — one height per column means an entity occludes
+     * EVERYTHING below its top surface, which is right for anything standing on the ground and wrong
+     * for anything flying.</p>
+     */
+    private void drawEntitiesAndBlockEntities(Viewpoint vp, Minecraft mc, Vec3 camPos, Vector3f eye,
+                                              Matrix4f view, ShadowCasterVolume volume, boolean ortho) {
+        ClientLevel level = mc.level;
+        if (level == null) return;
+
+        EntityRenderDispatcher dispatcher = mc.getEntityRenderDispatcher();
+        BlockEntityRenderDispatcher beDispatcher = mc.getBlockEntityRenderDispatcher();
+        FeatureRenderDispatcher featureDispatcher = mc.gameRenderer.featureRenderDispatcher();
+        CameraRenderState camState = mc.levelRenderer.levelRenderState.cameraRenderState;
+        // Our own storage, so a renderer that throws can't leave nodes queued for the main pass to draw
+        // again with the camera's matrices.
+        SubmitNodeStorage submitNodes = new SubmitNodeStorage();
+
+        // Swap this viewpoint's matrices + output target onto the globals the feature draws read.
+        // EVERYTHING here is restored in the finally: an unbalanced push leaks the viewpoint's basis
+        // into later frames and renders the world from it.
+        RenderSystem.backupProjectionMatrix();
+        RenderSystem.setProjectionMatrix(projectionBuffer.slice(),
+                ortho ? ProjectionType.ORTHOGRAPHIC : ProjectionType.PERSPECTIVE);
+        Matrix4fStack mvStack = RenderSystem.getModelViewStack();
+        mvStack.pushMatrix();
+        mvStack.set(view);
+        RenderSystem.outputColorTextureOverride = colorTextureView;
+        RenderSystem.outputDepthTextureOverride = depthTextureView;
+        // Only depth matters for an occlusion capture, but entity shaders still evaluate diffuse
+        // light; use the level setup rather than leaving whatever was last bound.
+        mc.gameRenderer.lighting().setupFor(Lighting.Entry.LEVEL);
+        try {
+            PoseStack poseStack = new PoseStack();
+
+            if (vp.entities()) {
+                for (Entity entity : level.entitiesForRendering()) {
+                    if (entity.isSpectator()) continue;
+                    AABB bb = entity.getBoundingBox();
+                    float radius = (float) Math.max(bb.getXsize(), Math.max(bb.getYsize(), bb.getZsize()));
+                    Vec3 c = bb.getCenter();
+                    if (!volume.intersects((float) (c.x - camPos.x) - eye.x,
+                            (float) (c.y - camPos.y) - eye.y,
+                            (float) (c.z - camPos.z) - eye.z, radius, radius, radius)) continue;
+
+                    float partial = mc.getDeltaTracker().getGameTimeDeltaPartialTick(
+                            !level.tickRateManager().isEntityFrozen(entity));
+                    try {
+                        EntityRenderState state = dispatcher.extractEntity(entity, partial);
+                        dispatcher.submit(state, camState, state.x - camPos.x, state.y - camPos.y,
+                                state.z - camPos.z, poseStack, submitNodes);
+                    } catch (Exception e) {
+                        // One broken entity renderer, called outside its usual pass, must not kill the frame.
+                    }
+                }
+            }
+
+            if (vp.blockEntities()) {
+                float partial = mc.getDeltaTracker().getGameTimeDeltaPartialTick(false);
+                for (BlockEntity be : capturedBlockEntities) {
+                    BlockPos pos = be.getBlockPos();
+                    poseStack.pushPose();
+                    poseStack.translate(pos.getX() - camPos.x, pos.getY() - camPos.y, pos.getZ() - camPos.z);
+                    try {
+                        var state = beDispatcher.tryExtractRenderState(be, partial, null, false);
+                        if (state != null) {
+                            beDispatcher.submit(state, poseStack, submitNodes, camState);
+                        }
+                    } catch (Exception e) {
+                        // As above.
+                    }
+                    poseStack.popPose();
+                }
+            }
+
+            try {
+                featureDispatcher.renderAllFeatures(submitNodes);
+            } catch (Exception e) {
+                Polytone.LOGGER.error("Error rendering polytone viewpoint features", e);
+            }
+        } finally {
+            capturedBlockEntities.clear();
+            RenderSystem.outputColorTextureOverride = null;
+            RenderSystem.outputDepthTextureOverride = null;
+            mvStack.popMatrix();
+            RenderSystem.restoreProjectionMatrix();
+        }
+    }
+
+    // Same draw assembly as ShadowMapRenderer#drawVanillaTerrain: 26.2 packs section meshes into shared
+    // buffers, so each draw is a slice of one, and draws are grouped per buffer for drawMultipleIndexed.
+    private void drawTerrain(Minecraft mc, Matrix4f view, List<ChunkSectionLayer> layers) {
+        if (sections.isEmpty()) return;
+
+        SectionRenderDispatcher dispatcher =
+                ((LevelRendererShadowAccessor) mc.levelRenderer).polytone$getSectionRenderDispatcher();
+        if (dispatcher == null) return;
+
+        GpuTextureView atlasView = mc.getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS).getTextureView();
+        int atlasW = atlasView.getWidth(0);
+        int atlasH = atlasView.getHeight(0);
+
+        EnumMap<ChunkSectionLayer, Int2ObjectOpenHashMap<List<RenderPass.Draw<GpuBufferSlice[]>>>> drawsPerLayer =
+                new EnumMap<>(ChunkSectionLayer.class);
+        for (ChunkSectionLayer layer : layers) drawsPerLayer.put(layer, new Int2ObjectOpenHashMap<>());
+        List<DynamicUniforms.ChunkSectionInfo> infos = new ArrayList<>();
+        int maxIndices = 0;
+        long now = Util.getMillis();
+
+        // read only under the lock: an upload here would move allocations under the main pass's frozen draws
+        dispatcher.lock();
+        try {
+            for (SectionRenderDispatcher.RenderSection section : sections) {
+                SectionMesh mesh = section.getSectionMesh();
+                BlockPos origin = section.getRenderOrigin();
+                int infoIndex = -1;
+                for (ChunkSectionLayer layer : layers) {
+                    SectionMesh.SectionDraw draw = mesh.getSectionDraw(layer);
+                    SectionRenderDispatcher.RenderSectionBufferSlice slice = dispatcher.getRenderSectionSlice(mesh, layer);
+                    if (draw == null || slice == null) continue;
+                    if (draw.hasCustomIndexBuffer() && slice.indexBuffer() == null) continue;
+                    if (infoIndex == -1) {
+                        infoIndex = infos.size();
+                        infos.add(new DynamicUniforms.ChunkSectionInfo(new Matrix4f(view),
+                                origin.getX(), origin.getY(), origin.getZ(),
+                                section.getVisibility(now), atlasW, atlasH));
+                    }
+                    VertexFormat vertexFormat = layer.pipeline().getVertexFormatBinding(0);
+                    GpuBuffer vertexBuffer = slice.vertexBuffer();
+                    int bufferGroup = 31 * 173 + vertexBuffer.hashCode();
+
+                    int firstIndex = 0;
+                    GpuBuffer indexBuffer;
+                    IndexType indexType;
+                    if (!draw.hasCustomIndexBuffer()) {
+                        maxIndices = Math.max(maxIndices, draw.indexCount());
+                        indexBuffer = null;
+                        indexType = null;
+                    } else {
+                        indexBuffer = slice.indexBuffer();
+                        indexType = draw.indexType();
+                        bufferGroup = 31 * bufferGroup + indexBuffer.hashCode();
+                        bufferGroup = 31 * bufferGroup + indexType.hashCode();
+                        firstIndex = (int) (slice.indexBufferOffset() / indexType.bytes);
+                    }
+                    int baseVertex = (int) (slice.vertexBufferOffset() / vertexFormat.getVertexSize());
+                    int idx = infoIndex;
+                    drawsPerLayer.get(layer).computeIfAbsent(bufferGroup, k -> new ArrayList<>())
+                            .add(new RenderPass.Draw<>(0, vertexBuffer, indexBuffer, indexType,
+                                    firstIndex, draw.indexCount(), baseVertex,
+                                    (slices, uploader) -> uploader.upload("ChunkSection", slices[idx])));
+                }
+            }
+        } finally {
+            dispatcher.unlock();
+        }
+        if (infos.isEmpty()) return;
+
+        GpuBufferSlice[] slices = RenderSystem.getDynamicUniforms()
+                .writeChunkSections(infos.toArray(new DynamicUniforms.ChunkSectionInfo[0]));
+
+        RenderSystem.AutoStorageIndexBuffer sequential = RenderSystem.getSequentialBuffer(PrimitiveTopology.QUADS);
+        GpuBuffer sharedIndexBuffer = maxIndices == 0 ? null : sequential.getBuffer(maxIndices);
+        IndexType sharedIndexType = maxIndices == 0 ? null : sequential.type();
+
+        GpuSampler sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR, true);
+        try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
+                () -> "Polytone viewpoint terrain", colorTextureView, Optional.empty(),
+                depthTextureView, OptionalDouble.empty())) {
+            RenderSystem.bindDefaultUniforms(pass);
+            pass.setUniform("Projection", projectionBuffer.slice()); // after the defaults: last bind wins
+            pass.bindTexture("Sampler2", mc.gameRenderer.lightmap(),
+                    RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR));
+            for (ChunkSectionLayer layer : layers) {
+                pass.setPipeline(layer.pipeline());
+                pass.bindTexture("Sampler0", atlasView, sampler);
+                for (var draws : drawsPerLayer.get(layer).values()) {
+                    if (draws.isEmpty()) continue;
+                    pass.drawMultipleIndexed(draws, sharedIndexBuffer, sharedIndexType, List.of("ChunkSection"), slices);
+                }
+            }
+        }
+    }
+
+    /**
+     * Sections that can reach the viewpoint's volume, regardless of camera visibility. The volume is
+     * centred on the VIEWPOINT, not the camera, so section centres are offset by the eye before the
+     * test — the one place the generalisation actually differs from the shadow map, whose volume is
+     * always camera-centred.
+     *
+     * <p>NOTE: only ALREADY-COMPILED meshes can be drawn. Sodium builds sections on demand by camera
+     * need, so terrain the player has never looked at is simply absent until it gets built. That is a
+     * build-queue limit, not a culling one, and it is inherent to drawing existing buffers.</p>
+     */
+    private void collectSections(Minecraft mc, ShadowCasterVolume volume, Vec3 camPos, Vector3f eye,
+                                 List<ChunkSectionLayer> layers) {
+        sections.clear();
+        capturedBlockEntities.clear();
+        ViewArea viewArea = ((LevelRendererShadowAccessor) mc.levelRenderer).polytone$getViewArea();
+        if (viewArea == null) return;
+
+        for (SectionRenderDispatcher.RenderSection section : viewArea.sections) {
+            SectionMesh mesh = section.getSectionMesh();
+            if (!mesh.hasRenderableLayers()) continue;
+            boolean any = false;
+            for (ChunkSectionLayer layer : layers) {
+                if (!mesh.isEmpty(layer)) { any = true; break; }
+            }
+            if (!any) continue;
+
+            BlockPos origin = section.getRenderOrigin();
+            if (volume.intersects((float) (origin.getX() + 8 - camPos.x) - eye.x,
+                    (float) (origin.getY() + 8 - camPos.y) - eye.y,
+                    (float) (origin.getZ() + 8 - camPos.z) - eye.z, 8f, 8f, 8f)) {
+                sections.add(section);
+                // vanilla path only; under Sodium these meshes are empty and the replay supplies them
+                capturedBlockEntities.addAll(mesh.getRenderableBlockEntities());
+            }
+        }
+    }
+
+    private void ensureTarget(int resolution) {
+        GpuDevice device = RenderSystem.getDevice();
+        if (projectionBuffer == null) {
+            projectionBuffer = device.createBuffer(() -> "Polytone viewpoint projection UBO",
+                    GpuBuffer.USAGE_COPY_DST | GpuBuffer.USAGE_UNIFORM, RenderSystem.PROJECTION_MATRIX_UBO_SIZE);
+        }
+        if (depthTexture == null || allocatedResolution != resolution) {
+            closeTextures();
+            allocatedResolution = resolution;
+            depthTexture = device.createTexture(() -> "Polytone viewpoint depth",
+                    GpuTexture.USAGE_RENDER_ATTACHMENT | GpuTexture.USAGE_TEXTURE_BINDING,
+                    GpuFormat.D32_FLOAT, resolution, resolution, 1, 1);
+            depthTextureView = device.createTextureView(depthTexture);
+            colorTexture = device.createTexture(() -> "Polytone viewpoint color",
+                    GpuTexture.USAGE_RENDER_ATTACHMENT,
+                    GpuFormat.RGBA8_UNORM, resolution, resolution, 1, 1);
+            colorTextureView = device.createTextureView(colorTexture);
+        }
+    }
+
+    private void closeTextures() {
+        if (depthTexture != null) {
+            depthTextureView.close();
+            depthTexture.close();
+            colorTextureView.close();
+            colorTexture.close();
+            depthTexture = null;
+            depthTextureView = null;
+            colorTexture = null;
+            colorTextureView = null;
+        }
+    }
+
+    public void close() {
+        closeTextures();
+        if (projectionBuffer != null) {
+            projectionBuffer.close();
+            projectionBuffer = null;
+        }
+        if (uniforms != null) {
+            uniforms.close();
+            uniforms = null;
+        }
+        allocatedResolution = -1;
+        hasRendered = false;
+        renderedLevel = null;
+        renderedLateralHalf = 0f;
+        sections.clear();
+        capturedBlockEntities.clear();
+    }
+}
