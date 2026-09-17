@@ -43,6 +43,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public class PostChainsManager extends ContentManager<PostChainActivator> {
 
@@ -78,6 +79,12 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
     private TextureTarget worldDepthSnapshot;
     private boolean worldDepthCaptured = false;
 
+    // The chains deferred to the after-hand stage for THIS frame, in priority order. Filled by
+    // addChainsToFrameGraph, consumed by runChainsAfterHand. Render thread only.
+    private final List<ActiveChain> deferredAfterHand = new ArrayList<>();
+    private List<Identifier> lastStagingIds = List.of();
+    private int lastStagingSplit = -1;
+
     public PostChainsManager() {
         super(Spec.of("Post chain", () -> PostChainActivator.CODEC)
                 .wikiPage("Shaders")
@@ -111,6 +118,10 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         samplersByPassShader.clear();
         // Chains are rebuilt on reload, so a pack that fixed its targets must be able to report again
         warnedChains.clear();
+        // Holds PostChains a reload closes, and the staging is worth re-logging for the new set
+        deferredAfterHand.clear();
+        lastStagingIds = List.of();
+        lastStagingSplit = -1;
     }
 
     private GpuBufferSlice emptyShadowUbo() {
@@ -218,6 +229,9 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         synchronized (activators) {
             for (var a : activators) a.close();
         }
+        deferredAfterHand.clear();
+        lastStagingIds = List.of();
+        lastStagingSplit = -1;
         if (globalUniforms != null) {
             globalUniforms.close();
             globalUniforms = null;
@@ -248,40 +262,92 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         }
     }
 
-    private List<PostChain> activeChains() {
+    /** An active chain paired with the id of the json that activated it - PostChain itself has no id. */
+    private record ActiveChain(Identifier id, PostChain chain) {
+    }
+
+    // In ascending `priority` order: `activators` is filled from Parsed.SortedMap#entrySet, which sorts by
+    // the json's optional "priority" int (ties falling back to insertion order). A pack's chain list is ONE
+    // ordered program - every chain reads and rewrites minecraft:main - so this order is data flow, and
+    // firstDeferrable below relies on it.
+    private List<ActiveChain> activeChains() {
         ShaderManager shaderManager = Minecraft.getInstance().getShaderManager();
-        List<PostChain> active = new ArrayList<>();
+        List<ActiveChain> active = new ArrayList<>();
         synchronized (activators) {
             for (var a : activators) {
                 PostChain chain = a.getPostChain(shaderManager);
-                if (chain != null) active.add(chain);
+                if (chain != null) active.add(new ActiveChain(a.postChainId(), chain));
             }
         }
         return active;
     }
 
-    private boolean hasActiveChains() {
-        synchronized (activators) {
-            for (var a : activators) {
-                if (a.isActive()) return true;
-            }
+    // The after-hand stage runs strictly later than the WHOLE level frame graph, so it may only take a
+    // SUFFIX of the priority order: a chain is deferrable only if every chain after it is deferrable too.
+    // Deferring by capability alone silently reorders the pack's program - shadow/AO composites landing on
+    // top of fog, a chain reading minecraft:main after a later chain rewrote its alpha, target writers
+    // running after their readers - which broke Recrafted's fog, VL, clouds and shadow face occlusion.
+    // See AI Memory/polytone/after_hand_stage_order.md. The general rule: a stage boundary is only safe
+    // where no chain after it in priority order needs the earlier stage.
+    private static int firstDeferrable(List<ActiveChain> ordered) {
+        int i = ordered.size();
+        while (i > 0 && canRunAfterHand(ordered.get(i - 1).chain())) i--;
+        return i;
+    }
+
+    // There is otherwise no way to see the staging, and a silent reorder costs a day of shader debugging.
+    // Naming the chain that stopped the walk tells a pack author exactly which one to change to get more of
+    // its stack after the hand.
+    private void logStaging(List<ActiveChain> ordered, int split) {
+        // Runs every frame, so the unchanged case must not allocate: compare against the last staging
+        // in place and only build the message when the split or the active set actually moved.
+        if (split == lastStagingSplit && sameIds(ordered, lastStagingIds)) return;
+        lastStagingSplit = split;
+        List<Identifier> ids = new ArrayList<>(ordered.size());
+        for (ActiveChain c : ordered) ids.add(c.id());
+        lastStagingIds = ids;
+
+        String level = ordered.subList(0, split).stream().map(c -> c.id().toString())
+                .collect(Collectors.joining(", "));
+        String afterHand = ordered.subList(split, ordered.size()).stream().map(c -> c.id().toString())
+                .collect(Collectors.joining(", "));
+        Polytone.LOGGER.info("Post chains: level=[{}] after_hand=[{}]{}", level, afterHand,
+                split > 0 ? " (held back by " + ordered.get(split - 1).id() + ")" : "");
+    }
+
+    private static boolean sameIds(List<ActiveChain> ordered, List<Identifier> ids) {
+        if (ordered.size() != ids.size()) return false;
+        for (int i = 0; i < ids.size(); i++) {
+            if (!ordered.get(i).id().equals(ids.get(i))) return false;
         }
-        return false;
+        return true;
     }
 
     // Level-FrameGraph placement. Runs before the first-person hand is drawn, so depth-reading chains here
     // don't see held items. Always invoked: when post_chains_after_hand is off it hosts every chain, and when
-    // it is on it hosts only the chains runChainsAfterHand cannot (see canRunAfterHand) - the vanilla sorting
-    // targets live in this graph and nowhere else, so a chain reading minecraft:translucent has to run here.
+    // it is on it hosts everything up to the deferrable suffix - the vanilla sorting targets live in this
+    // graph and nowhere else, so a chain reading minecraft:translucent has to run here.
+    //
+    // This is also where the frame's split is DECIDED, once, and stashed for runChainsAfterHand, so the two
+    // stages can never disagree about who hosts what.
     public void addChainsToFrameGraph(int width, int height, LevelTargetBundle targets, FrameGraphBuilder frameGraphBuilder,
                                       GpuBufferSlice fog, CameraRenderState cameraRenderState) {
         Polytone.POST_TARGETS.ensureAllocated(width, height);
         PostChain.TargetBundle bundle = Polytone.POST_TARGETS.wrap(targets, frameGraphBuilder);
-        boolean afterHand = Polytone.CONFIGS.postChainsAfterHand.get();
-        for (PostChain chain : activeChains()) {
-            if (afterHand && canRunAfterHand(chain)) continue; // runChainsAfterHand will host it
-            if (!bundleSatisfies(bundle, chain, "the level frame graph")) continue;
-            chain.addToFrame(frameGraphBuilder, width, height, bundle);
+
+        List<ActiveChain> ordered = activeChains();
+        int split = Polytone.CONFIGS.postChainsAfterHand.get() ? firstDeferrable(ordered) : ordered.size();
+        logStaging(ordered, split);
+
+        deferredAfterHand.clear();
+        deferredAfterHand.addAll(ordered.subList(split, ordered.size()));
+
+        for (ActiveChain active : ordered.subList(0, split)) {
+            // An undeferrable chain that is also unsatisfiable here is skipped, but it still acted as a
+            // barrier above: the split must not depend on bundleSatisfies, since a target missing at runtime
+            // (Improved Transparency off) would otherwise let the suffix swallow the rest of the stack.
+            if (!bundleSatisfies(bundle, active.chain(), "the level frame graph")) continue;
+            active.chain().addToFrame(frameGraphBuilder, width, height, bundle);
         }
     }
 
@@ -320,7 +386,9 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
 
     public void snapshotWorldDepth(RenderTarget main) {
         worldDepthCaptured = false;
-        if (!hasActiveChains()) return;
+        // Nothing deferred means no after-hand stage at all, so skip the full-screen depth copy and the
+        // combine that would follow it.
+        if (deferredAfterHand.isEmpty()) return;
         ensureSnapshotSized(main.width, main.height);
         worldDepthSnapshot.copyDepthFrom(main);
         worldDepthCaptured = true;
@@ -330,13 +398,9 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
     public void runChainsAfterHand(RenderTarget main, GraphicsResourceAllocator resourceAllocator) {
         if (!worldDepthCaptured) return;
         worldDepthCaptured = false;
-
-        List<PostChain> active = new ArrayList<>();
-        for (PostChain chain : activeChains()) {
-            // Chains needing a vanilla sorting target already ran in the level frame graph
-            if (canRunAfterHand(chain)) active.add(chain);
-        }
-        if (active.isEmpty()) return;
+        // Exactly the suffix addChainsToFrameGraph deferred this frame - never re-derived, so the two stages
+        // cannot disagree and no chain can be hosted twice or dropped.
+        if (deferredAfterHand.isEmpty()) return;
 
         combineWorldDepthIntoMain(main);
 
@@ -353,9 +417,9 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
                 PostChain.TargetBundle.of(PostChain.MAIN_TARGET_ID, mainHandle), builder);
 
         boolean any = false;
-        for (PostChain chain : active) {
-            if (!bundleSatisfies(bundle, chain, "the after-hand stage")) continue;
-            chain.addToFrame(builder, main.width, main.height, bundle);
+        for (ActiveChain active : deferredAfterHand) {
+            if (!bundleSatisfies(bundle, active.chain(), "the after-hand stage")) continue;
+            active.chain().addToFrame(builder, main.width, main.height, bundle);
             any = true;
         }
         if (any) builder.execute(resourceAllocator);

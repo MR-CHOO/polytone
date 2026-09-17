@@ -65,6 +65,11 @@ public final class PostChainActivator {
         return active;
     }
 
+    // PostChain carries no id of its own, so this is the only name the staging log can print
+    public Identifier postChainId() {
+        return postChainId;
+    }
+
     public boolean wantsShadowMap() {
         return active && useShadowMap;
     }
