@@ -518,11 +518,13 @@ public class ViewpointInstance {
             closeTextures();
             allocatedResolution = resolution;
             depthTexture = device.createTexture(() -> "Polytone viewpoint depth",
-                    GpuTexture.USAGE_RENDER_ATTACHMENT | GpuTexture.USAGE_TEXTURE_BINDING,
+                    // COPY_DST: 26.2's clearColorAndDepthTextures refuses textures without it
+                    GpuTexture.USAGE_RENDER_ATTACHMENT | GpuTexture.USAGE_TEXTURE_BINDING
+                            | GpuTexture.USAGE_COPY_DST,
                     GpuFormat.D32_FLOAT, resolution, resolution, 1, 1);
             depthTextureView = device.createTextureView(depthTexture);
             colorTexture = device.createTexture(() -> "Polytone viewpoint color",
-                    GpuTexture.USAGE_RENDER_ATTACHMENT,
+                    GpuTexture.USAGE_RENDER_ATTACHMENT | GpuTexture.USAGE_COPY_DST,
                     GpuFormat.RGBA8_UNORM, resolution, resolution, 1, 1);
             colorTextureView = device.createTextureView(colorTexture);
         }
