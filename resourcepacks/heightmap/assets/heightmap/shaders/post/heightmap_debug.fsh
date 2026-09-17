@@ -8,8 +8,8 @@
 //
 // The map is ORTHOGRAPHIC, so its depth is LINEAR - no reconstruction needed, which is exactly why
 // a heightmap is the right first viewpoint to build. The captured band is pinned in ABSOLUTE world
-// Y, so depth 0 is always y=320 and depth 1 always y=-192 no matter where the player is standing,
-// and this decode has no camera term at all. These constants MUST match HeightMapRenderer's
+// Y, so depth 1 is always y=320 and depth 0 always y=-192 (reversed-Z on 26.x: near = 1, far = 0)
+// no matter where the player is standing, and this decode has no camera term at all. These constants MUST match HeightMapRenderer's
 // WORLD_TOP / WORLD_BOTTOM. Nothing is exposed as a uniform on purpose: the spike adds no UBO.
 
 uniform sampler2D InSampler;   // scene colour (pass input "In")
@@ -37,12 +37,12 @@ void main() {
     vec2 uv = (texCoord - lo) / (hi - lo);
     float depth = texture(InHeight, uv).r;
 
-    // Far plane (nothing drawn) reads 1.0 - paint it flat so empty columns are obvious rather than
-    // looking like "the ground is very low".
-    if (depth >= 0.999) {
+    // Far plane (nothing drawn) reads 0.0 under reversed-Z - paint it flat so empty columns are
+    // obvious rather than looking like "the ground is very low".
+    if (depth <= 0.001) {
         fragColor = vec4(0.15, 0.0, 0.2, 1.0); // purple = no geometry in this column
     } else {
-        float worldY = WORLD_TOP - depth * (WORLD_TOP - WORLD_BOTTOM);
+        float worldY = WORLD_BOTTOM + depth * (WORLD_TOP - WORLD_BOTTOM);
 
         // SMOOTH grayscale over the useful build range - this is the actual depth readout. Dark at
         // bedrock, bright at the build limit, sea level around mid grey.

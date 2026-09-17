@@ -27,6 +27,10 @@ import java.nio.ByteBuffer;
  * } vp;                    // give it an INSTANCE name so two viewpoints in one shader can't collide
  * </pre>
  *
+ * <p>Depth is REVERSED-Z, same as the vanilla 26.x main depth buffer: near = 1, far = 0, and a texel
+ * with nothing drawn reads 0. {@code ViewProj} produces the same convention, so a shader comparing a
+ * projected depth against the sampled one tests {@code >} for "in front of".</p>
+ *
  * <p>Same std140 rule as {@code PolyGlobals}: shaders may declare only a LEADING prefix of the
  * members, so never reorder or insert — append only.</p>
  *

@@ -222,13 +222,16 @@ public class ViewpointInstance {
         float far = (float) vp.far().evaluate();
         double orthoSize = vp.orthographicSize();
 
+        // Reversed-Z like vanilla Projection: near and far go in swapped, so near lands at depth 1 and
+        // far at 0. The replayed terrain pipelines depth test GREATER, so a forward-Z matrix draws nothing.
+        boolean zZeroToOne = RenderSystem.getDevice().getDeviceInfo().isZZeroToOne();
         Matrix4f proj;
         float lateralHalf;
         if (orthoSize > 0) {
             lateralHalf = (float) (orthoSize * 0.5);
-            proj = new Matrix4f().ortho(-lateralHalf, lateralHalf, -lateralHalf, lateralHalf, near, far);
+            proj = new Matrix4f().ortho(-lateralHalf, lateralHalf, -lateralHalf, lateralHalf, far, near, zZeroToOne);
         } else {
-            proj = new Matrix4f().perspective((float) Math.toRadians(vp.fov().evaluate()), 1.0f, near, far);
+            proj = new Matrix4f().perspective((float) Math.toRadians(vp.fov().evaluate()), 1.0f, far, near, zZeroToOne);
             // A cone doesn't fit a box; use the far-plane half-width so the cull can only ever be
             // too generous, never too tight.
             lateralHalf = (float) (far * Math.tan(Math.toRadians(vp.fov().evaluate()) * 0.5));
@@ -255,7 +258,7 @@ public class ViewpointInstance {
                     .putMat4f(proj).get();
             device.createCommandEncoder().writeToBuffer(projectionBuffer.slice(), bb);
         }
-        device.createCommandEncoder().clearColorAndDepthTextures(colorTexture, new Vector4f(0, 0, 0, 0), depthTexture, 1.0);
+        device.createCommandEncoder().clearColorAndDepthTextures(colorTexture, new Vector4f(0, 0, 0, 0), depthTexture, 0.0);
 
         RenderSystem.setShaderFog(shaderFog);
 
