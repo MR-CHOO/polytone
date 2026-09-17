@@ -25,6 +25,7 @@ public class BlockExp extends PolyExp implements IBlockExp {
                         c.addInput("o", BlockProxy.class);
                         c.addInput("object", BlockProxy.class);
                         c.addInput("v", double.class);
+                        c.addInput("value", double.class);
                     }
             );
 
@@ -48,6 +49,7 @@ public class BlockExp extends PolyExp implements IBlockExp {
         vars.put("random", rand);
         vars.put("r", rand);
         vars.put("v", v);
+        vars.put("value", v);
         return executeDouble(vars);
     }
 

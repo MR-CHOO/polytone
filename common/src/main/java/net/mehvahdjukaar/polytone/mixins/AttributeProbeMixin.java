@@ -1,8 +1,8 @@
 package net.mehvahdjukaar.polytone.mixins;
 
 import net.mehvahdjukaar.polytone.Polytone;
-import net.mehvahdjukaar.polytone.common.attributes.DynamicAttributes;
-import net.mehvahdjukaar.polytone.common.attributes.IExtendedInterpolator;
+import net.mehvahdjukaar.polytone.common.attributes.DynamicAttributeContext;
+import net.mehvahdjukaar.polytone.common.attributes.IExtendedAttrInterpolator;
 import net.minecraft.core.Holder;
 import net.minecraft.world.attribute.EnvironmentAttributeProbe;
 import net.minecraft.world.attribute.SpatialAttributeInterpolator;
@@ -24,15 +24,15 @@ public class AttributeProbeMixin {
     @Inject(method = {"lambda$tick$0","method_75687"}, at = @At("HEAD"))
     private void poly$accumulateInner(double weight, Holder<Biome> holder, CallbackInfo ci) {
         if (Polytone.BIOME_MODIFIERS.hasPostAttributes()) {
-            SpatialAttributeInterpolator postInterpolator = ((IExtendedInterpolator) this.biomeInterpolator)
+            SpatialAttributeInterpolator postInterpolator = ((IExtendedAttrInterpolator) this.biomeInterpolator)
                     .polytone$getOrCreatePostInterpolator();
             if (postInterpolator != null) {
                 postInterpolator.accumulate(weight, Polytone.BIOME_MODIFIERS.getPostAttributes(holder.value()));
             }
         }
         //only paid for when a pack actually installed a colormap or expression backed attribute
-        if (DynamicAttributes.hasDynamicLayers) {
-            ((IExtendedInterpolator) this.biomeInterpolator).polytone$accumulateBiome(weight, holder);
+        if (DynamicAttributeContext.hasDynamicLayers) {
+            ((IExtendedAttrInterpolator) this.biomeInterpolator).polytone$accumulateBiomeWeight(weight, holder);
         }
     }
 }
