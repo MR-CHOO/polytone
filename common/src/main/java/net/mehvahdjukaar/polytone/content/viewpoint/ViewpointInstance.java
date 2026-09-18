@@ -114,6 +114,11 @@ public class ViewpointInstance {
      * EXPRESSION, so it is re-read every frame and may change at runtime — never cache a decision
      * derived from it.
      */
+    /** True while this viewpoint's own pass is drawing - its textures are attachments, not inputs. */
+    public boolean isRendering() {
+        return insidePass;
+    }
+
     public void renderIfNeeded(Viewpoint vp, ViewpointFilters.Resolved filters, GpuBufferSlice shaderFog, Camera cam) {
         if (insidePass) return; // a nested level render must not re-enter and clear our section list
 

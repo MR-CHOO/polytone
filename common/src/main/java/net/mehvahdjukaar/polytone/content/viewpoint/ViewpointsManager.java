@@ -125,7 +125,11 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
             String name = e.getValue().depthSampler();
             if (!declaredUniforms.contains(name) || !bound.add(name)) continue;
             ViewpointInstance inst = instances.get(e.getKey());
-            GpuTextureView texture = inst == null ? null : inst.getDepthTexture();
+            // A viewpoint re-renders terrain with the PACK's terrain shaders, so a core shader that samples
+            // this viewpoint would be sampling the depth attachment it is writing - undefined on GL, a
+            // validation error on Vulkan. Inside its own pass it gets the missing texture instead;
+            // other viewpoints, already rendered this frame, still bind normally.
+            GpuTextureView texture = inst == null || inst.isRendering() ? null : inst.getDepthTexture();
             if (texture == null) {
                 texture = Minecraft.getInstance().getTextureManager()
                         .getTexture(TextureManager.INTENTIONAL_MISSING_TEXTURE).getTextureView();
