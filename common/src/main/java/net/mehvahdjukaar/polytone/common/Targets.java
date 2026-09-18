@@ -83,6 +83,29 @@ public record Targets(List<Entry> entries) {
         return set;
     }
 
+    public boolean isEmpty() {
+        return entries.isEmpty();
+    }
+
+    /**
+     * Only the explicit entries, with NO fallback to the file's own id. {@link #compute} treats an empty
+     * list as "target the file path", which is right for a modifier file and wrong for a filter, where an
+     * empty list has to mean "no constraint". Same lenient-loading behaviour as compute.
+     */
+    public <T> Set<Holder<T>> resolveExplicit(Identifier fileId, HolderLookup.RegistryLookup<T> registry) {
+        Set<Holder<T>> set = new HashSet<>();
+        for (var entry : entries) {
+            try {
+                for (var holder : entry.get(registry)) set.add(holder);
+            } catch (Exception e) {
+                if (!Polytone.CONFIGS.isLenientLoading()) {
+                    throw new IllegalStateException("Failed to parse some target(s) for polytone file " + fileId, e);
+                }
+            }
+        }
+        return set;
+    }
+
     private static <T> @NonNull ResourceKey<T> regKey(Identifier fileId, HolderLookup.RegistryLookup<T> registry) {
         return ResourceKey.create((ResourceKey<? extends Registry<T>>) registry.key(), fileId);
     }

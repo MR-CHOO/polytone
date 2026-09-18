@@ -40,6 +40,7 @@ import java.util.Set;
 public class ViewpointsManager extends ContentManager<Viewpoint> {
 
     private final Map<Identifier, Viewpoint> viewpoints = new LinkedHashMap<>();
+    private final Map<Identifier, ViewpointFilters.Resolved> filters = new HashMap<>();
     // GPU state, kept ACROSS reloads where the id survives, so a reload doesn't drop every texture
     // and re-render everything on the next frame.
     private final Map<Identifier, ViewpointInstance> instances = new HashMap<>();
@@ -94,6 +95,8 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
             }
             if (vp.hasUniformBlock()) PolytoneBuiltInUniformsSet.register(vp.uniformBlock());
             viewpoints.put(j.getKey(), vp);
+            // Tags and ids resolved once here, so a render only ever does set lookups
+            filters.put(j.getKey(), ViewpointFilters.resolve(vp, j.getKey(), access));
         }
     }
 
@@ -104,6 +107,7 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
     @Override
     protected void resetWithLevel(boolean logOff) {
         viewpoints.clear();
+        filters.clear();
         // Instances are NOT closed here: parse repopulates viewpoints immediately and surviving ids
         // reuse their textures. Orphans are collected in renderActive().
     }
@@ -176,7 +180,8 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
             if (!wanted.contains(e.getKey())) continue;
             if (!e.getValue().isActive()) continue;
             instances.computeIfAbsent(e.getKey(), k -> new ViewpointInstance())
-                    .renderIfNeeded(e.getValue(), shaderFog, cam);
+                    .renderIfNeeded(e.getValue(), filters.getOrDefault(e.getKey(), ViewpointFilters.Resolved.NONE),
+                            shaderFog, cam);
         }
 
         // Drop GPU state for viewpoints a reload removed, rather than leaking their textures.
