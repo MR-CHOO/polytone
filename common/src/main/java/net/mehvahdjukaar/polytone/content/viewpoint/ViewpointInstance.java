@@ -73,7 +73,7 @@ public class ViewpointInstance {
 
     private GpuTexture depthTexture = null;
     private GpuTextureView depthTextureView = null;
-    private GpuTexture colorTexture = null;   // never sampled yet; a render pass requires one
+    private GpuTexture colorTexture = null;   // sampled through color_sampler
     private GpuTextureView colorTextureView = null;
     private GpuBuffer projectionBuffer = null;
     private int allocatedResolution = -1;
@@ -102,10 +102,19 @@ public class ViewpointInstance {
         return depthTextureView;
     }
 
+    public GpuTextureView getColorTexture() {
+        return colorTextureView;
+    }
+
     /** Null until the first completed render; bind sites skip a null slice. */
     @Nullable
     public GpuBufferSlice getUniformsSlice() {
         return uniforms == null ? null : uniforms.getSlice();
+    }
+
+    /** True while this viewpoint's own pass is drawing - its textures are attachments, not inputs. */
+    public boolean isRendering() {
+        return insidePass;
     }
 
     /**
@@ -114,11 +123,6 @@ public class ViewpointInstance {
      * EXPRESSION, so it is re-read every frame and may change at runtime — never cache a decision
      * derived from it.
      */
-    /** True while this viewpoint's own pass is drawing - its textures are attachments, not inputs. */
-    public boolean isRendering() {
-        return insidePass;
-    }
-
     public void renderIfNeeded(Viewpoint vp, GpuBufferSlice shaderFog, Camera cam) {
         if (insidePass) return; // a nested level render must not re-enter and clear our section list
 
@@ -534,7 +538,8 @@ public class ViewpointInstance {
                     GpuFormat.D32_FLOAT, resolution, resolution, 1, 1);
             depthTextureView = device.createTextureView(depthTexture);
             colorTexture = device.createTexture(() -> "Polytone viewpoint color",
-                    GpuTexture.USAGE_RENDER_ATTACHMENT | GpuTexture.USAGE_COPY_DST,
+                    GpuTexture.USAGE_RENDER_ATTACHMENT | GpuTexture.USAGE_TEXTURE_BINDING
+                            | GpuTexture.USAGE_COPY_DST,
                     GpuFormat.RGBA8_UNORM, resolution, resolution, 1, 1);
             colorTextureView = device.createTextureView(colorTexture);
         }

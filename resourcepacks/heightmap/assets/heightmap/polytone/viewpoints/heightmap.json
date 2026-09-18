@@ -9,5 +9,6 @@
   "terrain": ["solid", "cutout"],
   "resolution": 1024,
   "depth_sampler": "InHeight",
+  "color_sampler": "InHeightColor",
   "update_interval": 0
 }

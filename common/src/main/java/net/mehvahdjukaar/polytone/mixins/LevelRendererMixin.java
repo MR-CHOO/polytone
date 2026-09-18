@@ -8,10 +8,12 @@ import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.compat.CompatHandler;
 import net.mehvahdjukaar.polytone.content.particle.PreviewRenderTarget;
+import net.mehvahdjukaar.polytone.mixins.accessor.GameRendererAccessor;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LevelTargetBundle;
+import net.minecraft.client.renderer.fog.FogRenderer;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.state.level.LevelRenderState;
 import org.joml.Matrix4fc;
@@ -51,18 +53,17 @@ public class LevelRendererMixin {
                                boolean shouldRenderSky,
                                CallbackInfo ci) {
         // no render pass is open here, which the UBO writes below need.
-        // cameraState.projectionMatrix is the UN-BOBBED matrix; updateGlobalUniforms prefers the bobbed one
-        // GameRendererMixin captured for this frame and only falls back to this. The shadow pass and the
-        // viewpoints below deliberately keep the un-bobbed matrix - they fit their own frusta and must not
-        // inherit the camera's bob.
+        // un-bobbed fallback: updateGlobalUniforms prefers the bobbed matrix GameRendererMixin captured
         Polytone.POST_CHAINS.updateGlobalUniforms(cameraState.projectionMatrix, modelViewMatrix,
                 deltaTracker.getGameTimeDeltaTicks());
         Polytone.SHADER_EFFECTS.updateAll();
         // shadow map goes first so the post chains built into this frame's graph sample this frame's map
         Polytone.SHADOWS.renderer().renderShadowPassIfNeeded(terrainFog, Minecraft.getInstance().gameRenderer.mainCamera(),
                 modelViewMatrix, cameraState.projectionMatrix);
-        // viewpoints right after, for the same reason: no render pass is open for their UBO writes
-        Polytone.VIEWPOINTS.renderActive(terrainFog, Minecraft.getInstance().gameRenderer.mainCamera());
+        // viewpoints right after, for the same reason. No fog: it would be measured from the viewpoint's eye
+        GpuBufferSlice noFog = ((GameRendererAccessor) Minecraft.getInstance().gameRenderer).polytone$getFogRenderer()
+                .getBuffer(FogRenderer.FogMode.NONE);
+        Polytone.VIEWPOINTS.renderActive(noFog, Minecraft.getInstance().gameRenderer.mainCamera());
     }
 
     // after weather, the last world pass that depth tests
@@ -100,11 +101,8 @@ public class LevelRendererMixin {
                                     boolean shouldRenderSky,
                                     CallbackInfo ci,
                                     @Local FrameGraphBuilder frameGraphBuilder) {
-        // Always invoked, even when post_chains_after_hand is on. The vanilla sorting targets
-        // (minecraft:translucent and friends) exist ONLY inside this frame graph - their handles are dead
-        // once it finishes - so a chain reading one can never run after the hand and has to be hosted here.
-        // addChainsToFrameGraph decides per chain which stage owns it; with the config on it takes only that
-        // subset, and the rest still run later from GameRendererMixin so held items occlude depth effects.
+        // always invoked: the sorting targets only exist inside this graph, so with post_chains_after_hand on
+        // this still hosts every chain up to the last one that needs them
         RenderTarget mainTarget = Minecraft.getInstance().gameRenderer.mainRenderTarget();
         Polytone.POST_CHAINS.addChainsToFrameGraph(mainTarget.width, mainTarget.height, this.targets, frameGraphBuilder,
                 terrainFog, this.levelRenderState.cameraRenderState);

@@ -20,6 +20,7 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.server.packs.resources.PreparableReloadListener;
+import org.jspecify.annotations.Nullable;
 import org.lwjgl.system.MemoryStack;
 
 import java.util.ArrayList;
@@ -38,6 +39,8 @@ import java.util.Set;
  * viewpoint costs exactly nothing, which is what makes it safe for a pack to ship several.</p>
  */
 public class ViewpointsManager extends ContentManager<Viewpoint> {
+
+    private static final String[] SAMPLER_KEYS = {"depth_sampler", "color_sampler"};
 
     private final Map<Identifier, Viewpoint> viewpoints = new LinkedHashMap<>();
     // GPU state, kept ACROSS reloads where the id survives, so a reload doesn't drop every texture
@@ -69,9 +72,11 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
             if (obj.get("uniform_block") instanceof JsonPrimitive p && p.isString()) {
                 PolytoneBuiltInUniformsSet.register(p.getAsString());
             }
-            if (obj.get("depth_sampler") instanceof JsonPrimitive p && p.isString()
-                    && !p.getAsString().isEmpty() && !declared.contains(p.getAsString())) {
-                declared.add(p.getAsString());
+            for (String key : SAMPLER_KEYS) {
+                if (obj.get(key) instanceof JsonPrimitive p && p.isString()
+                        && !p.getAsString().isEmpty() && !declared.contains(p.getAsString())) {
+                    declared.add(p.getAsString());
+                }
             }
         }
         declaredSamplerNames = List.copyOf(declared);
@@ -89,7 +94,7 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
             if (j == null) continue;
             Viewpoint vp = j.getValue();
             if (!vp.isSamplable()) {
-                Polytone.LOGGER.warn("Viewpoint {} declares no depth_sampler, so nothing can ever read it - skipping", j.getKey());
+                Polytone.LOGGER.warn("Viewpoint {} declares neither depth_sampler nor color_sampler, so nothing can ever read it - skipping", j.getKey());
                 continue;
             }
             if (vp.hasUniformBlock()) PolytoneBuiltInUniformsSet.register(vp.uniformBlock());
@@ -109,29 +114,32 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
     }
 
     /**
-     * Binds each viewpoint's depth texture under its {@code depth_sampler} name, only on programs that
-     * declare it. Until the viewpoint has rendered, the missing texture stands in, the same way
-     * {@code InShadow} does, since a declared binding may not be left empty. The first viewpoint that
-     * names a sampler owns it.
+     * Binds each viewpoint's depth and colour textures under their {@code depth_sampler} /
+     * {@code color_sampler} names, only on programs that declare them. Until the viewpoint has rendered,
+     * the missing texture stands in, the same way {@code InShadow} does, since a declared binding may not
+     * be left empty. The first viewpoint that names a sampler owns it.
      */
     public void bindSamplers(RenderPass pass, Set<String> declaredUniforms) {
         if (viewpoints.isEmpty()) return;
         Set<String> bound = new HashSet<>();
         for (var e : viewpoints.entrySet()) {
-            String name = e.getValue().depthSampler();
-            if (!declaredUniforms.contains(name) || !bound.add(name)) continue;
+            Viewpoint vp = e.getValue();
             ViewpointInstance inst = instances.get(e.getKey());
-            // A viewpoint re-renders terrain with the PACK's terrain shaders, so a core shader that samples
-            // this viewpoint would be sampling the depth attachment it is writing - undefined on GL, a
-            // validation error on Vulkan. Inside its own pass it gets the missing texture instead;
-            // other viewpoints, already rendered this frame, still bind normally.
-            GpuTextureView texture = inst == null || inst.isRendering() ? null : inst.getDepthTexture();
-            if (texture == null) {
-                texture = Minecraft.getInstance().getTextureManager()
-                        .getTexture(TextureManager.INTENTIONAL_MISSING_TEXTURE).getTextureView();
-            }
-            pass.bindTexture(name, texture, RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
+            // not while it renders: its own terrain may be drawn with a shader sampling it
+            boolean readable = inst != null && !inst.isRendering();
+            bindSampler(pass, declaredUniforms, bound, vp.depthSampler(), readable ? inst.getDepthTexture() : null);
+            bindSampler(pass, declaredUniforms, bound, vp.colorSampler(), readable ? inst.getColorTexture() : null);
         }
+    }
+
+    private static void bindSampler(RenderPass pass, Set<String> declaredUniforms, Set<String> bound,
+                                    String name, @Nullable GpuTextureView texture) {
+        if (!declaredUniforms.contains(name) || !bound.add(name)) return;
+        if (texture == null) {
+            texture = Minecraft.getInstance().getTextureManager()
+                    .getTexture(TextureManager.INTENTIONAL_MISSING_TEXTURE).getTextureView();
+        }
+        pass.bindTexture(name, texture, RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
     }
 
     /**

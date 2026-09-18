@@ -2,7 +2,8 @@
 
 // SPIKE debug view for HeightMapRenderer (throwaway - goes away with the spike).
 //
-// Draws the top-down depth map in the bottom-left corner over the scene. The pass is a second
+// Draws the top-down depth map in the bottom-left corner over the scene (yellow border), and the same
+// capture's colour beside it (cyan border). The pass is a second
 // geometry pass rendered in the SAME frame as the shadow map; if this window shows plausible
 // terrain while shadows still look correct, two passes coexist.
 //
@@ -14,6 +15,7 @@
 
 uniform sampler2D InSampler;   // scene colour (pass input "In")
 uniform sampler2D InHeight;    // top-down depth map (Polytone binds it by name)
+uniform sampler2D InHeightColor; // the same capture's colour: lit, unfogged, alpha 0 where empty
 
 in vec2 texCoord;
 out vec4 fragColor;
@@ -29,6 +31,20 @@ void main() {
     // occupies the LAST VIEW_SIZE of y.
     vec2 lo = vec2(0.0, 1.0 - VIEW_SIZE);
     vec2 hi = vec2(VIEW_SIZE, 1.0);
+
+    // Colour capture in a second window right of the depth one, same uv mapping so the two line up.
+    vec2 colorLo = vec2(VIEW_SIZE, 1.0 - VIEW_SIZE);
+    vec2 colorHi = vec2(2.0 * VIEW_SIZE, 1.0);
+    if (all(greaterThanEqual(texCoord, colorLo)) && all(lessThanEqual(texCoord, colorHi))) {
+        vec2 uv = (texCoord - colorLo) / (colorHi - colorLo);
+        vec4 captured = texture(InHeightColor, uv);
+        // alpha 0 = nothing drawn in this column, same purple as the depth window
+        fragColor = captured.a < 0.004 ? vec4(0.15, 0.0, 0.2, 1.0) : vec4(captured.rgb, 1.0);
+        vec2 edge = min(uv, 1.0 - uv);
+        if (min(edge.x, edge.y) < 0.004) fragColor = vec4(0.1, 0.85, 1.0, 1.0);
+        return;
+    }
+
     if (any(lessThan(texCoord, lo)) || any(greaterThan(texCoord, hi))) {
         fragColor = scene;
         return;

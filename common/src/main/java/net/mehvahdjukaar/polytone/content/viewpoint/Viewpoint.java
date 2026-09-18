@@ -28,8 +28,9 @@ import java.util.Locale;
  * degrees wins here because every other camera-shaped value a pack will feed these ({@code c.pitch()},
  * {@code c.yaw()}, {@code sun_angle}) is already degrees.</p>
  *
- * <p>Captures depth: terrain by layer, plus entities and block entities when enabled. No colour capture
- * and no shader variants yet. The viewpoint still owns its
+ * <p>Captures depth and colour: terrain by layer, plus entities and block entities when enabled. Colour
+ * is lit but never fogged - a viewpoint's eye is nowhere near the player, so vanilla fog measured from
+ * it would be meaningless; consumers fog it themselves. No shader variants yet. The viewpoint still owns its
  * texture internally rather than writing into a named {@code post_target}; {@code post_targets} gained
  * {@code format} and {@code scale}, so that is now possible but not yet done.</p>
  *
@@ -46,7 +47,7 @@ public record Viewpoint(ISimpleExp x, ISimpleExp y, ISimpleExp z,
                         List<ChunkSectionLayer> terrainLayers,
                         boolean renderEntities, boolean renderBlockEntities, boolean renderCameraEntity,
                         int resolution,
-                        String depthSampler,
+                        String depthSampler, String colorSampler,
                         String uniformBlock,
                         ISimpleExp updateInterval,
                         ISimpleExp activationCondition) {
@@ -92,6 +93,8 @@ public record Viewpoint(ISimpleExp x, ISimpleExp y, ISimpleExp z,
                     i.optional("render_camera_entity", Codec.BOOL, true, Viewpoint::renderCameraEntity),
                     i.optional("resolution", Codec.INT, 1024, Viewpoint::resolution),
                     i.optional("depth_sampler", Codec.STRING, "", Viewpoint::depthSampler),
+                    // What the capture looked like: lit, unfogged, alpha 0 where nothing was drawn.
+                    i.optional("color_sampler", Codec.STRING, "", Viewpoint::colorSampler),
                     // GLSL uniform BLOCK name, not an instance name: the shader picks its own instance
                     // name (`} vp;`), which is what lets two viewpoints share member names.
                     i.optional("uniform_block", Codec.STRING, "", Viewpoint::uniformBlock),
@@ -113,7 +116,7 @@ public record Viewpoint(ISimpleExp x, ISimpleExp y, ISimpleExp z,
 
     /** A viewpoint nothing can sample is a no-op; the manager skips it and warns. */
     public boolean isSamplable() {
-        return !depthSampler.isEmpty();
+        return !depthSampler.isEmpty() || !colorSampler.isEmpty();
     }
 
     public boolean hasUniformBlock() {
