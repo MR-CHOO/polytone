@@ -15,7 +15,6 @@
   ],
   "client": [
     "BlockColorsAccessor",
-    "BlockStateModelSetMixin",
     "ModelBlockRendererMixin",
     "TerrainParticleMixin",
     "InventoryScreenMixin",

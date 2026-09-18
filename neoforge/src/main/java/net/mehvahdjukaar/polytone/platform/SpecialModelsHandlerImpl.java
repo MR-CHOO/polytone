@@ -1,8 +1,6 @@
 package net.mehvahdjukaar.polytone.platform;
 
-import net.mehvahdjukaar.polytone.content.expmodel.ExpressionModel;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
 import net.minecraft.client.resources.model.ModelDebugName;
 import net.minecraft.client.resources.model.ModelManager;
 import net.minecraft.client.resources.model.geometry.QuadCollection;
@@ -51,15 +49,5 @@ public class SpecialModelsHandlerImpl {
     }
 
     public static void finalizeAdditions() {
-    }
-
-    // Block model modifiers aren't wired up on NeoForge yet: nothing is baked, so no block is ever wrapped
-    @Nullable
-    public static ExpressionModel.Selector getBlockModelModifier(Identifier id) {
-        return null;
-    }
-
-    public static BlockStateModel wrapBlockModel(ExpressionModel.Selector selector) {
-        return selector.fallback();
     }
 }

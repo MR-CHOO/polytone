@@ -14,7 +14,6 @@ import net.mehvahdjukaar.polytone.content.biome.BiomeIdMapperManager;
 import net.mehvahdjukaar.polytone.compat.nautilus.PolytoneNautilus;
 import net.mehvahdjukaar.polytone.content.biome.BiomeKeysCache;
 import net.mehvahdjukaar.polytone.content.block.BlockPropertiesManager;
-import net.mehvahdjukaar.polytone.content.blockmodel.BlockModelModifiersManager;
 import net.mehvahdjukaar.polytone.content.block.BlockSetManager;
 import net.mehvahdjukaar.polytone.content.color.ColorManager;
 import net.mehvahdjukaar.polytone.content.colormap.ColormapsManager;
@@ -79,7 +78,6 @@ public class Polytone {
     private static PolytoneReloadManager COMPOUND_RELOADER;
     public static final GlobalExpressionsManager GLOBAL_EXPRESSION = new GlobalExpressionsManager();
     public static final BlockPropertiesManager BLOCK_MODIFIERS = new BlockPropertiesManager();
-    public static final BlockModelModifiersManager BLOCK_MODEL_MODIFIERS = new BlockModelModifiersManager();
     public static final FluidPropertiesManager FLUID_MODIFIERS = new FluidPropertiesManager();
     public static final CustomModelsManager CUSTOM_MODELS = new CustomModelsManager();
     public static final ItemModifiersManager ITEM_MODIFIERS = new ItemModifiersManager();
@@ -109,7 +107,7 @@ public class Polytone {
     public static final List<ContentManager<?>> MANAGERS = List.of(
             CONFIGS, GLOBAL_EXPRESSION,
             NOISES, SOUND_TYPES, BIOME_ID_MAPPERS, COLORMAPS, CUSTOM_PARTICLES, COLORS,
-            BLOCK_SET, BLOCK_MODIFIERS, BLOCK_MODEL_MODIFIERS, FLUID_MODIFIERS, CUSTOM_MODELS, ITEM_MODIFIERS, ITEM_MODELS,
+            BLOCK_SET, BLOCK_MODIFIERS, FLUID_MODIFIERS, CUSTOM_MODELS, ITEM_MODIFIERS, ITEM_MODELS,
             BIOME_MODIFIERS, LIGHTMAPS,
             // VIEWPOINTS before POST_CHAINS: its sampler and block names must exist before programs compile
             DIMENSION_MODIFIERS, POST_TARGETS, VIEWPOINTS, POST_CHAINS, SHADOWS, SHADER_EFFECTS,
