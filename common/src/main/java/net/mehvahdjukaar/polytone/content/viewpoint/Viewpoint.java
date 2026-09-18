@@ -8,7 +8,6 @@ import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
 
 /**
  * One {@code polytone/viewpoints/<name>.json}: render some subset of the world, from a scripted
@@ -29,8 +28,8 @@ import java.util.Optional;
  * degrees wins here because every other camera-shaped value a pack will feed these ({@code c.pitch()},
  * {@code c.yaw()}, {@code sun_angle}) is already degrees.</p>
  *
- * <p>Captures depth, with terrain by layer and entities / block entities through
- * {@link ViewpointFilters}. No colour capture and no shader variants yet. The viewpoint still owns its
+ * <p>Captures depth: terrain by layer, plus entities and block entities when enabled. No colour capture
+ * and no shader variants yet. The viewpoint still owns its
  * texture internally rather than writing into a named {@code post_target}; {@code post_targets} gained
  * {@code format} and {@code scale}, so that is now possible but not yet done.</p>
  *
@@ -45,8 +44,7 @@ public record Viewpoint(ISimpleExp x, ISimpleExp y, ISimpleExp z,
                         ISimpleExp orthographic, ISimpleExp fov,
                         ISimpleExp near, ISimpleExp far,
                         List<ChunkSectionLayer> terrainLayers,
-                        Optional<ViewpointFilters.EntityFilter> entities,
-                        Optional<ViewpointFilters.BlockEntityFilter> blockEntities,
+                        boolean renderEntities, boolean renderBlockEntities, boolean renderCameraEntity,
                         int resolution,
                         String depthSampler,
                         String uniformBlock,
@@ -83,14 +81,15 @@ public record Viewpoint(ISimpleExp x, ISimpleExp y, ISimpleExp z,
                     i.optional("near", ISimpleExp.CODEC, DEFAULT_NEAR, Viewpoint::near),
                     i.optional("far", ISimpleExp.CODEC, DEFAULT_FAR, Viewpoint::far),
                     i.optional("terrain", LAYER_CODEC.listOf(), DEFAULT_LAYERS, Viewpoint::terrainLayers),
-                    // Default FALSE, unlike the shadow map. Entity model state is rebuilt on the CPU
-                    // per viewpoint per render - the shadow map's single biggest expense - and it
-                    // scales with the number of viewpoints, so this is opt-in rather than opt-out.
-                    // `true`, `false` or a filter object - see ViewpointFilters. The bare boolean form
-                    // is the original schema and must keep parsing.
-                    i.optional("entities", ViewpointFilters.EntityFilter.CODEC, Optional.empty(), Viewpoint::entities),
-                    i.optional("block_entities", ViewpointFilters.BlockEntityFilter.CODEC, Optional.empty(),
-                            Viewpoint::blockEntities),
+                    // Same names as shadow_map.json. Default FALSE, unlike the shadow map: entity model
+                    // state is rebuilt on the CPU per viewpoint per render - the shadow map's single
+                    // biggest expense - and it scales with the number of viewpoints, so opt-in.
+                    i.optional("render_entities", Codec.BOOL, false, Viewpoint::renderEntities),
+                    i.optional("render_block_entities", Codec.BOOL, false, Viewpoint::renderBlockEntities),
+                    // The entity the camera views from - you, or whoever you spectate. Drawn even in first
+                    // person, which is what puts you in your own shadow; a near-pass capture of nearby
+                    // entities wants it, a height field may not want a column where you stand.
+                    i.optional("render_camera_entity", Codec.BOOL, true, Viewpoint::renderCameraEntity),
                     i.optional("resolution", Codec.INT, 1024, Viewpoint::resolution),
                     i.optional("depth_sampler", Codec.STRING, "", Viewpoint::depthSampler),
                     // GLSL uniform BLOCK name, not an instance name: the shader picks its own instance

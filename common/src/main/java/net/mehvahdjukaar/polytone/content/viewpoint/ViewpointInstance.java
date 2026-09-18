@@ -119,7 +119,7 @@ public class ViewpointInstance {
         return insidePass;
     }
 
-    public void renderIfNeeded(Viewpoint vp, ViewpointFilters.Resolved filters, GpuBufferSlice shaderFog, Camera cam) {
+    public void renderIfNeeded(Viewpoint vp, GpuBufferSlice shaderFog, Camera cam) {
         if (insidePass) return; // a nested level render must not re-enter and clear our section list
 
         Minecraft mc = Minecraft.getInstance();
@@ -145,7 +145,7 @@ public class ViewpointInstance {
             insidePass = true;
             boolean ok = true;
             try {
-                render(vp, filters, mc, cam, camPos, shaderFog);
+                render(vp, mc, cam, camPos, shaderFog);
             } catch (Exception e) {
                 ok = false;
                 Polytone.LOGGER.error("Polytone viewpoint render failed", e);
@@ -192,8 +192,7 @@ public class ViewpointInstance {
                 allocatedResolution, allocatedResolution, renderedThisFrame, ageSeconds, intervalSeconds, phase);
     }
 
-    private void render(Viewpoint vp, ViewpointFilters.Resolved filters, Minecraft mc, Camera cam, Vec3 camPos,
-                        GpuBufferSlice shaderFog) {
+    private void render(Viewpoint vp, Minecraft mc, Camera cam, Vec3 camPos, GpuBufferSlice shaderFog) {
         ensureTarget(vp.resolution());
 
         // ---- placement: ABSOLUTE world space in, camera-relative out ----------------------------
@@ -274,13 +273,13 @@ public class ViewpointInstance {
             // empty under it), so this is where they come from on that path.
             SodiumShadowRenderer.replayTerrain(mc, cam, camPos, view, proj,
                     volume, colorTextureView, depthTextureView, capturedBlockEntities);
-            if (filters.blockEntities() == null) capturedBlockEntities.clear();
+            if (!vp.renderBlockEntities()) capturedBlockEntities.clear();
         } else {
             drawTerrain(mc, view, vp.terrainLayers());
         }
 
-        if (filters.entities() != null || filters.blockEntities() != null) {
-            drawEntitiesAndBlockEntities(filters, mc, camPos, eye, view, volume, orthoSize > 0);
+        if (vp.renderEntities() || vp.renderBlockEntities()) {
+            drawEntitiesAndBlockEntities(vp, mc, camPos, eye, view, volume, orthoSize > 0);
         } else {
             capturedBlockEntities.clear();
         }
@@ -298,7 +297,7 @@ public class ViewpointInstance {
      * EVERYTHING below its top surface, which is right for anything standing on the ground and wrong
      * for anything flying.</p>
      */
-    private void drawEntitiesAndBlockEntities(ViewpointFilters.Resolved filters, Minecraft mc, Vec3 camPos, Vector3f eye,
+    private void drawEntitiesAndBlockEntities(Viewpoint vp, Minecraft mc, Vec3 camPos, Vector3f eye,
                                               Matrix4f view, ShadowCasterVolume volume, boolean ortho) {
         ClientLevel level = mc.level;
         if (level == null) return;
@@ -328,13 +327,10 @@ public class ViewpointInstance {
         try {
             PoseStack poseStack = new PoseStack();
 
-            ViewpointFilters.ResolvedEntities entityFilter = filters.entities();
-            if (entityFilter != null) {
-                Entity cameraEntity = mc.getCameraEntity();
+            if (vp.renderEntities()) {
+                Entity cameraEntity = vp.renderCameraEntity() ? null : mc.getCameraEntity();
                 for (Entity entity : level.entitiesForRendering()) {
-                    if (entity.isSpectator()) continue;
-                    // cheap set lookups first, before any bounding-box or extraction work
-                    if (!entityFilter.test(entity, cameraEntity)) continue;
+                    if (entity.isSpectator() || entity == cameraEntity) continue;
                     AABB bb = entity.getBoundingBox();
                     float radius = (float) Math.max(bb.getXsize(), Math.max(bb.getYsize(), bb.getZsize()));
                     Vec3 c = bb.getCenter();
@@ -346,7 +342,10 @@ public class ViewpointInstance {
                             !level.tickRateManager().isEntityFrozen(entity));
                     try {
                         EntityRenderState state = dispatcher.extractEntity(entity, partial);
-                        if (!entityFilter.features()) entityFilter.stripFeatures(state);
+                        // A name tag is a HUD element, not part of the entity: text draws with depth writes
+                        // on, so it would land in the depth as a floating slab. The state is ours alone.
+                        state.nameTag = null;
+                        state.scoreText = null;
                         dispatcher.submit(state, camState, state.x - camPos.x, state.y - camPos.y,
                                 state.z - camPos.z, poseStack, submitNodes);
                     } catch (Exception e) {
@@ -355,11 +354,9 @@ public class ViewpointInstance {
                 }
             }
 
-            ViewpointFilters.ResolvedBlockEntities beFilter = filters.blockEntities();
-            if (beFilter != null) {
+            if (vp.renderBlockEntities()) {
                 float partial = mc.getDeltaTracker().getGameTimeDeltaPartialTick(false);
                 for (BlockEntity be : capturedBlockEntities) {
-                    if (!beFilter.test(be)) continue;
                     BlockPos pos = be.getBlockPos();
                     poseStack.pushPose();
                     poseStack.translate(pos.getX() - camPos.x, pos.getY() - camPos.y, pos.getZ() - camPos.z);

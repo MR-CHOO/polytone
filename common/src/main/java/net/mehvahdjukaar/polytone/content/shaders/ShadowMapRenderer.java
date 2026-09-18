@@ -345,6 +345,10 @@ public class ShadowMapRenderer {
                             !level.tickRateManager().isEntityFrozen(entity));
                     try {
                         EntityRenderState state = entityDispatcher.extractEntity(entity, partialTick);
+                        // a name tag is a HUD element, not part of the entity: its text writes depth and
+                        // would cast a floating shadow. The extracted state is ours alone.
+                        state.nameTag = null;
+                        state.scoreText = null;
                         entityDispatcher.submit(state, camState, state.x - camPos.x, state.y - camPos.y,
                                 state.z - camPos.z, poseStack, submitNodes);
                     } catch (Exception e) {
