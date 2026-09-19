@@ -10,6 +10,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.WeakHashMap;
 
 public record ScreenModifier(int titleX, int titleY, int labelX, int labelY,
                              int xOff, int yOff, int wOff, int hOff,
@@ -32,7 +33,13 @@ public record ScreenModifier(int titleX, int titleY, int labelX, int labelY,
     }
 
     public boolean passesCondition() {
-        return condition == null || condition.evaluate() != 0;
+        if (condition == null) return true;
+        try {
+            return condition.evaluate() != 0;
+        } catch (Exception e) {
+            // screens outside a world, like the title screen, have no player or level to read
+            return false;
+        }
     }
 
     public ScreenModifier merge(ScreenModifier newMod) {
@@ -60,10 +67,30 @@ public record ScreenModifier(int titleX, int titleY, int labelX, int labelY,
         return this.specialOffsets.get(key);
     }
 
+    // widget -> {dx, dy, dw, x, y, w}: what our modifiers added, and where that left it
+    private static final Map<AbstractWidget, int[]> MODIFIED = new WeakHashMap<>();
+
+    // Safe to call more than once per widget: vanilla may move a widget after adding it or re-lay it out on
+    // resize, so this runs again once layout is done and only re-adds the offsets a layout pass reset
     public void modifyWidgets(AbstractWidget button) {
-        for (var m : this.widgetModifiers) {
-            m.maybeModify(button);
+        int[] m = MODIFIED.get(button);
+        if (m == null) {
+            int x = button.getX(), y = button.getY(), w = button.getWidth();
+            boolean matched = false;
+            for (var mod : this.widgetModifiers) {
+                matched |= mod.maybeModify(button);
+            }
+            if (!matched) return;
+            m = new int[]{button.getX() - x, button.getY() - y, button.getWidth() - w, 0, 0, 0};
+            MODIFIED.put(button, m);
+        } else {
+            if (button.getX() != m[3]) button.setX(button.getX() + m[0]);
+            if (button.getY() != m[4]) button.setY(button.getY() + m[1]);
+            if (button.getWidth() != m[5]) button.setWidth(button.getWidth() + m[2]);
         }
+        m[3] = button.getX();
+        m[4] = button.getY();
+        m[5] = button.getWidth();
     }
 
     public void renderExtras(GuiGraphicsExtractor poseStack, int mouseX, int mouseY, float partialTicks) {

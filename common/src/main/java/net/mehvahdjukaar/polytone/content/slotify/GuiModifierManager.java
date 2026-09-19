@@ -1,6 +1,8 @@
 package net.mehvahdjukaar.polytone.content.slotify;
 
 import com.google.gson.JsonElement;
+import com.mojang.serialization.DynamicOps;
+import com.mojang.serialization.JsonOps;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.codecui.SchemaCodec;
 import net.mehvahdjukaar.polytone.common.reloader.ContentManager;
@@ -9,12 +11,10 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
-import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.contents.TranslatableContents;
-import net.minecraft.resources.RegistryOps;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.inventory.*;
 import org.jetbrains.annotations.Nullable;
@@ -42,18 +42,24 @@ public class GuiModifierManager extends ContentManager<GuiModifier> {
                 .folders("gui_modifiers"));
     }
 
+    // Parsed on every resource reload, not on world login: nothing here needs a level (targets are classes,
+    // static menu types or titles). Level-scoped parsing meant screens shown outside a world, like TitleScreen,
+    // never saw their modifiers, and logging off cleared them for every screen until the next login.
     @Override
-    protected void resetWithLevel(boolean logOff) {
+    protected void applyNormal(AssetsFiles resources) {
         slotsByMenuId.clear();
         slotsByClass.clear();
         slotsByTitle.clear();
         byMenuId.clear();
         byClass.clear();
         byTitle.clear();
+        parse(resources, JsonOps.INSTANCE);
+        if (!slotsByMenuId.isEmpty() || !slotsByClass.isEmpty() || !slotsByTitle.isEmpty()) {
+            Polytone.LOGGER.info("Loaded GUI modifiers for: {} {} {} {}", slotsByMenuId.keySet(), slotsByClass.keySet(), byMenuId.keySet(), byClass.keySet());
+        }
     }
 
-    @Override
-    protected void parseWithLevel(AssetsFiles resources, RegistryOps<JsonElement> ops, HolderLookup.Provider access) {
+    private void parse(AssetsFiles resources, DynamicOps<JsonElement> ops) {
         Map<Identifier, JsonElement> jsons = resources.jsons();
         List<GuiModifier> allModifiers = new ArrayList<>();
 
@@ -112,13 +118,6 @@ public class GuiModifierManager extends ContentManager<GuiModifier> {
 
         }
 
-    }
-
-    @Override
-    protected void applyWithLevel(HolderLookup.Provider access, boolean isLogIn) {
-        if (!slotsByMenuId.isEmpty() || !slotsByClass.isEmpty() || !slotsByTitle.isEmpty()) {
-            Polytone.LOGGER.info("Loaded GUI modifiers for: {} {} {} {}", slotsByMenuId.keySet(), slotsByClass.keySet(), byMenuId.keySet(), byClass.keySet());
-        }
     }
 
     // Keeps only the candidates whose condition currently passes, then merges them (file order).

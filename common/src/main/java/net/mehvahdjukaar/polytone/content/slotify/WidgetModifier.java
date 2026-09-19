@@ -6,6 +6,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.mehvahdjukaar.polytone.PlatStuff;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.contents.TranslatableContents;
 
 import java.util.Optional;
 import java.util.function.Function;
@@ -16,6 +17,7 @@ public record WidgetModifier(int xOffset, int yOffset,
                              Optional<IntRange> targetX, Optional<IntRange> targetY,
                              Optional<IntRange> targetW, Optional<IntRange> targetH,
                              Optional<String> targetMessage,
+                             Optional<String> targetMessageKey,
                              Optional<String> targetClass) {
 
     public static final Codec<WidgetModifier> CODEC = RecordCodecBuilder.<WidgetModifier>create(i -> i.group(
@@ -25,14 +27,16 @@ public record WidgetModifier(int xOffset, int yOffset,
             Codec.STRING.optionalFieldOf("message").forGetter(WidgetModifier::message),
             IntRange.CODEC.optionalFieldOf("target_x").forGetter(WidgetModifier::targetX),
             IntRange.CODEC.optionalFieldOf("target_y").forGetter(WidgetModifier::targetY),
-            IntRange.CODEC.optionalFieldOf("target_width").forGetter(WidgetModifier::targetY),
-            IntRange.CODEC.optionalFieldOf("target_height").forGetter(WidgetModifier::targetY),
+            IntRange.CODEC.optionalFieldOf("target_width").forGetter(WidgetModifier::targetW),
+            IntRange.CODEC.optionalFieldOf("target_height").forGetter(WidgetModifier::targetH),
             Codec.STRING.optionalFieldOf("target_message").forGetter(WidgetModifier::targetMessage),
+            // Translation key of the widget's message: language-independent, unlike target_message
+            Codec.STRING.optionalFieldOf("target_message_key").forGetter(WidgetModifier::targetMessageKey),
             Codec.STRING.xmap(PlatStuff::maybeRemapName, PlatStuff::maybeRemapName).optionalFieldOf("target_class_name").forGetter(WidgetModifier::targetClass)
     ).apply(i, WidgetModifier::new)).comapFlatMap(o -> {
         if (o.targetW.isEmpty() && o.targetH.isEmpty() && o.targetX.isEmpty()
                 && o.targetClass.isEmpty()
-                && o.targetY.isEmpty() && o.targetMessage.isEmpty()) {
+                && o.targetY.isEmpty() && o.targetMessage.isEmpty() && o.targetMessageKey.isEmpty()) {
             return DataResult.error(() -> "Widget modifier must have at least one target");
         }
         return DataResult.success(o);
@@ -45,6 +49,8 @@ public record WidgetModifier(int xOffset, int yOffset,
         if (targetH.isPresent() && !targetH.get().has(widget.getHeight())) return false;
         if (targetW.isPresent() && !targetW.get().has(widget.getWidth())) return false;
         if (targetMessage.isPresent() && !widget.getMessage().getString().equals(targetMessage.get())) return false;
+        if (targetMessageKey.isPresent() && !(widget.getMessage().getContents() instanceof TranslatableContents tc
+                && tc.getKey().equals(targetMessageKey.get()))) return false;
         if (targetClass.isPresent()) {
             String name = targetClass.get();
             if (!widget.getClass().getSimpleName().equals(name) &&
@@ -53,12 +59,13 @@ public record WidgetModifier(int xOffset, int yOffset,
         return true;
     }
 
-    public void maybeModify(AbstractWidget widget) {
-        if (!matches(widget)) return;
+    public boolean maybeModify(AbstractWidget widget) {
+        if (!matches(widget)) return false;
         widget.setX(widget.getX() + this.xOffset);
         widget.setY(widget.getY() + this.yOffset);
         widget.setWidth(widget.getWidth() + this.width);
 
         message.ifPresent(s -> widget.setMessage(Component.translatable(s)));
+        return true;
     }
 }
