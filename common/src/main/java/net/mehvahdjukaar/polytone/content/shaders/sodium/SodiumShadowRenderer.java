@@ -99,17 +99,25 @@ public final class SodiumShadowRenderer {
         sectionManager.finalizeRenderLists(camera, viewport, FogParameters.NONE, true);
     }
 
-    // now, not via markGraphDirty: culling runs before render, so a dirty flag only rebuilds next frame
+    // The light cull refills the region lists the camera's list points at, so it has to be rebuilt, not
+    // kept. Now, not via markGraphDirty: culling runs before render, so a dirty flag only rebuilds next
+    // frame. The rebuild reads Sodium's occlusion results, which the light cull never touches, so the
+    // graph stays valid: marking it dirty on every render forced a full occlusion search the next frame.
     private static void rebuildCameraRenderList(Minecraft mc, Camera camera) {
         RenderSectionManager sectionManager = renderSectionManager();
         if (sectionManager == null) return;
-        sectionManager.markGraphDirty(); // first, so a throw below still gets a fresh cull next frame
-        Viewport viewport = ((ViewportProvider) camera.getCullFrustum()).sodium$createViewport();
-        FogParameters fog = ((FogStorage) mc.gameRenderer).sodium$getFogParameters();
-        sectionManager.prepareRender();
+        try {
+            Viewport viewport = ((ViewportProvider) camera.getCullFrustum()).sodium$createViewport();
+            FogParameters fog = ((FogStorage) mc.gameRenderer).sodium$getFogParameters();
+            sectionManager.prepareRender();
 
-        // straight into the tree read, finalizeRenderLists would now fall back to a frustum-only list
-        ((SodiumRenderSectionManagerAccessor) sectionManager).polytone$readRenderListFromTree(viewport, fog);
+            // straight into the tree read, finalizeRenderLists would now fall back to a frustum-only list
+            ((SodiumRenderSectionManagerAccessor) sectionManager).polytone$readRenderListFromTree(viewport, fog);
+        } catch (RuntimeException e) {
+            // the camera list may be left holding the light volume: have Sodium cull afresh next frame
+            sectionManager.markGraphDirty();
+            throw e;
+        }
     }
 
     private static RenderSectionManager renderSectionManager() {
