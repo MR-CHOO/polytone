@@ -101,14 +101,36 @@ public class EntityModifiersManager extends ContentManager<EntityModifier> {
     private WeakReference<EntityRenderer> lastLivingEntityState = new WeakReference<>(null);
     private WeakReference<CameraRenderState> lastCameraState = new WeakReference<>(null);
 
+    private boolean submittedModel = false;
+
     public void captureRenderStates(CameraRenderState state, EntityRenderer<?, ?> renderer) {
         lastCameraState = new WeakReference<>(state);
         lastLivingEntityState = new WeakReference<>(renderer);
+        submittedModel = false;
+    }
+
+    // items, thrown items, fireworks, falling blocks and xp orbs are drawn without a Model, so they never reach
+    // onEntityRender: give them the no-model path, like the first-person player
+    public void afterEntitySubmit(EntityRenderState renderState) {
+        if (submittedModel) return;
+        EntityModifier mod = emittersPerEntity.get(renderState.entityType);
+        CameraRenderState cameraState = lastCameraState.get();
+        if (mod == null || cameraState == null) return;
+        int id = ((IRenderStateWithId) renderState).polytone$getId();
+        if (spawnRecords.containsKey(id)) return;
+        Level level = Minecraft.getInstance().level;
+        Entity entity = level == null ? null : level.getEntity(id);
+        if (entity == null) return;
+        List<ParticleSpawnRecord> particleSpawns = mod.gatherParticleSpawnsWithoutModel(entity, cameraState.pos);
+        if (!particleSpawns.isEmpty()) {
+            spawnRecords.put(id, particleSpawns);
+        }
     }
 
     //render thread
     public <S extends EntityRenderState> void onEntityRender(
             Model<? super S> model, PoseStack poseStack, S renderState) {
+        submittedModel = true;
         CameraRenderState cameraState = lastCameraState.get();
         if (cameraState == null) return;
         EntityModifier mod = emittersPerEntity.get(renderState.entityType);
