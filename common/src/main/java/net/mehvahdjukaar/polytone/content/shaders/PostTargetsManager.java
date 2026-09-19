@@ -18,6 +18,7 @@ import net.minecraft.client.renderer.PostChain;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
+import org.jspecify.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -133,6 +134,13 @@ public class PostTargetsManager extends ContentManager<PostTargetsManager.Target
                 if (target != null && (target.width != width || target.height != height)) target.resize(width, height);
             }
         }
+    }
+
+    // the colour format a pass writing this target has to be built for; null for targets that aren't ours
+    @Nullable
+    public GpuFormat formatOf(Identifier id) {
+        TargetSpec spec = this.specs.get(id);
+        return spec == null ? null : spec.format();
     }
 
     // Ids of the custom targets currently declared. These live in persistent RenderTargets this manager

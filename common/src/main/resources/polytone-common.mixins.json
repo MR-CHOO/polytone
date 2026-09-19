@@ -67,6 +67,7 @@
     "PowderedSnowFogEnvironmentMixin",
     "PaintingRendererMixin",
     "ParticleEngineMixin",
+    "PostChainMixin",
     "ParticleGroupMixin",
     "ParticleResourcesMixin",
     "QuadParticleGroupMixin",
