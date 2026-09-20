@@ -8,7 +8,9 @@ import net.mehvahdjukaar.polytone.Polytone;
 import net.minecraft.client.multiplayer.ClientLevel;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.renderer.texture.DynamicTexture;
+import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.QuartPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -35,7 +37,12 @@ public class SurfaceMap implements AutoCloseable {
     // chunks written per layer per frame while catching up; joining at render distance 32 is ~4500 chunks
     private static final int FILL_BUDGET = 48;
 
+    public static final String BIOME_SAMPLER = "InSurfaceBiome";
+
     private final Map<String, HeightTexture> heights = new HashMap<>();
+    private final SurfaceBiomePalette palette = new SurfaceBiomePalette();
+    @Nullable
+    private BiomeTexture biome = null;
     private SurfaceMapSettings settings = SurfaceMapSettings.NONE;
     private boolean layersStale = true;
     @Nullable
@@ -54,8 +61,15 @@ public class SurfaceMap implements AutoCloseable {
     /** The texture a shader declaring this sampler name reads, or null when nothing provides it. */
     @Nullable
     public GpuTextureView texture(String samplerName) {
+        if (BIOME_SAMPLER.equals(samplerName)) return biome == null ? null : biome.view();
         HeightTexture layer = heights.get(samplerName);
         return layer == null ? null : layer.view();
+    }
+
+    /** The palette block, or null until the biome layer has been built and evaluated once. */
+    @Nullable
+    public GpuBufferSlice paletteSlice() {
+        return biome == null ? null : palette.slice();
     }
 
     public boolean isEmpty() {
@@ -80,6 +94,12 @@ public class SurfaceMap implements AutoCloseable {
         for (HeightTexture layer : heights.values()) {
             layer.update(level, camX, camZ);
         }
+        if (biome != null) {
+            biome.update(level, camX, camZ, palette);
+            // every frame: a palette value can be an expression, and biome_modifiers may lerp with rain
+            settings.biome().ifPresent(layer -> palette.update(level, camPos, layer.attributes(),
+                    biome.originX, biome.originZ, BiomeTexture.TEXEL_SIZE, biome.size));
+        }
     }
 
     // A layer nothing declares is never allocated, so a pack that ships the json but no shader pays nothing
@@ -90,6 +110,10 @@ public class SurfaceMap implements AutoCloseable {
             int radius = layer.coverage().orElse(settings.coverage()).resolve(renderDistanceChunks);
             heights.put(sampler, new HeightTexture(sampler, layer.heightmap(), radius, level.getMinY()));
         });
+        settings.biome().ifPresent(layer -> {
+            if (!wantedSamplers.contains(BIOME_SAMPLER)) return;
+            biome = new BiomeTexture(layer.coverage().orElse(settings.coverage()).resolve(renderDistanceChunks));
+        });
         if (!heights.isEmpty()) {
             Polytone.LOGGER.info("Surface map: {}", heights.values().stream()
                     .map(HeightTexture::describe).toList());
@@ -98,6 +122,7 @@ public class SurfaceMap implements AutoCloseable {
 
     public void markChunkDirty(int chunkX, int chunkZ) {
         for (HeightTexture layer : heights.values()) layer.markDirty(chunkX, chunkZ);
+        if (biome != null) biome.markDirty(chunkX, chunkZ);
     }
 
     public void markColumnDirty(BlockPos pos) {
@@ -112,7 +137,124 @@ public class SurfaceMap implements AutoCloseable {
     public void close() {
         for (HeightTexture layer : heights.values()) layer.close();
         heights.clear();
+        if (biome != null) {
+            biome.close();
+            biome = null;
+        }
+        palette.close();
         lastLevel = null;
+    }
+
+    /**
+     * The biome layer: R = the cell's palette slot, 0 until written, 255 when the window held more than
+     * the palette can carry. One texel per stored biome cell, so this is exact, not sampled.
+     */
+    private static class BiomeTexture {
+        static final int TEXEL_SIZE = 4;   // vanilla stores one biome per 4x4x4 cell
+        private static final int CELLS_PER_CHUNK = 16 / TEXEL_SIZE;
+
+        private final int size;            // texels per side, a multiple of 4 so a chunk covers whole texels
+        private final DynamicTexture texture;
+        private final NativeImage scratch = new NativeImage(CELLS_PER_CHUNK, CELLS_PER_CHUNK, true);
+        private final LongOpenHashSet dirty = new LongOpenHashSet();
+
+        private int originX = Integer.MIN_VALUE;  // window min block
+        private int originZ = Integer.MIN_VALUE;
+
+        BiomeTexture(int radiusBlocks) {
+            this.size = Mth.roundToward(radiusBlocks * 2 / TEXEL_SIZE, CELLS_PER_CHUNK);
+            this.texture = new DynamicTexture(() -> "Polytone surface map biome", size, size, true);
+            this.texture.upload();
+        }
+
+        GpuTextureView view() {
+            return texture.getTextureView();
+        }
+
+        void markDirty(int chunkX, int chunkZ) {
+            if (!contains(chunkX << 4, chunkZ << 4)) return;
+            dirty.add(ChunkPos.pack(chunkX, chunkZ));
+        }
+
+        private boolean contains(int blockX, int blockZ) {
+            int span = size * TEXEL_SIZE;
+            return blockX >= originX && blockX < originX + span && blockZ >= originZ && blockZ < originZ + span;
+        }
+
+        void update(ClientLevel level, int camX, int camZ, SurfaceBiomePalette palette) {
+            moveWindow(camX, camZ);
+            fill(level, palette);
+        }
+
+        private void moveWindow(int camX, int camZ) {
+            int span = size * TEXEL_SIZE;
+            int newOriginX = (camX - span / 2) & ~15;
+            int newOriginZ = (camZ - span / 2) & ~15;
+            if (newOriginX == originX && newOriginZ == originZ) return;
+
+            int oldX = originX;
+            int oldZ = originZ;
+            boolean hadWindow = oldX != Integer.MIN_VALUE;
+            originX = newOriginX;
+            originZ = newOriginZ;
+            for (int bx = newOriginX; bx < newOriginX + span; bx += 16) {
+                for (int bz = newOriginZ; bz < newOriginZ + span; bz += 16) {
+                    boolean wasInside = hadWindow && bx >= oldX && bx < oldX + span && bz >= oldZ && bz < oldZ + span;
+                    if (!wasInside) dirty.add(ChunkPos.pack(bx >> 4, bz >> 4));
+                }
+            }
+        }
+
+        private void fill(ClientLevel level, SurfaceBiomePalette palette) {
+            if (dirty.isEmpty()) return;
+            NativeImage image = texture.getPixels();
+            if (image == null) return;
+            int done = 0;
+            List<Long> written = new ArrayList<>();
+            LongIterator it = dirty.iterator();
+            while (it.hasNext() && done < FILL_BUDGET) {
+                long key = it.nextLong();
+                int cx = ChunkPos.getX(key);
+                int cz = ChunkPos.getZ(key);
+                if (!contains(cx << 4, cz << 4)) {
+                    written.add(key);
+                    continue;
+                }
+                LevelChunk chunk = level.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, false);
+                if (chunk == null) continue;
+                writeChunk(image, chunk, cx, cz, palette);
+                written.add(key);
+                done++;
+            }
+            for (long key : written) dirty.remove(key);
+        }
+
+        private void writeChunk(NativeImage image, LevelChunk chunk, int chunkX, int chunkZ,
+                                SurfaceBiomePalette palette) {
+            int destX = Math.floorMod((chunkX << 4) / TEXEL_SIZE, size);
+            int destZ = Math.floorMod((chunkZ << 4) / TEXEL_SIZE, size);
+            for (int cellX = 0; cellX < CELLS_PER_CHUNK; cellX++) {
+                for (int cellZ = 0; cellZ < CELLS_PER_CHUNK; cellZ++) {
+                    int blockX = (chunkX << 4) + cellX * TEXEL_SIZE + TEXEL_SIZE / 2;
+                    int blockZ = (chunkZ << 4) + cellZ * TEXEL_SIZE + TEXEL_SIZE / 2;
+                    // Just above the local ground: above the surface vanilla's biomes are column-constant,
+                    // so this is the biome of the air a consumer is asking about.
+                    int y = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ) + 1;
+                    int slot = palette.slotFor(chunk.getNoiseBiome(
+                            QuartPos.fromBlock(blockX), QuartPos.fromBlock(y), QuartPos.fromBlock(blockZ)));
+                    int pixel = 0xFF000000 | (slot & 0xFF);
+                    image.setPixel(destX + cellX, destZ + cellZ, pixel);
+                    scratch.setPixel(cellX, cellZ, pixel);
+                }
+            }
+            RenderSystem.getDevice().createCommandEncoder()
+                    .writeToTexture(texture.getTexture(), scratch, 0, 0, destX, destZ);
+        }
+
+        void close() {
+            texture.close();
+            scratch.close();
+        }
     }
 
     /**

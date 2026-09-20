@@ -68,8 +68,11 @@ public record SurfaceMapSettings(Coverage coverage, Optional<BiomeLayer> biome, 
         // Only attributes vanilla blends between biomes make sense per cell; the rest are dimension-wide
         // or gameplay flags, and a pack asking for one is a mistake worth saying out loud.
         private static final Codec<EnvironmentAttribute<?>> ATTRIBUTE_CODEC = EnvironmentAttributes.CODEC
-                .validate(a -> a.isSpatiallyInterpolated() ? DataResult.success(a)
-                        : DataResult.error(() -> "Environment attribute is not spatially interpolated, so it has no per-biome value"));
+                .validate(a -> !a.isSpatiallyInterpolated()
+                        ? DataResult.error(() -> "Environment attribute is not spatially interpolated, so it has no per-biome value")
+                        : !SurfaceBiomePalette.isSupported(a)
+                        ? DataResult.error(() -> "Environment attribute is not a float, colour or boolean, so it cannot go in the palette")
+                        : DataResult.success(a));
 
         public static final Codec<BiomeLayer> CODEC = RecordCodecBuilder.create(i -> i.group(
                 ATTRIBUTE_CODEC.listOf(1, MAX_ATTRIBUTES).fieldOf("attributes").forGetter(BiomeLayer::attributes),

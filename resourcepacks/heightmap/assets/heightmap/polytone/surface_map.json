@@ -1,6 +1,7 @@
 {
-  "_comment": "Smoke test for the surface map: one height layer, read by heightmap_debug's third window.",
+  "_comment": "Smoke test for the surface map: one height layer and the biome layer, both read by heightmap_debug.",
   "coverage": 128,
+  "biome": { "attributes": ["minecraft:visual/fog_end_distance", "minecraft:visual/fog_color"] },
   "heights": {
     "InSurfaceGround": "motion_blocking_no_leaves"
   }

@@ -175,6 +175,7 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
             pass.setUniform(SHADOW_UBO_NAME, shadowSlice != null ? shadowSlice : emptyShadowUbo());
         }
         Polytone.VIEWPOINTS.bindUniformBlocks(pass, declaredUniforms);
+        Polytone.SURFACE_MAP.bindUniformBlocks(pass, declaredUniforms);
     }
 
     public boolean anyActiveChainWantsShadowMap() {

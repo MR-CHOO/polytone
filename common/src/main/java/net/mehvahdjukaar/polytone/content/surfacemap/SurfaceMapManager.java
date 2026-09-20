@@ -2,6 +2,7 @@ package net.mehvahdjukaar.polytone.content.surfacemap;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.FilterMode;
@@ -9,6 +10,7 @@ import com.mojang.blaze3d.textures.GpuTextureView;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.common.reloader.SingleFileContentManager;
 import net.mehvahdjukaar.polytone.common.struc.AssetsFiles;
+import net.mehvahdjukaar.polytone.content.shaders.PolytoneBuiltInUniformsSet;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.texture.TextureManager;
@@ -54,10 +56,15 @@ public class SurfaceMapManager extends SingleFileContentManager<SurfaceMapSettin
         // later, with the level - so read them straight out of the raw json, as viewpoints do.
         List<String> names = new ArrayList<>();
         for (JsonElement e : resources.jsons().values()) {
-            if (e instanceof JsonObject obj && obj.get("heights") instanceof JsonObject h) {
+            if (!(e instanceof JsonObject obj)) continue;
+            if (obj.get("heights") instanceof JsonObject h) {
                 for (String name : h.keySet()) {
                     if (!name.isEmpty() && !names.contains(name)) names.add(name);
                 }
+            }
+            if (obj.has("biome")) {
+                if (!names.contains(SurfaceMap.BIOME_SAMPLER)) names.add(SurfaceMap.BIOME_SAMPLER);
+                PolytoneBuiltInUniformsSet.register(SurfaceBiomePalette.UBO_NAME);
             }
         }
         samplerNames = List.copyOf(names);
@@ -131,6 +138,13 @@ public class SurfaceMapManager extends SingleFileContentManager<SurfaceMapSettin
             }
             pass.bindTexture(name, texture, RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
         }
+    }
+
+    /** Binds the biome palette to a pass whose program declares it; zeros until the first evaluation. */
+    public void bindUniformBlocks(RenderPass pass, Set<String> declaredUniforms) {
+        if (!declaredUniforms.contains(SurfaceBiomePalette.UBO_NAME)) return;
+        GpuBufferSlice palette = map.paletteSlice();
+        if (palette != null) pass.setUniform(SurfaceBiomePalette.UBO_NAME, palette);
     }
 
     public void onClose() {

@@ -17,6 +17,13 @@ uniform sampler2D InSampler;   // scene colour (pass input "In")
 uniform sampler2D InHeight;    // top-down depth map (Polytone binds it by name)
 uniform sampler2D InHeightColor; // the same capture's colour: lit, unfogged, alpha 0 where empty
 uniform sampler2D InSurfaceGround; // CPU surface map: R+G = height - minY, alpha 0 = not filled yet
+uniform sampler2D InSurfaceBiome;  // CPU surface map: R = palette slot, 0 = not filled, 255 = overflow
+
+layout(std140) uniform PolySurfaceBiome {
+    ivec4 SurfaceBiomeWindow;   // xy = window min block, z = blocks per texel, w = texels per side
+    ivec4 SurfaceBiomeInfo;     // x = attributes per slot, y = slots in use
+    vec4  SurfaceBiomePalette[512];
+} sb;
 
 in vec2 texCoord;
 out vec4 fragColor;
@@ -43,6 +50,31 @@ void main() {
         fragColor = captured.a < 0.004 ? vec4(0.15, 0.0, 0.2, 1.0) : vec4(captured.rgb, 1.0);
         vec2 edge = min(uv, 1.0 - uv);
         if (min(edge.x, edge.y) < 0.004) fragColor = vec4(0.1, 0.85, 1.0, 1.0);
+        return;
+    }
+
+    // Fourth window: the biome layer. Left half tints by slot so borders are visible; right half shows
+    // that slot's first attribute (fog end distance) as brightness, straight from the palette.
+    vec2 bioLo = vec2(3.0 * VIEW_SIZE, 1.0 - VIEW_SIZE);
+    vec2 bioHi = vec2(4.0 * VIEW_SIZE, 1.0);
+    if (all(greaterThanEqual(texCoord, bioLo)) && all(lessThanEqual(texCoord, bioHi))) {
+        vec2 uv = (texCoord - bioLo) / (bioHi - bioLo);
+        float slotF = texture(InSurfaceBiome, uv).r * 255.0;
+        int slot = int(slotF + 0.5);
+        if (slot == 0) {
+            fragColor = vec4(0.0, 0.0, 0.0, 1.0);                 // not filled yet
+        } else if (slot == 255) {
+            fragColor = vec4(1.0, 0.0, 1.0, 1.0);                 // ran out of palette slots
+        } else if (uv.x < 0.5) {
+            float h = fract(float(slot) * 0.6180339887);          // a colour per slot
+            fragColor = vec4(abs(h * 6.0 - 3.0) - 1.0, 2.0 - abs(h * 6.0 - 2.0), 2.0 - abs(h * 6.0 - 4.0), 1.0);
+            fragColor.rgb = clamp(fragColor.rgb, 0.0, 1.0);
+        } else {
+            float fogEnd = sb.SurfaceBiomePalette[slot * sb.SurfaceBiomeInfo.x].x;
+            fragColor = vec4(vec3(clamp(fogEnd / 512.0, 0.0, 1.0)), 1.0);
+        }
+        vec2 edge = min(uv, 1.0 - uv);
+        if (min(edge.x, edge.y) < 0.004) fragColor = vec4(1.0, 0.4, 0.1, 1.0);
         return;
     }
 
