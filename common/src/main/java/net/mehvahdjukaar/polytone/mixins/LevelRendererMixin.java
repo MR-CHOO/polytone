@@ -64,6 +64,11 @@ public class LevelRendererMixin {
         GpuBufferSlice noFog = ((GameRendererAccessor) Minecraft.getInstance().gameRenderer).polytone$getFogRenderer()
                 .getBuffer(FogRenderer.FogMode.NONE);
         Polytone.VIEWPOINTS.renderActive(noFog, Minecraft.getInstance().gameRenderer.mainCamera());
+        // reads chunks the client already has, so this is a fill, not a render
+        if (this.levelRenderState.cameraRenderState != null && Minecraft.getInstance().level != null) {
+            Polytone.SURFACE_MAP.update(Minecraft.getInstance().level,
+                    Minecraft.getInstance().gameRenderer.mainCamera().position());
+        }
     }
 
     // after weather, the last world pass that depth tests

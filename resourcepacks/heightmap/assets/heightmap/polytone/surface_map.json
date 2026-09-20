@@ -1,0 +1,7 @@
+{
+  "_comment": "Smoke test for the surface map: one height layer, read by heightmap_debug's third window.",
+  "coverage": 128,
+  "heights": {
+    "InSurfaceGround": "motion_blocking_no_leaves"
+  }
+}

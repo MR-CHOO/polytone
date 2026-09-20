@@ -16,6 +16,7 @@
 uniform sampler2D InSampler;   // scene colour (pass input "In")
 uniform sampler2D InHeight;    // top-down depth map (Polytone binds it by name)
 uniform sampler2D InHeightColor; // the same capture's colour: lit, unfogged, alpha 0 where empty
+uniform sampler2D InSurfaceGround; // CPU surface map: R+G = height - minY, alpha 0 = not filled yet
 
 in vec2 texCoord;
 out vec4 fragColor;
@@ -42,6 +43,24 @@ void main() {
         fragColor = captured.a < 0.004 ? vec4(0.15, 0.0, 0.2, 1.0) : vec4(captured.rgb, 1.0);
         vec2 edge = min(uv, 1.0 - uv);
         if (min(edge.x, edge.y) < 0.004) fragColor = vec4(0.1, 0.85, 1.0, 1.0);
+        return;
+    }
+
+    // Third window: the CPU surface map, straight out of the texture (it is world-locked and wraps, so
+    // this scrolls as you walk). Green = filled, black = still to fill, brightness = height.
+    vec2 cpuLo = vec2(2.0 * VIEW_SIZE, 1.0 - VIEW_SIZE);
+    vec2 cpuHi = vec2(3.0 * VIEW_SIZE, 1.0);
+    if (all(greaterThanEqual(texCoord, cpuLo)) && all(lessThanEqual(texCoord, cpuHi))) {
+        vec2 uv = (texCoord - cpuLo) / (cpuHi - cpuLo);
+        vec4 s = texture(InSurfaceGround, uv);
+        if (s.a < 0.5) {
+            fragColor = vec4(0.0, 0.0, 0.0, 1.0);          // not filled yet
+        } else {
+            float h = (s.r * 255.0 + s.g * 255.0 * 256.0); // height above minY, in blocks
+            fragColor = vec4(0.0, clamp(h / 384.0, 0.0, 1.0), 0.0, 1.0);
+        }
+        vec2 edge = min(uv, 1.0 - uv);
+        if (min(edge.x, edge.y) < 0.004) fragColor = vec4(0.2, 1.0, 0.2, 1.0);
         return;
     }
 
