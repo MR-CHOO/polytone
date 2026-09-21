@@ -1,28 +1,44 @@
 package net.mehvahdjukaar.polytone.mixins;
 
-import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
-import com.mojang.blaze3d.GpuFormat;
-import com.mojang.blaze3d.pipeline.ColorTargetState;
-import com.mojang.blaze3d.pipeline.RenderPipeline;
-import net.mehvahdjukaar.polytone.Polytone;
+import net.mehvahdjukaar.polytone.content.shaders.IScaledTarget;
 import net.minecraft.client.renderer.PostChain;
 import net.minecraft.client.renderer.PostChainConfig;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+
+import java.util.Optional;
 
 @Mixin(PostChain.class)
 public class PostChainMixin {
 
-    // Every pass pipeline is built for the default RGBA8, and 26.2 refuses to draw into an attachment of another
-    // format, so a pass writing a post_target declared with a "format" needs its pipeline built for that format
-    @ModifyExpressionValue(method = "createPass", at = @At(value = "INVOKE",
-            target = "Lcom/mojang/blaze3d/pipeline/RenderPipeline$Builder;withBindGroupLayout(Lcom/mojang/blaze3d/pipeline/BindGroupLayout;)Lcom/mojang/blaze3d/pipeline/RenderPipeline$Builder;"))
-    private static RenderPipeline.Builder polytone$matchOutputFormat(RenderPipeline.Builder builder,
-                                                                     @Local(argsOnly = true) PostChainConfig.Pass pass) {
-        GpuFormat format = Polytone.POST_TARGETS.formatOf(pass.outputTarget());
-        ColorTargetState def = ColorTargetState.DEFAULT;
-        if (format == null || format == def.format()) return builder;
-        return builder.withColorTargetState(new ColorTargetState(def.blendFunction(), format, def.writeMask()));
+    // A "scale" multiplies whatever size the target would otherwise have: its absolute width/height where it gives
+    // one, else the screen size vanilla is handed here - so a sizeless target follows a window resize exactly as
+    // vanilla's own does, and {128x128, 0.5} is 64x64. Above 1 is just a larger target, which vanilla already allows
+    // for an absolute size without clamping, so nothing is clamped here either.
+    @WrapOperation(method = "addToFrame", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/renderer/PostChainConfig$InternalTarget;width()Ljava/util/Optional;"))
+    private Optional<Integer> polytone$scaledWidth(PostChainConfig.InternalTarget target,
+                                                   Operation<Optional<Integer>> original,
+                                                   @Local(argsOnly = true, ordinal = 0) int screenWidth) {
+        return polytone$scaled(target, original.call(target), screenWidth);
+    }
+
+    @WrapOperation(method = "addToFrame", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/renderer/PostChainConfig$InternalTarget;height()Ljava/util/Optional;"))
+    private Optional<Integer> polytone$scaledHeight(PostChainConfig.InternalTarget target,
+                                                    Operation<Optional<Integer>> original,
+                                                    @Local(argsOnly = true, ordinal = 1) int screenHeight) {
+        return polytone$scaled(target, original.call(target), screenHeight);
+    }
+
+    @Unique
+    private static Optional<Integer> polytone$scaled(PostChainConfig.InternalTarget target, Optional<Integer> size,
+                                                     int screenSize) {
+        Float scale = ((IScaledTarget) (Object) target).polytone$getScale();
+        return scale == null ? size : Optional.of(IScaledTarget.resolve(scale, size.orElse(screenSize)));
     }
 }
