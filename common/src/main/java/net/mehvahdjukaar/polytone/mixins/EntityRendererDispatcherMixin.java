@@ -27,10 +27,4 @@ public class EntityRendererDispatcherMixin {
             S renderState, CameraRenderState camera, double x, double y, double z, PoseStack poseStack, SubmitNodeCollector submitNodeCollector, CallbackInfo ci, @Local EntityRenderer<?,?> renderer) {
         Polytone.ENTITY_MODIFIERS.captureRenderStates(camera, renderer);
     }
-
-    @Inject(method = "submit", at = @At("TAIL"))
-    private <S extends EntityRenderState> void polytone$afterSubmit(
-            S renderState, CameraRenderState camera, double x, double y, double z, PoseStack poseStack, SubmitNodeCollector submitNodeCollector, CallbackInfo ci) {
-        Polytone.ENTITY_MODIFIERS.afterEntitySubmit(renderState);
-    }
 }
