@@ -1,5 +1,7 @@
 {
+  "_comment": "Priority is deliberately far above anything a real pack uses (Recrafted tops out at 98): chains run in ascending priority and each rewrites minecraft:main, so the largest number is composited last and nothing draws over the debug windows. It also lands at the end of the order, which is what lets it defer to the after-hand stage.",
   "post_chain": "heightmap:heightmap_debug",
+  "priority": 1000,
   "activation_condition": 1,
   "uses_viewpoints": ["heightmap:heightmap"]
 }
