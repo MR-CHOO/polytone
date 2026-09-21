@@ -2,6 +2,8 @@ package net.mehvahdjukaar.polytone.content.surfacemap;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.textures.GpuTextureView;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
+import it.unimi.dsi.fastutil.ints.IntSet;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.mehvahdjukaar.polytone.Polytone;
@@ -114,10 +116,10 @@ public class SurfaceMap implements AutoCloseable {
             if (!wantedSamplers.contains(BIOME_SAMPLER)) return;
             biome = new BiomeTexture(layer.coverage().orElse(settings.coverage()).resolve(renderDistanceChunks));
         });
-        if (!heights.isEmpty()) {
-            Polytone.LOGGER.info("Surface map: {}", heights.values().stream()
-                    .map(HeightTexture::describe).toList());
-        }
+        List<String> layers = new ArrayList<>();
+        heights.values().forEach(l -> layers.add(l.describe()));
+        if (biome != null) layers.add(biome.describe());
+        if (!layers.isEmpty()) Polytone.LOGGER.info("Surface map: {}", layers);
     }
 
     public void markChunkDirty(int chunkX, int chunkZ) {
@@ -167,6 +169,10 @@ public class SurfaceMap implements AutoCloseable {
             this.texture.upload();
         }
 
+        String describe() {
+            return BIOME_SAMPLER + "=biome " + size + "x" + size;
+        }
+
         GpuTextureView view() {
             return texture.getTextureView();
         }
@@ -197,18 +203,50 @@ public class SurfaceMap implements AutoCloseable {
             boolean hadWindow = oldX != Integer.MIN_VALUE;
             originX = newOriginX;
             originZ = newOriginZ;
+            // A chunk entering the window inherits the texels of the one that just left - that is the toroid.
+            // Left alone they would keep the OLD place's slots at full alpha until the new chunk streams in,
+            // which a shader cannot tell from real data, and which also pins the old place's palette slots
+            // so retainOnly cannot free them. So an entering chunk reads "not written yet" from the moment it
+            // enters. A jump of a whole span (a teleport) keeps nothing, so it is one wipe, not a blit per chunk.
+            boolean overlaps = hadWindow && Math.abs(newOriginX - oldX) < span && Math.abs(newOriginZ - oldZ) < span;
+            if (hadWindow && !overlaps) clearAll();
             for (int bx = newOriginX; bx < newOriginX + span; bx += 16) {
                 for (int bz = newOriginZ; bz < newOriginZ + span; bz += 16) {
                     boolean wasInside = hadWindow && bx >= oldX && bx < oldX + span && bz >= oldZ && bz < oldZ + span;
-                    if (!wasInside) dirty.add(ChunkPos.pack(bx >> 4, bz >> 4));
+                    if (wasInside) continue;
+                    dirty.add(ChunkPos.pack(bx >> 4, bz >> 4));
+                    if (overlaps) clearChunk(bx >> 4, bz >> 4);
                 }
             }
+        }
+
+        private void clearAll() {
+            NativeImage image = texture.getPixels();
+            if (image == null) return;
+            image.fillRect(0, 0, size, size, 0);
+            texture.upload();
+        }
+
+        // scratch is the one-chunk staging image writeChunk uploads through; zeroed, it uploads a blank chunk
+        private void clearChunk(int chunkX, int chunkZ) {
+            NativeImage image = texture.getPixels();
+            if (image == null) return;
+            int destX = Math.floorMod((chunkX << 4) / TEXEL_SIZE, size);
+            int destZ = Math.floorMod((chunkZ << 4) / TEXEL_SIZE, size);
+            image.fillRect(destX, destZ, CELLS_PER_CHUNK, CELLS_PER_CHUNK, 0);
+            scratch.fillRect(0, 0, CELLS_PER_CHUNK, CELLS_PER_CHUNK, 0);
+            RenderSystem.getDevice().createCommandEncoder()
+                    .writeToTexture(texture.getTexture(), scratch, 0, 0, destX, destZ);
         }
 
         private void fill(ClientLevel level, SurfaceBiomePalette palette) {
             if (dirty.isEmpty()) return;
             NativeImage image = texture.getPixels();
             if (image == null) return;
+            // The palette has no idea which of its slots still matter - this texture is the only record.
+            // Sweep it before the last slot goes, or a long walk fills all 63 with biomes that left the
+            // window and every cell after that reads as overflow.
+            if (palette.isFull()) palette.retainOnly(usedSlots(image));
             int done = 0;
             List<Long> written = new ArrayList<>();
             LongIterator it = dirty.iterator();
@@ -229,6 +267,20 @@ public class SurfaceMap implements AutoCloseable {
             for (long key : written) dirty.remove(key);
         }
 
+        // Every slot any texel still holds. Cheap enough to be worth no cleverness: 136x136 is 18k reads
+        // and it only runs when the palette is one biome from full.
+        private IntSet usedSlots(NativeImage image) {
+            IntOpenHashSet used = new IntOpenHashSet();
+            for (int x = 0; x < size; x++) {
+                for (int z = 0; z < size; z++) {
+                    int pixel = image.getPixel(x, z);        // ARGB, and the slot lives in RED
+                    if ((pixel >>> 24) == 0) continue;       // never written
+                    used.add((pixel >> 16) & 0xFF);
+                }
+            }
+            return used;
+        }
+
         private void writeChunk(NativeImage image, LevelChunk chunk, int chunkX, int chunkZ,
                                 SurfaceBiomePalette palette) {
             int destX = Math.floorMod((chunkX << 4) / TEXEL_SIZE, size);
@@ -242,7 +294,7 @@ public class SurfaceMap implements AutoCloseable {
                     int y = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ) + 1;
                     int slot = palette.slotFor(chunk.getNoiseBiome(
                             QuartPos.fromBlock(blockX), QuartPos.fromBlock(y), QuartPos.fromBlock(blockZ)));
-                    int pixel = 0xFF000000 | (slot & 0xFF);
+                    int pixel = 0xFF000000 | ((slot & 0xFF) << 16);  // ARGB: the slot lives in RED
                     image.setPixel(destX + cellX, destZ + cellZ, pixel);
                     scratch.setPixel(cellX, cellZ, pixel);
                 }
@@ -319,12 +371,35 @@ public class SurfaceMap implements AutoCloseable {
             boolean hadWindow = oldX != Integer.MIN_VALUE;
             originX = newOriginX;
             originZ = newOriginZ;
+            // entering chunks read "not written yet" until they are - see BiomeTexture.moveWindow
+            boolean overlaps = hadWindow && Math.abs(newOriginX - oldX) < size && Math.abs(newOriginZ - oldZ) < size;
+            if (hadWindow && !overlaps) clearAll();
             for (int bx = newOriginX; bx < newOriginX + size; bx += 16) {
                 for (int bz = newOriginZ; bz < newOriginZ + size; bz += 16) {
                     boolean wasInside = hadWindow && bx >= oldX && bx < oldX + size && bz >= oldZ && bz < oldZ + size;
-                    if (!wasInside) dirty.add(ChunkPos.pack(bx >> 4, bz >> 4));
+                    if (wasInside) continue;
+                    dirty.add(ChunkPos.pack(bx >> 4, bz >> 4));
+                    if (overlaps) clearChunk(bx >> 4, bz >> 4);
                 }
             }
+        }
+
+        private void clearAll() {
+            NativeImage image = texture.getPixels();
+            if (image == null) return;
+            image.fillRect(0, 0, size, size, 0);
+            texture.upload();
+        }
+
+        private void clearChunk(int chunkX, int chunkZ) {
+            NativeImage image = texture.getPixels();
+            if (image == null) return;
+            int destX = Math.floorMod(chunkX << 4, size);
+            int destZ = Math.floorMod(chunkZ << 4, size);
+            image.fillRect(destX, destZ, 16, 16, 0);
+            scratch.fillRect(0, 0, 16, 16, 0);
+            RenderSystem.getDevice().createCommandEncoder()
+                    .writeToTexture(texture.getTexture(), scratch, 0, 0, destX, destZ);
         }
 
         private void fill(ClientLevel level) {
@@ -359,8 +434,9 @@ public class SurfaceMap implements AutoCloseable {
                     int blockX = (chunkX << 4) + dx;
                     int blockZ = (chunkZ << 4) + dz;
                     int h = Mth.clamp(chunk.getHeight(type, blockX, blockZ) - minY, 0, 0xFFFF);
-                    // NativeImage packs a pixel as 0xAABBGGRR
-                    int pixel = 0xFF000000 | ((h >> 8) << 8) | (h & 0xFF);
+                    // setPixel takes ARGB and does the swap to the native layout itself, so the low
+                    // byte goes in RED and the high byte in GREEN. Same packing as GpuParticleHeightmap.
+                    int pixel = 0xFF000000 | ((h & 0xFF) << 16) | ((h >> 8) << 8);
                     image.setPixel(destX + dx, destZ + dz, pixel);
                     scratch.setPixel(dx, dz, pixel);
                 }

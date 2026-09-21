@@ -2,6 +2,7 @@ package net.mehvahdjukaar.polytone.content.surfacemap;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -13,12 +14,13 @@ import net.mehvahdjukaar.polytone.common.struc.AssetsFiles;
 import net.mehvahdjukaar.polytone.content.shaders.PolytoneBuiltInUniformsSet;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.texture.TextureManager;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.server.packs.resources.PreparableReloadListener;
 import net.minecraft.world.phys.Vec3;
+import org.lwjgl.system.MemoryStack;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -40,6 +42,8 @@ public class SurfaceMapManager extends SingleFileContentManager<SurfaceMapSettin
     private volatile List<String> samplerNames = List.of();
     private final Set<String> declaredSamplers = new HashSet<>();
     private SurfaceMapSettings parsedSettings = SurfaceMapSettings.NONE;
+    private GpuBuffer emptyPalette = null;
+    private DynamicTexture emptyLayer = null;
 
     public SurfaceMapManager() {
         super("Surface Map", "surface_map.properties", "surface_map.json", Polytone.MOD_ID);
@@ -82,10 +86,16 @@ public class SurfaceMapManager extends SingleFileContentManager<SurfaceMapSettin
 
     @Override
     protected void parseWithLevel(AssetsFiles resources, RegistryOps<JsonElement> ops, HolderLookup.Provider access) {
+        // MERGED, not last-wins. SingleFileContentManager hands over one file per namespace and its own
+        // comment says it does not merge them, which is right for content keyed by file name and wrong
+        // here: there is ONE map shared by every pack, so taking the last file silently deletes the
+        // layers and the coverage every other pack asked for - and which file is last is HashMap order.
+        // Enabling a second pack would then change what the first one sees.
         SurfaceMapSettings result = SurfaceMapSettings.NONE;
         for (var entry : resources.jsons().entrySet()) {
             try {
-                result = SurfaceMapSettings.CODEC.parse(ops, entry.getValue()).getOrThrow();
+                result = result.mergedWith(SurfaceMapSettings.CODEC.parse(ops, entry.getValue()).getOrThrow(),
+                        entry.getKey());
             } catch (Exception e) {
                 Polytone.LOGGER.error("Failed to parse surface_map.json in file {}", entry.getKey(), e);
             }
@@ -125,30 +135,76 @@ public class SurfaceMapManager extends SingleFileContentManager<SurfaceMapSettin
 
     /**
      * Binds each layer under the sampler name the pack gave it, only on programs that declare it. A layer
-     * that has not been allocated yet stands in with the missing texture, as {@code InShadow} does.
+     * that has not been allocated yet stands in with {@link #emptyLayer()}.
      */
     public void bindSamplers(RenderPass pass, Set<String> declaredUniforms) {
         if (samplerNames.isEmpty()) return;
         for (String name : samplerNames) {
             if (!declaredUniforms.contains(name)) continue;
             GpuTextureView texture = map.texture(name);
-            if (texture == null) {
-                texture = Minecraft.getInstance().getTextureManager()
-                        .getTexture(TextureManager.INTENTIONAL_MISSING_TEXTURE).getTextureView();
-            }
+            if (texture == null) texture = emptyLayer();
             pass.bindTexture(name, texture, RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
         }
     }
 
-    /** Binds the biome palette to a pass whose program declares it; zeros until the first evaluation. */
+    /**
+     * Binds the biome palette to a pass whose program declares it; zeros until the first evaluation.
+     *
+     * <p>A declared block MUST be given a buffer, which is why the empty one exists. There is always
+     * at least one frame where the palette does not: the layer is only allocated once a program
+     * declares its sampler, and that declaration happens at link time, DURING the frame — after the
+     * update at {@code LevelRenderer.render} HEAD has already run and returned early. So the first
+     * frame a chain reading the map is active is guaranteed to reach here with a null slice, and
+     * leaving the block unbound is a render-pass error rather than a shader reading zeros. Both the
+     * shadow map and the viewpoints already stand in an empty block for exactly this reason.</p>
+     */
     public void bindUniformBlocks(RenderPass pass, Set<String> declaredUniforms) {
         if (!declaredUniforms.contains(SurfaceBiomePalette.UBO_NAME)) return;
         GpuBufferSlice palette = map.paletteSlice();
-        if (palette != null) pass.setUniform(SurfaceBiomePalette.UBO_NAME, palette);
+        pass.setUniform(SurfaceBiomePalette.UBO_NAME, palette != null ? palette : emptyPalette());
+    }
+
+    /** Zeros, so a shader sees "slots in use = 0" and falls back to the camera path on its own. */
+    private GpuBufferSlice emptyPalette() {
+        if (emptyPalette == null) {
+            emptyPalette = RenderSystem.getDevice().createBuffer(() -> "Polytone empty surface biome palette",
+                    GpuBuffer.USAGE_COPY_DST | GpuBuffer.USAGE_UNIFORM, SurfaceBiomePalette.UBO_SIZE);
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                RenderSystem.getDevice().createCommandEncoder()
+                        .writeToBuffer(emptyPalette.slice(), stack.calloc(SurfaceBiomePalette.UBO_SIZE));
+            }
+        }
+        return emptyPalette.slice();
+    }
+
+    /**
+     * Stands in for a layer that has no texture yet, on the same first frame {@link #emptyPalette()}
+     * covers - a program declares its sampler at link time, after the update that would allocate it has
+     * already run.
+     *
+     * <p>Deliberately NOT the missing texture the shadow map and the viewpoints stand in. Every layer
+     * here says "no data" with alpha 0, and the missing texture is opaque magenta: a pack doing the
+     * documented alpha test would read it as real data, then decode its red channel as palette slot 248
+     * or as a height of 63000 blocks. Zeros are the only stand-in that the contract survives.</p>
+     */
+    private GpuTextureView emptyLayer() {
+        if (emptyLayer == null) {
+            emptyLayer = new DynamicTexture(() -> "Polytone empty surface map layer", 1, 1, true);
+            emptyLayer.upload();
+        }
+        return emptyLayer.getTextureView();
     }
 
     public void onClose() {
         map.close();
+        if (emptyPalette != null) {
+            emptyPalette.close();
+            emptyPalette = null;
+        }
+        if (emptyLayer != null) {
+            emptyLayer.close();
+            emptyLayer = null;
+        }
     }
 
     public Map<String, SurfaceMapSettings.HeightLayer> heightLayers() {
