@@ -15,7 +15,7 @@ import net.mehvahdjukaar.polytone.common.struc.AssetsFiles;
 import net.mehvahdjukaar.polytone.content.shaders.PolytoneBuiltInUniformsSet;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.texture.TextureManager;
+import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
@@ -137,7 +137,7 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
         if (!declaredUniforms.contains(name) || !bound.add(name)) return;
         if (texture == null) {
             texture = Minecraft.getInstance().getTextureManager()
-                    .getTexture(TextureManager.INTENTIONAL_MISSING_TEXTURE).getTextureView();
+                    .getTexture(MissingTextureAtlasSprite.getLocation()).getTextureView();
         }
         pass.bindTexture(name, texture, RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
     }
