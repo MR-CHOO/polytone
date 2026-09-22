@@ -14,19 +14,25 @@ import net.minecraft.SharedConstants;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.OverlayMetadataSection;
 import net.minecraft.util.TriState;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Optional;
 
 public class ConditionUtils {
 
+    // "!modid" inverts it
+    private static boolean isModLoaded(String mod, @Nullable VersionRange range) {
+        if (mod.startsWith("!")) return !isModLoaded(mod.substring(1), range);
+        return PlatStuff.isModLoaded(mod) && (range == null || range.matches(PlatStuff.getModVersion(mod)));
+    }
+
     private static final Codec<Boolean> MOD_ENABLED_CODEC = Codec.withAlternative(
-            Codec.STRING.xmap(PlatStuff::isModLoaded, b -> ""),
+            Codec.STRING.xmap(mod -> isModLoaded(mod, null), b -> ""),
             RecordCodecBuilder.create(i -> i.group(
                     Codec.STRING.fieldOf("mod").forGetter(e -> ""),
                     VersionRange.CODEC.fieldOf("version").forGetter(e -> VersionRange.any())
-            ).apply(i, (mod, range) -> PlatStuff.isModLoaded(mod) &&
-                    range.matches(PlatStuff.getModVersion(mod)))));
+            ).apply(i, ConditionUtils::isModLoaded)));
 
     private static final Codec<Boolean> MODS_ENABLED_CODEC = SchemaCodecs.singleOrList(MOD_ENABLED_CODEC,
             ConditionUtils::boolAnd);

@@ -37,7 +37,7 @@ public record ScreenModifier(int titleX, int titleY, int labelX, int labelY,
         try {
             return condition.evaluate() != 0;
         } catch (Exception e) {
-            // screens outside a world, like the title screen, have no player or level to read
+            // no player or level outside a world
             return false;
         }
     }
@@ -67,30 +67,50 @@ public record ScreenModifier(int titleX, int titleY, int labelX, int labelY,
         return this.specialOffsets.get(key);
     }
 
-    // widget -> {dx, dy, dw, x, y, w}: what our modifiers added, and where that left it
-    private static final Map<AbstractWidget, int[]> MODIFIED = new WeakHashMap<>();
+    // what our modifiers did to a widget and where that left it
+    private static final class Applied {
+        int dx, dy, dw;
+        int x, y, w;
+        @Nullable
+        Integer fromCenter;
+        @Nullable
+        Boolean visible;
+    }
 
-    // Safe to call more than once per widget: vanilla may move a widget after adding it or re-lay it out on
-    // resize, so this runs again once layout is done and only re-adds the offsets a layout pass reset
-    public void modifyWidgets(AbstractWidget button) {
-        int[] m = MODIFIED.get(button);
-        if (m == null) {
+    private static final Map<AbstractWidget, Applied> MODIFIED = new WeakHashMap<>();
+
+    // can be called more than once. layout screens reset widgets on resize so we re-add only what they undid
+    public void modifyWidgets(AbstractWidget button, int screenWidth) {
+        Applied a = MODIFIED.get(button);
+        if (a == null) {
             int x = button.getX(), y = button.getY(), w = button.getWidth();
             boolean matched = false;
+            boolean fromCenter = false;
+            Boolean visible = null;
             for (var mod : this.widgetModifiers) {
-                matched |= mod.maybeModify(button);
+                if (!mod.maybeModify(button, screenWidth)) continue;
+                matched = true;
+                if (mod.xFromCenter().isPresent()) fromCenter = true;
+                if (mod.visible().isPresent()) visible = mod.visible().get();
             }
             if (!matched) return;
-            m = new int[]{button.getX() - x, button.getY() - y, button.getWidth() - w, 0, 0, 0};
-            MODIFIED.put(button, m);
+            a = new Applied();
+            a.dx = button.getX() - x;
+            a.dy = button.getY() - y;
+            a.dw = button.getWidth() - w;
+            a.fromCenter = fromCenter ? button.getX() - screenWidth / 2 : null;
+            a.visible = visible;
+            MODIFIED.put(button, a);
         } else {
-            if (button.getX() != m[3]) button.setX(button.getX() + m[0]);
-            if (button.getY() != m[4]) button.setY(button.getY() + m[1]);
-            if (button.getWidth() != m[5]) button.setWidth(button.getWidth() + m[2]);
+            if (a.fromCenter != null) button.setX(screenWidth / 2 + a.fromCenter);
+            else if (button.getX() != a.x) button.setX(button.getX() + a.dx);
+            if (button.getY() != a.y) button.setY(button.getY() + a.dy);
+            if (button.getWidth() != a.w) button.setWidth(button.getWidth() + a.dw);
+            if (a.visible != null) button.visible = a.visible;
         }
-        m[3] = button.getX();
-        m[4] = button.getY();
-        m[5] = button.getWidth();
+        a.x = button.getX();
+        a.y = button.getY();
+        a.w = button.getWidth();
     }
 
     public void renderExtras(GuiGraphicsExtractor poseStack, int mouseX, int mouseY, float partialTicks) {

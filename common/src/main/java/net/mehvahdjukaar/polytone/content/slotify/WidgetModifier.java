@@ -13,6 +13,8 @@ import java.util.function.Function;
 
 public record WidgetModifier(int xOffset, int yOffset,
                              int width,
+                             Optional<Integer> xFromCenter,
+                             Optional<Boolean> visible,
                              Optional<String> message,
                              Optional<IntRange> targetX, Optional<IntRange> targetY,
                              Optional<IntRange> targetW, Optional<IntRange> targetH,
@@ -24,13 +26,16 @@ public record WidgetModifier(int xOffset, int yOffset,
             Codec.INT.optionalFieldOf("x_offset", 0).forGetter(WidgetModifier::xOffset),
             Codec.INT.optionalFieldOf("y_offset", 0).forGetter(WidgetModifier::yOffset),
             Codec.INT.optionalFieldOf("width_increment", 0).forGetter(WidgetModifier::width),
+            // absolute x from the screen center. unaffected by other mods moving the row around
+            Codec.INT.optionalFieldOf("x_from_center").forGetter(WidgetModifier::xFromCenter),
+            Codec.BOOL.optionalFieldOf("visible").forGetter(WidgetModifier::visible),
             Codec.STRING.optionalFieldOf("message").forGetter(WidgetModifier::message),
             IntRange.CODEC.optionalFieldOf("target_x").forGetter(WidgetModifier::targetX),
             IntRange.CODEC.optionalFieldOf("target_y").forGetter(WidgetModifier::targetY),
             IntRange.CODEC.optionalFieldOf("target_width").forGetter(WidgetModifier::targetW),
             IntRange.CODEC.optionalFieldOf("target_height").forGetter(WidgetModifier::targetH),
             Codec.STRING.optionalFieldOf("target_message").forGetter(WidgetModifier::targetMessage),
-            // Translation key of the widget's message: language-independent, unlike target_message
+            // translation key. works in every language
             Codec.STRING.optionalFieldOf("target_message_key").forGetter(WidgetModifier::targetMessageKey),
             Codec.STRING.xmap(PlatStuff::maybeRemapName, PlatStuff::maybeRemapName).optionalFieldOf("target_class_name").forGetter(WidgetModifier::targetClass)
     ).apply(i, WidgetModifier::new)).comapFlatMap(o -> {
@@ -38,6 +43,9 @@ public record WidgetModifier(int xOffset, int yOffset,
                 && o.targetClass.isEmpty()
                 && o.targetY.isEmpty() && o.targetMessage.isEmpty() && o.targetMessageKey.isEmpty()) {
             return DataResult.error(() -> "Widget modifier must have at least one target");
+        }
+        if (o.xFromCenter.isPresent() && o.xOffset != 0) {
+            return DataResult.error(() -> "Widget modifier can't have both x_offset and x_from_center");
         }
         return DataResult.success(o);
     }, Function.identity());
@@ -59,13 +67,15 @@ public record WidgetModifier(int xOffset, int yOffset,
         return true;
     }
 
-    public boolean maybeModify(AbstractWidget widget) {
+    public boolean maybeModify(AbstractWidget widget, int screenWidth) {
         if (!matches(widget)) return false;
-        widget.setX(widget.getX() + this.xOffset);
+        if (xFromCenter.isPresent()) widget.setX(screenWidth / 2 + xFromCenter.get());
+        else widget.setX(widget.getX() + this.xOffset);
         widget.setY(widget.getY() + this.yOffset);
         widget.setWidth(widget.getWidth() + this.width);
 
         message.ifPresent(s -> widget.setMessage(Component.translatable(s)));
+        visible.ifPresent(v -> widget.visible = v);
         return true;
     }
 }

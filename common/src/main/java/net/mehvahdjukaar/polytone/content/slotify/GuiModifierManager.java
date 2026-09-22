@@ -1,7 +1,6 @@
 package net.mehvahdjukaar.polytone.content.slotify;
 
 import com.google.gson.JsonElement;
-import com.mojang.serialization.DynamicOps;
 import com.mojang.serialization.JsonOps;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.codecui.SchemaCodec;
@@ -42,9 +41,7 @@ public class GuiModifierManager extends ContentManager<GuiModifier> {
                 .folders("gui_modifiers"));
     }
 
-    // Parsed on every resource reload, not on world login: nothing here needs a level (targets are classes,
-    // static menu types or titles). Level-scoped parsing meant screens shown outside a world, like TitleScreen,
-    // never saw their modifiers, and logging off cleared them for every screen until the next login.
+    // not level dependant so screens outside a world (title screen) get them too
     @Override
     protected void applyNormal(AssetsFiles resources) {
         slotsByMenuId.clear();
@@ -53,17 +50,11 @@ public class GuiModifierManager extends ContentManager<GuiModifier> {
         byMenuId.clear();
         byClass.clear();
         byTitle.clear();
-        parse(resources, JsonOps.INSTANCE);
-        if (!slotsByMenuId.isEmpty() || !slotsByClass.isEmpty() || !slotsByTitle.isEmpty()) {
-            Polytone.LOGGER.info("Loaded GUI modifiers for: {} {} {} {}", slotsByMenuId.keySet(), slotsByClass.keySet(), byMenuId.keySet(), byClass.keySet());
-        }
-    }
 
-    private void parse(AssetsFiles resources, DynamicOps<JsonElement> ops) {
         Map<Identifier, JsonElement> jsons = resources.jsons();
         List<GuiModifier> allModifiers = new ArrayList<>();
 
-        for (var entry : parseEnabledJsons(jsons, ops)) {
+        for (var entry : parseEnabledJsons(jsons, JsonOps.INSTANCE)) {
             allModifiers.add(entry.getValue());
         }
 
@@ -118,6 +109,9 @@ public class GuiModifierManager extends ContentManager<GuiModifier> {
 
         }
 
+        if (!byMenuId.isEmpty() || !byClass.isEmpty() || !byTitle.isEmpty()) {
+            Polytone.LOGGER.info("Loaded GUI modifiers for: {} {} {}", byMenuId.keySet(), byClass.keySet(), byTitle.keySet());
+        }
     }
 
     // Keeps only the candidates whose condition currently passes, then merges them (file order).
