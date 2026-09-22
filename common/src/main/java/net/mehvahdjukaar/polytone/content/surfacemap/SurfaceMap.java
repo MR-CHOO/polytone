@@ -4,7 +4,7 @@ import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
-import it.unimi.dsi.fastutil.longs.LongIterator;
+import it.unimi.dsi.fastutil.longs.LongArrays;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -22,6 +22,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -140,6 +141,25 @@ public class SurfaceMap implements AutoCloseable {
         return block >> 4;
     }
 
+    // All of them when they fit in one frame's budget, else nearest the camera first, so the ground under
+    // the player is never the last to fill after a join, a reload or a teleport
+    private static long[] fillOrder(LongOpenHashSet dirty, int camX, int camZ) {
+        long[] keys = dirty.toLongArray();
+        if (keys.length > FILL_BUDGET) {
+            int cx = camX >> 4;
+            int cz = camZ >> 4;
+            LongArrays.quickSort(keys, (a, b) -> Integer.compare(
+                    distSqr(a, cx, cz), distSqr(b, cx, cz)));
+        }
+        return keys;
+    }
+
+    private static int distSqr(long chunk, int cx, int cz) {
+        int dx = ChunkPos.getX(chunk) - cx;
+        int dz = ChunkPos.getZ(chunk) - cz;
+        return dx * dx + dz * dz;
+    }
+
     @Override
     public void close() {
         for (HeightTexture layer : heights.values()) layer.close();
@@ -164,6 +184,9 @@ public class SurfaceMap implements AutoCloseable {
         private final DynamicTexture texture;
         private final NativeImage scratch = new NativeImage(CELLS_PER_CHUNK, CELLS_PER_CHUNK, true);
         private final LongOpenHashSet dirty = new LongOpenHashSet();
+        // how many written texels hold each slot, so finding the unused ones is a lookup, not a sweep
+        private final int[] slotTexels = new int[256];
+        private NativeImage blankColumn, blankRow;
 
         private int originX = Integer.MIN_VALUE;  // window min block
         private int originZ = Integer.MIN_VALUE;
@@ -194,7 +217,7 @@ public class SurfaceMap implements AutoCloseable {
 
         void update(ClientLevel level, int camX, int camZ, SurfaceBiomePalette palette) {
             moveWindow(camX, camZ);
-            fill(level, palette);
+            fill(level, camX, camZ, palette);
         }
 
         private void moveWindow(int camX, int camZ) {
@@ -220,7 +243,16 @@ public class SurfaceMap implements AutoCloseable {
                     boolean wasInside = hadWindow && bx >= oldX && bx < oldX + span && bz >= oldZ && bz < oldZ + span;
                     if (wasInside) continue;
                     dirty.add(ChunkPos.pack(bx >> 4, bz >> 4));
-                    if (overlaps) clearChunk(bx >> 4, bz >> 4);
+                }
+            }
+            // the window is the whole texture, so entering chunks always make up whole columns and rows of it:
+            // blank them a strip at a time, one upload each, rather than one upload per chunk
+            if (overlaps) {
+                for (int bx = newOriginX; bx < newOriginX + span; bx += 16) {
+                    if (bx < oldX || bx >= oldX + span) clearColumn(bx >> 4);
+                }
+                for (int bz = newOriginZ; bz < newOriginZ + span; bz += 16) {
+                    if (bz < oldZ || bz >= oldZ + span) clearRow(bz >> 4);
                 }
             }
         }
@@ -229,59 +261,67 @@ public class SurfaceMap implements AutoCloseable {
             NativeImage image = texture.getPixels();
             if (image == null) return;
             image.fillRect(0, 0, size, size, 0);
+            Arrays.fill(slotTexels, 0);
             texture.upload();
         }
 
-        // scratch is the one-chunk staging image writeChunk uploads through; zeroed, it uploads a blank chunk
-        private void clearChunk(int chunkX, int chunkZ) {
+        private void clearColumn(int chunkX) {
             NativeImage image = texture.getPixels();
             if (image == null) return;
             int destX = Math.floorMod((chunkX << 4) / TEXEL_SIZE, size);
-            int destZ = Math.floorMod((chunkZ << 4) / TEXEL_SIZE, size);
-            image.fillRect(destX, destZ, CELLS_PER_CHUNK, CELLS_PER_CHUNK, 0);
-            scratch.fillRect(0, 0, CELLS_PER_CHUNK, CELLS_PER_CHUNK, 0);
+            release(image, destX, 0, CELLS_PER_CHUNK, size);
+            if (blankColumn == null) blankColumn = new NativeImage(CELLS_PER_CHUNK, size, true);
             RenderSystem.getDevice().createCommandEncoder()
-                    .writeToTexture(texture.getTexture(), scratch, 0, 0, destX, destZ);
+                    .writeToTexture(texture.getTexture(), blankColumn, 0, 0, destX, 0);
         }
 
-        private void fill(ClientLevel level, SurfaceBiomePalette palette) {
+        private void clearRow(int chunkZ) {
+            NativeImage image = texture.getPixels();
+            if (image == null) return;
+            int destZ = Math.floorMod((chunkZ << 4) / TEXEL_SIZE, size);
+            release(image, 0, destZ, size, CELLS_PER_CHUNK);
+            if (blankRow == null) blankRow = new NativeImage(size, CELLS_PER_CHUNK, true);
+            RenderSystem.getDevice().createCommandEncoder()
+                    .writeToTexture(texture.getTexture(), blankRow, 0, 0, 0, destZ);
+        }
+
+        // blanks a rect of the cpu copy, giving back the slots its texels held
+        private void release(NativeImage image, int x0, int z0, int width, int height) {
+            for (int x = x0; x < x0 + width; x++) {
+                for (int z = z0; z < z0 + height; z++) {
+                    int pixel = image.getPixel(x, z);
+                    if ((pixel >>> 24) != 0) slotTexels[(pixel >> 16) & 0xFF]--;
+                }
+            }
+            image.fillRect(x0, z0, width, height, 0);
+        }
+
+        private void fill(ClientLevel level, int camX, int camZ, SurfaceBiomePalette palette) {
             if (dirty.isEmpty()) return;
             NativeImage image = texture.getPixels();
             if (image == null) return;
             // The palette has no idea which of its slots still matter - this texture is the only record.
-            // Sweep it before the last slot goes, or a long walk fills all 63 with biomes that left the
+            // Free them before the last slot goes, or a long walk fills all 63 with biomes that left the
             // window and every cell after that reads as overflow.
-            if (palette.isFull()) palette.retainOnly(usedSlots(image));
+            if (palette.isFull()) palette.retainOnly(usedSlots());
             int done = 0;
-            List<Long> written = new ArrayList<>();
-            LongIterator it = dirty.iterator();
-            while (it.hasNext() && done < FILL_BUDGET) {
-                long key = it.nextLong();
+            for (long key : fillOrder(dirty, camX, camZ)) {
+                if (done >= FILL_BUDGET) break;
+                dirty.remove(key);
                 int cx = ChunkPos.getX(key);
                 int cz = ChunkPos.getZ(key);
-                if (!contains(cx << 4, cz << 4)) {
-                    written.add(key);
-                    continue;
-                }
+                if (!contains(cx << 4, cz << 4)) continue; // left the window while queued
                 LevelChunk chunk = level.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, false);
-                if (chunk == null) continue;
+                if (chunk == null) continue; // not loaded yet: ClientChunkCacheMixin queues it again when it arrives
                 writeChunk(image, chunk, cx, cz, palette);
-                written.add(key);
                 done++;
             }
-            for (long key : written) dirty.remove(key);
         }
 
-        // Every slot any texel still holds. Cheap enough to be worth no cleverness: 136x136 is 18k reads
-        // and it only runs when the palette is one biome from full.
-        private IntSet usedSlots(NativeImage image) {
-            IntOpenHashSet used = new IntOpenHashSet();
-            for (int x = 0; x < size; x++) {
-                for (int z = 0; z < size; z++) {
-                    int pixel = image.getPixel(x, z);        // ARGB, and the slot lives in RED
-                    if ((pixel >>> 24) == 0) continue;       // never written
-                    used.add((pixel >> 16) & 0xFF);
-                }
+        private IntSet usedSlots() {
+            IntSet used = new IntOpenHashSet();
+            for (int slot = 0; slot < slotTexels.length; slot++) {
+                if (slotTexels[slot] > 0) used.add(slot);
             }
             return used;
         }
@@ -299,6 +339,9 @@ public class SurfaceMap implements AutoCloseable {
                     int y = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ) + 1;
                     int slot = palette.slotFor(chunk.getNoiseBiome(
                             QuartPos.fromBlock(blockX), QuartPos.fromBlock(y), QuartPos.fromBlock(blockZ)));
+                    int old = image.getPixel(destX + cellX, destZ + cellZ);
+                    if ((old >>> 24) != 0) slotTexels[(old >> 16) & 0xFF]--;
+                    slotTexels[slot & 0xFF]++;
                     int pixel = 0xFF000000 | ((slot & 0xFF) << 16);  // ARGB: the slot lives in RED
                     image.setPixel(destX + cellX, destZ + cellZ, pixel);
                     scratch.setPixel(cellX, cellZ, pixel);
@@ -311,6 +354,8 @@ public class SurfaceMap implements AutoCloseable {
         void close() {
             texture.close();
             scratch.close();
+            if (blankColumn != null) blankColumn.close();
+            if (blankRow != null) blankRow.close();
         }
     }
 
@@ -329,6 +374,7 @@ public class SurfaceMap implements AutoCloseable {
         // one chunk's worth of texels, blitted on its own so a single changed column never re-uploads the
         // whole window (a render-distance-sized layer is megabytes)
         private final NativeImage scratch = new NativeImage(16, 16, true);
+        private NativeImage blankColumn, blankRow;
 
         private int originX = Integer.MIN_VALUE; // window min block
         private int originZ = Integer.MIN_VALUE;
@@ -361,7 +407,7 @@ public class SurfaceMap implements AutoCloseable {
 
         void update(ClientLevel level, int camX, int camZ) {
             moveWindow(camX, camZ);
-            fill(level);
+            fill(level, camX, camZ);
         }
 
         // The window is locked to the block grid: it only ever jumps in whole chunks, and only the chunks
@@ -384,7 +430,15 @@ public class SurfaceMap implements AutoCloseable {
                     boolean wasInside = hadWindow && bx >= oldX && bx < oldX + size && bz >= oldZ && bz < oldZ + size;
                     if (wasInside) continue;
                     dirty.add(ChunkPos.pack(bx >> 4, bz >> 4));
-                    if (overlaps) clearChunk(bx >> 4, bz >> 4);
+                }
+            }
+            // entering chunks are whole columns and rows of the texture - see BiomeTexture.moveWindow
+            if (overlaps) {
+                for (int bx = newOriginX; bx < newOriginX + size; bx += 16) {
+                    if (bx < oldX || bx >= oldX + size) clearColumn(bx >> 4);
+                }
+                for (int bz = newOriginZ; bz < newOriginZ + size; bz += 16) {
+                    if (bz < oldZ || bz >= oldZ + size) clearRow(bz >> 4);
                 }
             }
         }
@@ -396,39 +450,42 @@ public class SurfaceMap implements AutoCloseable {
             texture.upload();
         }
 
-        private void clearChunk(int chunkX, int chunkZ) {
+        private void clearColumn(int chunkX) {
             NativeImage image = texture.getPixels();
             if (image == null) return;
             int destX = Math.floorMod(chunkX << 4, size);
-            int destZ = Math.floorMod(chunkZ << 4, size);
-            image.fillRect(destX, destZ, 16, 16, 0);
-            scratch.fillRect(0, 0, 16, 16, 0);
+            image.fillRect(destX, 0, 16, size, 0);
+            if (blankColumn == null) blankColumn = new NativeImage(16, size, true);
             RenderSystem.getDevice().createCommandEncoder()
-                    .writeToTexture(texture.getTexture(), scratch, 0, 0, destX, destZ);
+                    .writeToTexture(texture.getTexture(), blankColumn, 0, 0, destX, 0);
         }
 
-        private void fill(ClientLevel level) {
+        private void clearRow(int chunkZ) {
+            NativeImage image = texture.getPixels();
+            if (image == null) return;
+            int destZ = Math.floorMod(chunkZ << 4, size);
+            image.fillRect(0, destZ, size, 16, 0);
+            if (blankRow == null) blankRow = new NativeImage(size, 16, true);
+            RenderSystem.getDevice().createCommandEncoder()
+                    .writeToTexture(texture.getTexture(), blankRow, 0, 0, 0, destZ);
+        }
+
+        private void fill(ClientLevel level, int camX, int camZ) {
             if (dirty.isEmpty()) return;
             NativeImage image = texture.getPixels();
             if (image == null) return;
             int done = 0;
-            LongIterator it = dirty.iterator();
-            List<Long> written = new ArrayList<>();
-            while (it.hasNext() && done < FILL_BUDGET) {
-                long key = it.nextLong();
+            for (long key : fillOrder(dirty, camX, camZ)) {
+                if (done >= FILL_BUDGET) break;
+                dirty.remove(key);
                 int cx = ChunkPos.getX(key);
                 int cz = ChunkPos.getZ(key);
-                if (!contains(cx << 4, cz << 4)) {
-                    written.add(key); // left the window while queued
-                    continue;
-                }
+                if (!contains(cx << 4, cz << 4)) continue; // left the window while queued
                 LevelChunk chunk = level.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, false);
-                if (chunk == null) continue; // not loaded yet; try again next frame
+                if (chunk == null) continue; // not loaded yet: ClientChunkCacheMixin queues it again when it arrives
                 writeChunk(image, chunk, cx, cz);
-                written.add(key);
                 done++;
             }
-            for (long key : written) dirty.remove(key);
         }
 
         private void writeChunk(NativeImage image, LevelChunk chunk, int chunkX, int chunkZ) {
@@ -454,6 +511,8 @@ public class SurfaceMap implements AutoCloseable {
         void close() {
             texture.close();
             scratch.close();
+            if (blankColumn != null) blankColumn.close();
+            if (blankRow != null) blankRow.close();
         }
     }
 }
