@@ -67,7 +67,8 @@ public class LevelRendererMixin {
         // reads chunks the client already has, so this is a fill, not a render
         if (this.levelRenderState.cameraRenderState != null && Minecraft.getInstance().level != null) {
             Polytone.SURFACE_MAP.update(Minecraft.getInstance().level,
-                    Minecraft.getInstance().gameRenderer.mainCamera().position());
+                    Minecraft.getInstance().gameRenderer.mainCamera().position(),
+                    deltaTracker.getGameTimeDeltaPartialTick(false));
         }
     }
 

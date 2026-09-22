@@ -54,6 +54,10 @@ public class SurfaceMap implements AutoCloseable {
     public void setSettings(SurfaceMapSettings settings) {
         this.settings = settings;
         this.layersStale = true;
+        // Freed HERE, not in update(): with empty settings the manager never calls update() again (its
+        // gate checks isEmpty() first), so a cleanup there is unreachable and the old textures and palette
+        // would stay allocated AND bound - a map that was turned off kept rendering its last frozen state.
+        if (settings.isEmpty()) close();
     }
 
     public SurfaceMapSettings settings() {
@@ -79,9 +83,10 @@ public class SurfaceMap implements AutoCloseable {
     }
 
     /** Called once per frame, with no render pass open. */
-    public void update(ClientLevel level, Vec3 camPos, int renderDistanceChunks, List<String> wantedSamplers) {
+    public void update(ClientLevel level, Vec3 camPos, float partialTick, int renderDistanceChunks,
+                       List<String> wantedSamplers) {
         if (settings.isEmpty()) {
-            if (!heights.isEmpty()) close();
+            if (!heights.isEmpty() || biome != null) close();   // belt and braces: setSettings already did
             return;
         }
         // also when the wanted set grows: a program may declare a sampler after the first frame
@@ -98,9 +103,9 @@ public class SurfaceMap implements AutoCloseable {
         }
         if (biome != null) {
             biome.update(level, camX, camZ, palette);
-            // every frame: a palette value can be an expression, and biome_modifiers may lerp with rain
+            // evaluated once per tick and interpolated every frame, like the camera probe - see palette.update
             settings.biome().ifPresent(layer -> palette.update(level, camPos, layer.attributes(),
-                    biome.originX, biome.originZ, BiomeTexture.TEXEL_SIZE, biome.size));
+                    biome.originX, biome.originZ, BiomeTexture.TEXEL_SIZE, biome.size, partialTick));
         }
     }
 

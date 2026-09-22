@@ -21,6 +21,7 @@ import it.unimi.dsi.fastutil.ints.IntSet;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -78,6 +79,19 @@ public class SurfaceBiomePalette implements AutoCloseable {
     private boolean warnedOverflow = false;
     private GpuBuffer buffer = null;
 
+    // Per slot, per listed attribute: the value at the previous game tick and at this one, or null while the
+    // slot has not been evaluated. The attribute stack - MVEL biome_modifiers included - runs once per TICK
+    // and every frame in between is the attribute type's own partialTickLerp across the two, which is what
+    // vanilla's camera probe does (EnvironmentAttributeProbe.ValueProbe: tick() evaluates, get() lerps).
+    private final Object[][] lastValues = new Object[MAX_SLOTS][];
+    private final Object[][] newValues = new Object[MAX_SLOTS][];
+    private long lastTick = Long.MIN_VALUE;
+    // The block is re-uploaded only when what it holds changed: the slot table or the window moved
+    // (pending), a value is mid-transition, or a transition has just settled on its final value.
+    private boolean uploadPending = true;
+    private boolean wasTransitioning = false;
+    private int uploadedMinX, uploadedMinZ, uploadedTexels = -1;
+
     /** True when one more distinct biome would overflow, so the caller can free what it can first. */
     public boolean isFull() {
         return slots.size() + 1 >= MAX_SLOTS;
@@ -92,6 +106,7 @@ public class SurfaceBiomePalette implements AutoCloseable {
             bySlot.set(slot, biome);
             slots.put(biome.value(), slot);
             highestSlot = Math.max(highestSlot, slot);
+            forget(slot);   // evaluated at the next update, not at the next tick
             return slot;
         }
         if (!warnedOverflow) {
@@ -125,6 +140,7 @@ public class SurfaceBiomePalette implements AutoCloseable {
             }
             bySlot.set(slot, null);
             slots.remove(biome.value());
+            forget(slot);
         }
         highestSlot = highest;
     }
@@ -132,20 +148,68 @@ public class SurfaceBiomePalette implements AutoCloseable {
     public void clear() {
         slots.clear();
         Collections.fill(bySlot, null);
+        Arrays.fill(lastValues, null);
+        Arrays.fill(newValues, null);
+        lastTick = Long.MIN_VALUE;
+        uploadPending = true;
         highestSlot = 0;
         warnedOverflow = false;
     }
 
+    private void forget(int slot) {
+        lastValues[slot] = null;
+        newValues[slot] = null;
+        uploadPending = true;
+    }
+
     /**
-     * Re-evaluates every live slot. Each biome is run through the whole layer stack with its own
-     * contribution pinned to weight 1, which is what makes a pack's existing biome_modifiers - MVEL
-     * expressions included - show up in the palette with nothing new to author.
+     * Called every frame. Each biome is run through the whole layer stack with its own contribution pinned
+     * to weight 1, which is what makes a pack's existing biome_modifiers - MVEL expressions included - show
+     * up in the palette with nothing new to author.
+     *
+     * <p>That evaluation happens once per game TICK, since nothing it reads (weather, time, the globals) can
+     * change within one; a slot the window has just reached is evaluated straight away instead, so it never
+     * reads as zeros for the rest of a tick. Every frame is the attribute type's partialTickLerp between the
+     * last two ticks, and the block is only uploaded when that result can differ from the last upload.</p>
      */
     public void update(ClientLevel level, Vec3 camPos, List<EnvironmentAttribute<?>> attributes,
-                       int windowMinX, int windowMinZ, int texelSize, int texels) {
+                       int windowMinX, int windowMinZ, int texelSize, int texels, float partialTick) {
         int attrCount = attributes.size();
         int maxAttr = SurfaceMapSettings.BiomeLayer.MAX_ATTRIBUTES;
         boolean climate = attrCount < maxAttr;   // the last entry is free: carry the climate there
+
+        long tick = level.getGameTime();
+        boolean ticked = tick != lastTick;
+        lastTick = tick;
+        boolean transitioning = false;
+        for (int slot = 1; slot < MAX_SLOTS; slot++) {
+            Holder<Biome> biome = bySlot.get(slot);
+            if (biome == null) continue;
+            Object[] current = newValues[slot];
+            if (current == null || current.length != attrCount) {
+                current = evaluateAll(level, camPos, attributes, biome);
+                newValues[slot] = current;
+                lastValues[slot] = current;   // appear AT the value, not fade in from zero
+                uploadPending = true;
+            } else if (ticked) {
+                lastValues[slot] = current;
+                newValues[slot] = evaluateAll(level, camPos, attributes, biome);
+            }
+            if (!Arrays.equals(lastValues[slot], newValues[slot])) transitioning = true;
+        }
+        if (windowMinX != uploadedMinX || windowMinZ != uploadedMinZ || texels != uploadedTexels) {
+            uploadPending = true;
+        }
+        // One more upload after a transition ends, so the block lands exactly on the settled value rather
+        // than on the last partial frame before it.
+        boolean upload = buffer == null || uploadPending || transitioning || wasTransitioning;
+        wasTransitioning = transitioning;
+        if (!upload) return;
+        uploadPending = false;
+        uploadedMinX = windowMinX;
+        uploadedMinZ = windowMinZ;
+        uploadedTexels = texels;
+
         try (MemoryStack stack = MemoryStack.stackPush()) {
             Std140Builder builder = Std140Builder.onStack(stack, UBO_SIZE)
                     .putIVec4(windowMinX, windowMinZ, texelSize, texels)
@@ -162,7 +226,7 @@ public class SurfaceBiomePalette implements AutoCloseable {
                     if (biome == null) {
                         builder.putVec4(0, 0, 0, 0);
                     } else if (i < attrCount) {
-                        putValue(builder, evaluate(level, camPos, attributes.get(i), biome));
+                        putValue(builder, lerp(attributes.get(i), partialTick, lastValues[slot][i], newValues[slot][i]));
                     } else if (climate && i == maxAttr - 1) {
                         putClimate(builder, biome.value());
                     } else {
@@ -177,6 +241,21 @@ public class SurfaceBiomePalette implements AutoCloseable {
             }
             RenderSystem.getDevice().createCommandEncoder().writeToBuffer(buffer.slice(), bb);
         }
+    }
+
+    private static Object[] evaluateAll(ClientLevel level, Vec3 camPos, List<EnvironmentAttribute<?>> attributes,
+                                        Holder<Biome> biome) {
+        Object[] values = new Object[attributes.size()];
+        for (int i = 0; i < values.length; i++) values[i] = evaluate(level, camPos, attributes.get(i), biome);
+        return values;
+    }
+
+    // The type's own interpolation, as the camera probe applies it: colours, floats and angles each blend their
+    // own way, and a boolean does not blend at all.
+    @SuppressWarnings("unchecked")
+    private static <Value> Object lerp(EnvironmentAttribute<Value> attribute, float partialTick, Object from, Object to) {
+        if (from == null || to == null || from.equals(to)) return to;
+        return attribute.type().partialTickLerp().apply(partialTick, (Value) from, (Value) to);
     }
 
     private static <Value> Object evaluate(ClientLevel level, Vec3 camPos,

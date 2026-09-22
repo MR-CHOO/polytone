@@ -115,10 +115,10 @@ public class SurfaceMapManager extends SingleFileContentManager<SurfaceMapSettin
     }
 
     /** From {@code LevelRenderer.render} HEAD, where no render pass is open. */
-    public void update(ClientLevel level, Vec3 camPos) {
+    public void update(ClientLevel level, Vec3 camPos, float partialTick) {
         if (map.isEmpty() || declaredSamplers.isEmpty()) return;
         int renderDistance = Minecraft.getInstance().options.renderDistance().get();
-        map.update(level, camPos, renderDistance, List.copyOf(declaredSamplers));
+        map.update(level, camPos, partialTick, renderDistance, List.copyOf(declaredSamplers));
     }
 
     public void markChunkDirty(int chunkX, int chunkZ) {
