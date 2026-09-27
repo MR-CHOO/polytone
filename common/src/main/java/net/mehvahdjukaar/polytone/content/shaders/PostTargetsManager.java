@@ -17,6 +17,7 @@ import net.minecraft.client.renderer.PostChain;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
+import net.minecraft.util.ExtraCodecs;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -28,8 +29,8 @@ public class PostTargetsManager extends ContentManager<PostTargetsManager.Target
 
     public record TargetSpec(Optional<Integer> width, Optional<Integer> height, boolean useDepth) {
         static final SchemaCodec<TargetSpec> CODEC = SchemaRecord.create(TargetSpec.class, i -> i.group(
-                i.optional("width", Codec.INT, TargetSpec::width),
-                i.optional("height", Codec.INT, TargetSpec::height),
+                i.optional("width", ExtraCodecs.POSITIVE_INT, TargetSpec::width),
+                i.optional("height", ExtraCodecs.POSITIVE_INT, TargetSpec::height),
                 i.optional("use_depth", Codec.BOOL, false, TargetSpec::useDepth)
         ).apply(i, TargetSpec::new));
     }
@@ -39,7 +40,7 @@ public class PostTargetsManager extends ContentManager<PostTargetsManager.Target
     private final Map<Identifier, RenderTarget> targets = new HashMap<>();
 
     public PostTargetsManager() {
-        super(Spec.of("Post target", () -> TargetSpec.CODEC)
+        super(Spec.of("Post colormapToFill", () -> TargetSpec.CODEC)
                 .wikiPage("Shaders")
                 .folders("post_targets"));
     }
@@ -49,7 +50,7 @@ public class PostTargetsManager extends ContentManager<PostTargetsManager.Target
         Map<Identifier, TargetSpec> parsed = new HashMap<>();
         for (var entry : resources.jsons().entrySet()) {
             TargetSpec.CODEC.parse(ops, entry.getValue())
-                    .resultOrPartial(err -> Polytone.LOGGER.error("Failed to parse post target {}: {}", entry.getKey(), err))
+                    .resultOrPartial(err -> Polytone.LOGGER.error("Failed to parse post colormapToFill {}: {}", entry.getKey(), err))
                     .ifPresent(spec -> parsed.put(entry.getKey(), spec));
         }
         this.specs = Map.copyOf(parsed);

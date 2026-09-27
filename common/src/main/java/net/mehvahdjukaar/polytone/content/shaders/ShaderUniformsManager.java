@@ -26,14 +26,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-// Expression-driven float UBOs bound to any pipeline whose vertex or fragment shader id matches. The json path
-// under polytone/shader_modifiers is the target shader id.
 public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffers> {
 
     private static final String[] SHADER_EXTENSIONS = {".vsh", ".fsh"};
 
     private final List<ExpressionUniformBuffers> owned = new ArrayList<>();
     private final Map<Identifier, List<ExpressionUniformBuffers>> byShader = new HashMap<>();
+    private final Map<Identifier, List<ExpressionUniformBuffers>> byPostPassPipeline = new HashMap<>();
 
     // Written off-thread during prepare, read on the render thread at link time
     private volatile Set<String> modifierBlockNames = Set.of();
@@ -77,7 +76,6 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
         return false;
     }
 
-    // post chain files: block names are the expression_uniforms keys
     static void registerExpressionUniformNames(Map<Identifier, JsonElement> jsons) {
         for (var e : jsons.values()) {
             if (e == null || !e.isJsonObject()) continue;
@@ -90,7 +88,6 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
         }
     }
 
-    // shader_modifiers files: block names are the top-level keys
     private void registerUniformNames(Map<Identifier, JsonElement> jsons) {
         Set<String> names = new HashSet<>();
         for (var e : jsons.values()) {
@@ -112,10 +109,11 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
     // pipeline that simply hasn't drawn yet would otherwise look broken. The check itself is deferred to
     // the next frame because pipelines can link during the same reload that parses the modifier files,
     // and running it before byShader is filled would flag everything.
-    public void onPipelineLinked(Identifier vertexShader, Identifier fragmentShader, Set<String> declaredBlocks) {
+    public void onPipelineLinked(RenderPipeline pipeline, Set<String> declaredBlocks) {
         if (declaredBlocks.isEmpty() || modifierBlockNames.isEmpty()) return;
         synchronized (pendingChecks) {
-            pendingChecks.put(new PipelineKey(vertexShader, fragmentShader), Set.copyOf(declaredBlocks));
+            pendingChecks.put(new PipelineKey(pipeline.getVertexShader(), pipeline.getFragmentShader(),
+                    pipeline.getLocation()), Set.copyOf(declaredBlocks));
         }
     }
 
@@ -133,7 +131,11 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
             for (Identifier shaderId : key.shaderIds()) {
                 List<ExpressionUniformBuffers> list = byShader.get(shaderId);
                 if (list == null) continue;
-                for (ExpressionUniformBuffers b : list) supplied.addAll(b.expressions().keySet());
+                for (ExpressionUniformBuffers b : list) supplied.addAll(b.getExpressions().keySet());
+            }
+            List<ExpressionUniformBuffers> postPass = byPostPassPipeline.get(key.location());
+            if (postPass != null) {
+                for (ExpressionUniformBuffers b : postPass) supplied.addAll(b.getExpressions().keySet());
             }
 
             // Declared by the shader, owned by Polytone, supplied by nobody: the block exists in the
@@ -162,7 +164,7 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
         List<Identifier> ids = new ArrayList<>();
         for (var e : byShader.entrySet()) {
             for (ExpressionUniformBuffers b : e.getValue()) {
-                if (b.expressions().containsKey(blockName)) {
+                if (b.getExpressions().containsKey(blockName)) {
                     ids.add(e.getKey());
                     break;
                 }
@@ -171,7 +173,7 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
         return ids;
     }
 
-    private record PipelineKey(Identifier vertexShader, Identifier fragmentShader) {
+    private record PipelineKey(Identifier vertexShader, Identifier fragmentShader, Identifier location) {
         List<Identifier> shaderIds() {
             return vertexShader.equals(fragmentShader) ? List.of(vertexShader)
                     : List.of(vertexShader, fragmentShader);
@@ -204,6 +206,7 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
             for (var b : owned) b.close();
             owned.clear();
             byShader.clear();
+            byPostPassPipeline.clear();
         }
         // Pipelines relink on a reload, so a pack that fixed a block name must be able to report again
         synchronized (pendingChecks) {
@@ -223,27 +226,43 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
     }
 
     public void unregisterExternal(Identifier shaderId, ExpressionUniformBuffers buffers) {
-        List<ExpressionUniformBuffers> list = byShader.get(shaderId);
+        removeFrom(byShader, shaderId, buffers);
+    }
+
+    public void registerOnPostPass(Identifier pipelineLocation, ExpressionUniformBuffers buffers) {
+        byPostPassPipeline.computeIfAbsent(pipelineLocation, k -> new ArrayList<>()).add(buffers);
+    }
+
+    public void unregisterFromPostPass(Identifier pipelineLocation, ExpressionUniformBuffers buffers) {
+        removeFrom(byPostPassPipeline, pipelineLocation, buffers);
+    }
+
+    private static void removeFrom(Map<Identifier, List<ExpressionUniformBuffers>> map, Identifier key,
+                                   ExpressionUniformBuffers buffers) {
+        List<ExpressionUniformBuffers> list = map.get(key);
         if (list != null) {
             list.remove(buffers);
-            if (list.isEmpty()) byShader.remove(shaderId);
+            if (list.isEmpty()) map.remove(key);
         }
     }
 
     // once per frame while no render pass is open; tryApply only binds what this uploaded
     public void updateAll() {
         runPendingChecks();
-        if (byShader.isEmpty()) return;
-        // one buffer set can be registered under several shader ids
+        if (!hasAnyRegistered()) return;
         Set<ExpressionUniformBuffers> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         for (List<ExpressionUniformBuffers> list : byShader.values()) {
             for (ExpressionUniformBuffers b : list) {
                 if (seen.add(b)) b.update();
             }
         }
+        for (List<ExpressionUniformBuffers> list : byPostPassPipeline.values()) {
+            for (ExpressionUniformBuffers b : list) {
+                if (seen.add(b)) b.update();
+            }
+        }
     }
 
-    // raw GL path for renderers that bypass RenderPass (Sodium chunk shaders); safe for any bound program
     public void bindToCurrentGlProgram() {
         if (byShader.isEmpty()) return;
         int program = GL11C.glGetInteger(GL20C.GL_CURRENT_PROGRAM);
@@ -258,10 +277,16 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
     }
 
     public boolean hasAnyRegistered() {
-        return !byShader.isEmpty();
+        return !byShader.isEmpty() || !byPostPassPipeline.isEmpty();
     }
 
     public void tryApply(RenderPass pass, RenderPipeline pipeline, Set<String> declaredUniforms) {
+        if (!byPostPassPipeline.isEmpty()) {
+            List<ExpressionUniformBuffers> postPassBuffers = byPostPassPipeline.get(pipeline.getLocation());
+            if (postPassBuffers != null) {
+                for (ExpressionUniformBuffers b : postPassBuffers) b.bind(pass, declaredUniforms);
+            }
+        }
         if (byShader.isEmpty()) return;
         List<ExpressionUniformBuffers> list = byShader.get(pipeline.getFragmentShader());
         if (list == null) list = byShader.get(pipeline.getVertexShader());

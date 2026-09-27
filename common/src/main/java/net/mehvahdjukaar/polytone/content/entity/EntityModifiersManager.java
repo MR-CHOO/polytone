@@ -74,7 +74,6 @@ public class EntityModifiersManager extends ContentManager<EntityModifier> {
             LocalPlayer player = mc.player;
             if (player != null) {
                 EntityModifier mod = emittersPerEntity.get(player.getType());
-                // skip only the no-model path if the player's model already recorded spawns this tick
                 if (mod != null && !spawnRecords.containsKey(player.getId())) {
                     Vec3 cameraPos = mc.gameRenderer.mainCamera().position();
                     var particleSpawns = mod.gatherParticleSpawnsWithoutModel(player, cameraPos);

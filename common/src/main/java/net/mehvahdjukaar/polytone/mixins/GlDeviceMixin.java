@@ -30,6 +30,6 @@ public class GlDeviceMixin {
             // uniform BLOCKS only - samplers and texel buffers are not what a modifier supplies
             if (e.getValue() instanceof Uniform.Ubo) blocks.add(e.getKey());
         }
-        Polytone.SHADER_EFFECTS.onPipelineLinked(pipeline.getVertexShader(), pipeline.getFragmentShader(), blocks);
+        Polytone.SHADER_EFFECTS.onPipelineLinked(pipeline, blocks);
     }
 }

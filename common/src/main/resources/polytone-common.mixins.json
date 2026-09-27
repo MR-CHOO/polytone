@@ -6,6 +6,7 @@
   "mixins": [
     "DarkOakColorMixin",
     "EnvironmentAttributeSystemBuilderMixin",
+    "IdentifierMixin",
     "OverlayEntryMixin",
     "OverlayIntermediateEntryMixin",
     "PackMixin",
@@ -40,6 +41,7 @@
     "EntityRenderStateMixin",
     "EnvironmentAttributeEntryMixin",
     "EnvironmentSystemMixin",
+    "ValueProbeMixin",
     "FishingHookRendererMixin",
     "FluidStateModelSetMixin",
     "GameRendererMixin",
@@ -47,6 +49,7 @@
     "GlProgramMixin",
     "GlslCompilerMixin",
     "RenderPassMixin",
+    "GuiExtractMixin",
     "GuiGraphicsExtractorMixin",
     "GuiMixin",
     "GuiRenderStateMixin",

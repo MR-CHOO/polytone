@@ -14,33 +14,50 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.function.Supplier;
 
+//nonsense stateful backing class
 public class DynamicAttributeContext {
 
     // true while the installed system has a dimension level dynamic layer, so the probe records biome weights
     public static boolean hasDynamicLayers = false;
 
+    private static boolean timeBlendRequested;
+
     private static @Nullable Biome biome;
-    private static @Nullable Object incomingValue;
+    private static @Nullable Object previousLayerValue;
 
     // defaults to the camera biome
     public static Biome biome() {
         return biome != null ? biome : ClientFrameTicker.getCameraBiome().value();
     }
 
-    public static double incomingNumber() {
-        return incomingValue instanceof Number n ? n.doubleValue() : 0;
+    public static void markTimeBlendRequested() {
+        timeBlendRequested = true;
+    }
+
+    public static boolean consumeTimeBlendRequest() {
+        boolean requested = timeBlendRequested;
+        timeBlendRequested = false;
+        return requested;
+    }
+
+    public static double previousLayerNumber() {
+        return previousLayerValue instanceof Number n ? n.doubleValue() : 0;
     }
 
     public static int sampleColor(IColorGetter colormap) {
         ClientLevel level = Minecraft.getInstance().level;
         if (level == null) return 0;
+        //expressionColor.sampleColor drops the biome and has no v
+        if (colormap instanceof IColorGetter.ExpressionColor(IBlockExp exp)) {
+            return (int) (long) exp.evaluate(level, ClientFrameTicker.getCameraPos(), null, biome(), previousLayerNumber());
+        }
         return colormap.sampleColor(level, null, ClientFrameTicker.getCameraPos(), biome(), null);
     }
 
     public static float evaluate(IBlockExp expression) {
         ClientLevel level = Minecraft.getInstance().level;
         if (level == null) return 0f;
-        return (float) expression.evaluate(level, ClientFrameTicker.getCameraPos(), null, incomingNumber());
+        return (float) expression.evaluate(level, ClientFrameTicker.getCameraPos(), null, biome(), previousLayerNumber());
     }
 
     public static <T> T inBiome(Biome owner, Supplier<T> body) {
@@ -54,13 +71,13 @@ public class DynamicAttributeContext {
     }
 
     // scoped to one layer application, see EnvironmentAttributeEntryMixin
-    public static <T> T withIncoming(@Nullable Object value, Supplier<T> body) {
-        Object previous = incomingValue;
-        incomingValue = value;
+    public static <T> T wrapAttributeMod(@Nullable Object valueBelow, Supplier<T> body) {
+        Object previous = previousLayerValue;
+        previousLayerValue = valueBelow;
         try {
             return body.get();
         } finally {
-            incomingValue = previous;
+            previousLayerValue = previous;
         }
     }
 

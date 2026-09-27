@@ -49,6 +49,22 @@ public record Targets(List<Entry> entries) {
         return new Targets(entries);
     }
 
+    //mainly for legacy parsing
+    public static Targets legacyIds(Collection<String> names) {
+        List<Entry> entries = new ArrayList<>();
+        for (String name : names) {
+            boolean isTag = name.startsWith("#");
+            Identifier id = Identifier.tryParse(isTag ? name.substring(1) : name);
+            if (id == null) {
+                Polytone.LOGGER.warn("Skipping invalid block name in legacy block list: {}", name);
+                continue;
+            }
+            Entry entry = isTag ? new TagLocation(id) : new SimpleLocation(id);
+            entries.add(new OptionalEntry(entry, false));
+        }
+        return new Targets(entries);
+    }
+
     public <T> Collection<Holder<T>> compute(Identifier fileId, HolderLookup.RegistryLookup<T> registry) {
 
         Set<Holder<T>> set = new HashSet<>();
@@ -66,7 +82,7 @@ public record Targets(List<Entry> entries) {
                     }
                 } catch (Exception e) {
                     if (!Polytone.CONFIGS.isLenientLoading()){
-                        throw new IllegalStateException("Failed to parse some target(s) for polytone file " + fileId, e);
+                        throw new IllegalStateException("Failed to parse some colormapToFill(s) for polytone file " + fileId, e);
                     }
                 }
             }
@@ -105,14 +121,12 @@ public record Targets(List<Entry> entries) {
         <T> Iterable<? extends Holder<T>> get(HolderLookup.RegistryLookup<T> reg);
     }
 
+    // tag first cuz SOME mod is making resource locations accept # symbols...
     private static final Codec<Entry> SIMPLE_TAG_OR_REGEX_ENTRY_CODEC = SchemaCodecs.alternatives(
-            "id", SimpleLocation.SIMPLE_CODEC,
             "tag", TagLocation.TAG_CODEC,
+            "id", SimpleLocation.SIMPLE_CODEC,
             "regex", RegexLocation.REGEX_CODEC);
 
-    // The wire codec is a plain withAlternative fold; labeled() only adds the editor schema
-    // (the labeled alternatives of the first branch splice flat, so the selector
-    // shows [id, tag, regex, optional id]) without touching the format.
     private static final Codec<Entry> ENTRY_CODEC = SchemaCodecs.labeled(
             Codec.withAlternative(SIMPLE_TAG_OR_REGEX_ENTRY_CODEC, OptionalEntry.OPTIONAL_CODEC),
             SchemaCodecs.alt("entry", SIMPLE_TAG_OR_REGEX_ENTRY_CODEC),

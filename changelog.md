@@ -1,1 +1,1 @@
-- many new addition related to fog, allowing to customize previously hardcoded logic without using env modifiers workarounds.
+- new color helpers in expressions

@@ -52,7 +52,6 @@ public final class SodiumShadowRenderer {
         SodiumWorldRenderer worldRenderer = SodiumWorldRenderer.instanceNullable();
         if (worldRenderer == null) return;
 
-        // restore is claimed before anything mutates Sodium's lists
         RenderSectionManager sectionManager = renderSectionManager();
         boolean mutatedRenderLists = sectionManager != null;
         try {
@@ -69,7 +68,6 @@ public final class SodiumShadowRenderer {
             performance.useBlockFaceCulling = false;
             activeShadowColor = color;
             activeShadowDepth = depth;
-            // the matrices UBO is written once per frame; reset it on the way in and out or the main pass draws from the sun
             UniformBufferManager uniforms = ((SodiumWorldRendererShadowAccessor) worldRenderer).polytone$getUniformBufferManager();
             if (uniforms != null) uniforms.prepareFrame();
             try {
@@ -83,7 +81,9 @@ public final class SodiumShadowRenderer {
                 activeShadowDepth = null;
             }
         } finally {
-            if (mutatedRenderLists) rebuildCameraRenderList(mc, cam);
+            if (mutatedRenderLists) {
+                rebuildCameraRenderList(mc, cam);
+            }
         }
     }
 

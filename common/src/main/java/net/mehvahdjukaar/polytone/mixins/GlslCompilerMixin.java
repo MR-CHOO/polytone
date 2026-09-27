@@ -56,6 +56,6 @@ public class GlslCompilerMixin {
         for (var e : entries) {
             if (e.type() == VulkanBindGroupLayout.VulkanBindGroupEntryType.UNIFORM_BUFFER) blocks.add(e.name());
         }
-        Polytone.SHADER_EFFECTS.onPipelineLinked(pipeline.getVertexShader(), pipeline.getFragmentShader(), blocks);
+        Polytone.SHADER_EFFECTS.onPipelineLinked(pipeline, blocks);
     }
 }

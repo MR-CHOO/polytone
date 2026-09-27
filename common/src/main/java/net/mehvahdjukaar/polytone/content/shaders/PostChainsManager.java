@@ -74,13 +74,14 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
     private GpuBuffer emptyShadowUbo = null;
 
     private final List<PostChainActivator> activators = new ArrayList<>();
-    private final Map<Identifier, List<Map<String, Identifier>>> samplersByPassShader = new HashMap<>();
+    private final Map<Identifier, List<Map<String, Identifier>>> samplersByPassPipeline = new HashMap<>();
     // Chains already reported as unsatisfiable, so the error is logged once instead of every frame. Identity-
     // based: PostChain has no id and does not override equals, and the instance is what we are gating on.
     private final Set<PostChain> warnedChains = Collections.newSetFromMap(new IdentityHashMap<>());
 
     private TextureTarget worldDepthSnapshot;
     private boolean worldDepthCaptured = false;
+    private boolean levelRenderedThisFrame = false;
 
     // The chains deferred to the after-hand stage for THIS frame, in priority order. Filled by
     // addChainsToFrameGraph, consumed by runChainsAfterHand. Render thread only.
@@ -122,7 +123,7 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
             for (var a : activators) a.close();
             activators.clear();
         }
-        samplersByPassShader.clear();
+        samplersByPassPipeline.clear();
         // Chains are rebuilt on reload, so a pack that fixed its targets must be able to report again
         warnedChains.clear();
         // Holds PostChains a reload closes, and the staging is worth re-logging for the new set
@@ -161,7 +162,7 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
     }
 
     public boolean hasAnyPassBindings() {
-        return globalsDeclared || shadowUboDeclared || shadowSamplerDeclared || !samplersByPassShader.isEmpty()
+        return globalsDeclared || shadowUboDeclared || shadowSamplerDeclared || !samplersByPassPipeline.isEmpty()
                 || !Polytone.VIEWPOINTS.isEmpty() || Polytone.SURFACE_MAP.hasDeclaredSamplers();
     }
 
@@ -196,16 +197,16 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         return wanted;
     }
 
-    public void registerSamplers(Identifier passShaderId, Map<String, Identifier> samplers) {
+    public void registerSamplers(Identifier pipelineLocation, Map<String, Identifier> samplers) {
         if (samplers.isEmpty()) return;
-        samplersByPassShader.computeIfAbsent(passShaderId, k -> new ArrayList<>()).add(samplers);
+        samplersByPassPipeline.computeIfAbsent(pipelineLocation, k -> new ArrayList<>()).add(samplers);
     }
 
-    public void unregisterSamplers(Identifier passShaderId, Map<String, Identifier> samplers) {
-        List<Map<String, Identifier>> list = samplersByPassShader.get(passShaderId);
+    public void unregisterSamplers(Identifier pipelineLocation, Map<String, Identifier> samplers) {
+        List<Map<String, Identifier>> list = samplersByPassPipeline.get(pipelineLocation);
         if (list != null) {
             list.remove(samplers);
-            if (list.isEmpty()) samplersByPassShader.remove(passShaderId);
+            if (list.isEmpty()) samplersByPassPipeline.remove(pipelineLocation);
         }
     }
 
@@ -221,8 +222,8 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         }
         Polytone.VIEWPOINTS.bindSamplers(pass, declaredUniforms);
         Polytone.SURFACE_MAP.bindSamplers(pass, declaredUniforms);
-        if (samplersByPassShader.isEmpty()) return;
-        List<Map<String, Identifier>> list = samplersByPassShader.get(pipeline.getFragmentShader());
+        if (samplersByPassPipeline.isEmpty()) return;
+        List<Map<String, Identifier>> list = samplersByPassPipeline.get(pipeline.getLocation());
         if (list == null) return;
         var textureManager = Minecraft.getInstance().getTextureManager();
         GpuSampler sampler = RenderSystem.getSamplerCache().getRepeat(FilterMode.LINEAR);
@@ -287,13 +288,15 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
     }
 
     public void tick() {
-        for (var a : activators) {
-            a.refreshActive();
+        synchronized (activators) {
+            for (var a : activators) {
+                a.refreshActive();
+            }
         }
     }
 
     /** An active chain paired with the id of the json that activated it - PostChain itself has no id. */
-    private record ActiveChain(Identifier id, PostChain chain) {
+    private record ActiveChain(Identifier id, PostChain chain, boolean readsMainDepth) {
     }
 
     // In ascending `priority` order: `activators` is filled from Parsed.SortedMap#entrySet, which sorts by
@@ -306,7 +309,7 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         synchronized (activators) {
             for (var a : activators) {
                 PostChain chain = a.getPostChain(shaderManager);
-                if (chain != null) active.add(new ActiveChain(a.postChainId(), chain));
+                if (chain != null) active.add(new ActiveChain(a.postChainId(), chain, a.readsMainDepth()));
             }
         }
         return active;
@@ -323,6 +326,13 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         int i = ordered.size();
         while (i > 0 && canRunAfterHand(ordered.get(i - 1).chain())) i--;
         return i;
+    }
+
+    private boolean anyDeferredChainReadsMainDepth() {
+        for (ActiveChain c : deferredAfterHand) {
+            if (c.readsMainDepth()) return true;
+        }
+        return false;
     }
 
     // There is otherwise no way to see the staging, and a silent reorder costs a day of shader debugging.
@@ -415,10 +425,11 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
     }
 
     public void snapshotWorldDepth(RenderTarget main) {
+        levelRenderedThisFrame = true;
         worldDepthCaptured = false;
-        // Nothing deferred means no after-hand stage at all, so skip the full-screen depth copy and the
-        // combine that would follow it.
-        if (deferredAfterHand.isEmpty()) return;
+        // Only a deferred chain that reads minecraft:main's depth needs the world depth back, so skip the
+        // full-screen depth copy and the combine that would follow it otherwise.
+        if (!anyDeferredChainReadsMainDepth()) return;
         ensureSnapshotSized(main.width, main.height);
         worldDepthSnapshot.copyDepthFrom(main);
         worldDepthCaptured = true;
@@ -426,13 +437,15 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
 
     // Fold the saved world depth back into the main depth, then run every chain this stage can host.
     public void runChainsAfterHand(RenderTarget main, GraphicsResourceAllocator resourceAllocator) {
-        if (!worldDepthCaptured) return;
+        if (!levelRenderedThisFrame) return;
+        levelRenderedThisFrame = false;
+        boolean depthCaptured = worldDepthCaptured;
         worldDepthCaptured = false;
         // Exactly the suffix addChainsToFrameGraph deferred this frame - never re-derived, so the two stages
         // cannot disagree and no chain can be hosted twice or dropped.
         if (deferredAfterHand.isEmpty()) return;
 
-        combineWorldDepthIntoMain(main);
+        if (depthCaptured) combineWorldDepthIntoMain(main);
 
         // Build the graph ourselves instead of calling PostChain#process per chain. process() hands the chain
         // a bundle holding ONLY minecraft:main, so any chain writing to one of our post_targets - which is

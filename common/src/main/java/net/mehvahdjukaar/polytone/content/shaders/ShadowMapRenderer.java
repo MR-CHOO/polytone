@@ -388,7 +388,7 @@ public class ShadowMapRenderer {
                 if (state != null) {
                     blockEntityDispatcher.submit(state, poseStack, submitNodes, camState);
                 }
-            } catch (Exception e) {
+            } catch (Exception ignored) {
             }
             poseStack.popPose();
         }

@@ -5,8 +5,8 @@ import com.google.gson.JsonElement;
 import net.mehvahdjukaar.candlelight.api.PlatformImpl;
 import net.mehvahdjukaar.polytone.Polytone;
 import net.mehvahdjukaar.polytone.common.struc.AssetsFiles;
-import net.mehvahdjukaar.polytone.common.companion.TexturePart;
-import net.mehvahdjukaar.polytone.common.companion.TrackedTextures;
+import net.mehvahdjukaar.polytone.common.companion.TextureRole;
+import net.mehvahdjukaar.polytone.common.companion.ScannedTextures;
 import net.mehvahdjukaar.polytone.content.colormap.Colormap;
 import net.mehvahdjukaar.polytone.content.colormap.IColorGetter;
 import net.mehvahdjukaar.polytone.common.LegacyHelper;
@@ -31,15 +31,12 @@ import java.util.concurrent.ConcurrentHashMap;
 public class FluidPropertiesManager extends ContentManager<FluidPropertyModifier> {
 
     private final Map<Fluid, FluidPropertyModifier> modifiers = new HashMap<>();
-
-    // Thread-safe map of the fluid render tint (as a concurrent colormap), read from chunk-build
-    // worker threads by FluidStateModelSetMixin. Populated on the main thread during apply.
     private final Map<Fluid, IColorGetter> concurrentTints = new ConcurrentHashMap<>();
 
-    private static final TexturePart<FluidPropertyModifier> TINT =
-            TexturePart.plain("tint", FluidPropertyModifier::getColormap);
-    private static final TexturePart<FluidPropertyModifier> FOG =
-            TexturePart.suffix("_fog", FluidPropertyModifier::getFogColormap);
+    private static final TextureRole<FluidPropertyModifier> TINT =
+            TextureRole.plain("tint", FluidPropertyModifier::getColormap);
+    private static final TextureRole<FluidPropertyModifier> FOG =
+            TextureRole.suffix("_fog", FluidPropertyModifier::getFogColormap);
 
 
     public FluidPropertiesManager() {
@@ -49,13 +46,13 @@ public class FluidPropertiesManager extends ContentManager<FluidPropertyModifier
                 .folders("fluid_modifiers", "fluid_properties"));
     }
 
-    private static FluidPropertyModifier defaultFor(TexturePart<FluidPropertyModifier> part) {
+    private static FluidPropertyModifier defaultFor(TextureRole<FluidPropertyModifier> part) {
         return part == FOG ? FluidPropertyModifier.ofFogColor(Colormap.createDefTriangle())
                 : FluidPropertyModifier.ofBlockColor(Colormap.createDefTriangle());
     }
 
-    private Map<Identifier, Parsed<FluidPropertyModifier>> extraModifiers;
-    private Map<Identifier, ArrayImage> extraImages;
+    private Map<Identifier, Parsed<FluidPropertyModifier>> extraModifiers = Map.of();
+    private Map<Identifier, ArrayImage> extraImages = Map.of();
 
     //essentially replacing this for better mod compat
     private ColorResolver vanillaWaterColorResolver = null;
@@ -90,7 +87,7 @@ public class FluidPropertiesManager extends ContentManager<FluidPropertyModifier
     @Override
     protected void parseWithLevel(AssetsFiles resources, RegistryOps<JsonElement> ops, HolderLookup.Provider access) {
         var jsons = resources.jsons();
-        var textures = new TrackedTextures(resources.textures());
+        var textures = new ScannedTextures(resources.textures());
 
         LinkedListMultimap<Identifier, Parsed<FluidPropertyModifier>> parsedModifiers =   LinkedListMultimap.create();
         extraModifiers.forEach(parsedModifiers::put);
@@ -131,16 +128,12 @@ public class FluidPropertiesManager extends ContentManager<FluidPropertyModifier
 
     @Override
     protected void applyWithLevel(HolderLookup.Provider access, boolean isLogIn) {
-        // Precompute concurrent tints on the main thread (getOrCreateConcurrentColormap is not
-        // thread-safe) so the render-thread mixin only ever reads them.
         for (var entry : modifiers.entrySet()) {
             Fluid fluid = entry.getKey();
             IColorGetter tint = entry.getValue().getColormap();
             if (tint == null) continue;
             IColorGetter concurrent = Polytone.COLORMAPS.getOrCreateConcurrentColormap(tint);
             concurrentTints.put(fluid, concurrent);
-            // A modifier targeting one variant tints the whole fluid (matches the old FluidType-wide
-            // behaviour). Don't clobber an explicit per-variant modifier.
             if (fluid instanceof FlowingFluid ff) {
                 concurrentTints.putIfAbsent(ff.getSource(), concurrent);
                 concurrentTints.putIfAbsent(ff.getFlowing(), concurrent);
@@ -154,6 +147,8 @@ public class FluidPropertiesManager extends ContentManager<FluidPropertyModifier
     @Override
     protected void resetWithLevel(boolean logOff) {
         modifiers.clear();
+        extraModifiers = Map.of();
+        extraImages = Map.of();
         concurrentTints.clear();
         clearSpecial();
         if (vanillaWaterColorResolver != null) {
@@ -169,7 +164,7 @@ public class FluidPropertiesManager extends ContentManager<FluidPropertyModifier
             tryAddSpecial(f, mod);
 
             //replaces watercolor func with first colormap that targets water. good enough
-            if (fluid.value() == Fluids.WATER && mod.getColormap() instanceof ColorResolver c) {
+            if (fluid.value() == Fluids.WATER && vanillaWaterColorResolver == null && mod.getColormap() instanceof ColorResolver c) {
                 vanillaWaterColorResolver = BiomeColors.WATER_COLOR_RESOLVER;
                 BiomeColors.WATER_COLOR_RESOLVER = c;
             }

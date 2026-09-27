@@ -61,15 +61,15 @@ public abstract class PositionalProxy {
         BlockPos newPos = getPosInternal();
         if (newPos == posCache) return posCache;
         if (posCache == null || !posCache.equals(newPos)) {
-            // A COPY, never the caller's object: Camera.blockPosition() hands back one BlockPos that vanilla
-            // moves in place, so keeping it would make the check above compare it with itself - equal
-            // forever - and every cached block, block entity and biome would stay at the first position.
+            //first call keeps whatever the constructor seeded (attribute blending hands us a neighbour biome)
+            if (posCache != null) {
+                stateCache = null;
+                beCache = null;
+                biomeCache = null;
+                biomeNameCache = null;
+            }
+            // a copy: Camera.blockPosition() is one mutable BlockPos that vanilla moves in place
             posCache = newPos == null ? null : newPos.immutable();
-            //invalidate caches
-            stateCache = null;
-            beCache = null;
-            biomeCache = null;
-            biomeNameCache = null;
         }
         return posCache;
     }

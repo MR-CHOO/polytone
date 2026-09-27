@@ -61,8 +61,6 @@ public class GlobalExpressionsManager extends ContentManager<GlobalExpression> {
         map.putAll(values);
     }
 
-    // Runtime lookup for global.value('name'): resolves at evaluation time, so usable from expressions
-    // compiled before globals register (custom particles parse in the async prepare phase).
     public double getValue(String key) {
         Object d = values.get(key);
         return d instanceof Number n ? n.doubleValue() : 0;

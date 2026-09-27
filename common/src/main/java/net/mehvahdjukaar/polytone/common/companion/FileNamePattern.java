@@ -11,9 +11,9 @@ import java.util.TreeSet;
 // How a TexturePart's files are named relative to its content stem: a literal suffix
 // (<stem><suffix>.png) or the tinted family (<stem>.png default, <stem>_<n>.png for tint n).
 // The statics are the only parser/printer for it, shared by reload and editor.
-public sealed interface Naming {
+public sealed interface FileNamePattern {
 
-    int DEFAULT_INDEX = -1;
+    int NO_INDEX = -1;
 
     record ParsedName(String stem, int index) {
     }
@@ -26,20 +26,19 @@ public sealed interface Naming {
 
     String slotLabel(String partLabel, int index);
 
-    Set<Integer> presentIndexes(TrackedTextures textures, Identifier contentId);
+    Set<Integer> presentIndexes(ScannedTextures textures, Identifier contentId);
 
-    // orphan routing order: higher parses first (long literal suffixes beat the tinted family beats "")
-    int parseSpecificity();
+    int orphanPriority();
 
-    static Naming suffix(String suffix) {
+    static FileNamePattern suffix(String suffix) {
         return new Suffix(suffix);
     }
 
-    static Naming tinted() {
+    static FileNamePattern tinted() {
         return Tinted.INSTANCE;
     }
 
-    record Suffix(String suffix) implements Naming {
+    record Suffix(String suffix) implements FileNamePattern {
 
         @Override
         public String fileName(String stem, int index) {
@@ -48,44 +47,44 @@ public sealed interface Naming {
 
         @Override
         public @Nullable Integer indexOf(String fileName, String stem) {
-            return fileName.equalsIgnoreCase(stem + suffix + ".png") ? DEFAULT_INDEX : null;
+            return fileName.equalsIgnoreCase(stem + suffix + ".png") ? NO_INDEX : null;
         }
 
         @Override
         public @Nullable ParsedName parseName(String baseName) {
-            if (suffix.isEmpty()) return new ParsedName(baseName, DEFAULT_INDEX);
+            if (suffix.isEmpty()) return new ParsedName(baseName, NO_INDEX);
             if (baseName.length() > suffix.length() && baseName.endsWith(suffix)) {
-                return new ParsedName(baseName.substring(0, baseName.length() - suffix.length()), DEFAULT_INDEX);
+                return new ParsedName(baseName.substring(0, baseName.length() - suffix.length()), NO_INDEX);
             }
             return null;
         }
 
         @Override
         public String slotLabel(String partLabel, int index) {
-            return index == DEFAULT_INDEX ? partLabel : partLabel + " " + index;
+            return index == NO_INDEX ? partLabel : partLabel + " " + index;
         }
 
         @Override
-        public Set<Integer> presentIndexes(TrackedTextures textures, Identifier contentId) {
+        public Set<Integer> presentIndexes(ScannedTextures textures, Identifier contentId) {
             String stem = StrUtils.lastSegment(contentId.getPath());
-            return textures.find(contentId, fileName(stem, DEFAULT_INDEX)) != null
-                    ? Set.of(DEFAULT_INDEX) : Set.of();
+            return textures.find(contentId, fileName(stem, NO_INDEX)) != null
+                    ? Set.of(NO_INDEX) : Set.of();
         }
 
         @Override
-        public int parseSpecificity() {
+        public int orphanPriority() {
             return suffix.isEmpty() ? -1 : suffix.length();
         }
 
         // "" -> "default", "_terrain_fog" -> "terrain fog"
-        String derivedLabel() {
-            if (suffix.isEmpty()) return label(DEFAULT_INDEX);
+        String displayLabel() {
+            if (suffix.isEmpty()) return label(NO_INDEX);
             String stripped = suffix.startsWith("_") ? suffix.substring(1) : suffix;
             return stripped.replace('_', ' ');
         }
     }
 
-    record Tinted() implements Naming {
+    record Tinted() implements FileNamePattern {
 
         private static final Tinted INSTANCE = new Tinted();
 
@@ -110,7 +109,7 @@ public sealed interface Naming {
         }
 
         @Override
-        public Set<Integer> presentIndexes(TrackedTextures textures, Identifier contentId) {
+        public Set<Integer> presentIndexes(ScannedTextures textures, Identifier contentId) {
             String dir = StrUtils.directoryOf(contentId.getPath());
             String stem = StrUtils.lastSegment(contentId.getPath());
             Set<Integer> out = new TreeSet<>();
@@ -125,40 +124,37 @@ public sealed interface Naming {
         }
 
         @Override
-        public int parseSpecificity() {
+        public int orphanPriority() {
             return 0;
         }
     }
 
     static ParsedName parse(String name) {
         int us = name.lastIndexOf('_');
-        if (us > 0) { // us == 0 would leave an empty stem - not a suffix then
+        if (us > 0) {
             String digits = name.substring(us + 1);
             if (!digits.isEmpty() && digits.length() <= 9 && digits.chars().allMatch(Character::isDigit)) {
                 return new ParsedName(name.substring(0, us), Integer.parseInt(digits));
             }
         }
-        return new ParsedName(name, DEFAULT_INDEX);
+        return new ParsedName(name, NO_INDEX);
     }
 
-    // Stem matching is exact and case insensitive: foobar_1.png does not match stem foo. A file whose
-    // whole base equals the stem is always the default, even if the stem itself ends in a tint suffix
-    // (foo_3.png IS the default texture of a colormap named foo_3).
     static @Nullable Integer tintIndexOf(String fileName, String stem) {
         String lower = fileName.toLowerCase(Locale.ROOT);
         if (!lower.endsWith(".png")) return null;
         String base = lower.substring(0, lower.length() - ".png".length());
         String lowerStem = stem.toLowerCase(Locale.ROOT);
-        if (base.equals(lowerStem)) return DEFAULT_INDEX;
+        if (base.equals(lowerStem)) return NO_INDEX;
         ParsedName parsed = parse(base);
         return parsed.stem().equals(lowerStem) ? parsed.index() : null;
     }
 
     static String tintedFileName(String stem, int index) {
-        return index == DEFAULT_INDEX ? stem + ".png" : stem + "_" + index + ".png";
+        return index == NO_INDEX ? stem + ".png" : stem + "_" + index + ".png";
     }
 
     static String label(int index) {
-        return index == DEFAULT_INDEX ? "default" : "tint " + index;
+        return index == NO_INDEX ? "default" : "tint " + index;
     }
 }
