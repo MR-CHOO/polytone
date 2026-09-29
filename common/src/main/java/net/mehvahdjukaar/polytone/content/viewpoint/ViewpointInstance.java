@@ -59,21 +59,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
 
-/**
- * The live GPU state and render logic for ONE {@link Viewpoint}. The parsed viewpoint is immutable
- * data; everything mutable (textures, timing) lives here, keyed by viewpoint id in
- * {@link ViewpointsManager}.
- *
- * <p>Generalised from the throwaway height-map spike, which proved the two things this rests on:
- * a second geometry pass coexists with the shadow pass in one frame (the singletons it looked like
- * it would collide with are all set and cleared within each call), and the cost of the extra Sodium
- * re-cull is not measurable at two passes.</p>
- */
 public class ViewpointInstance {
 
     private GpuTexture depthTexture = null;
     private GpuTextureView depthTextureView = null;
-    private GpuTexture colorTexture = null;   // sampled through color_sampler
+    private GpuTexture colorTexture = null;
     private GpuTextureView colorTextureView = null;
     private GpuBuffer projectionBuffer = null;
     private int allocatedResolution = -1;
@@ -82,10 +72,9 @@ public class ViewpointInstance {
     private boolean hasRendered = false;
     private boolean insidePass = false;
 
-    // ---- uniform_block state: the matrix the map was ACTUALLY rendered with, and from where ----
     private ViewpointUniforms uniforms = null;
     private final Matrix4f renderedViewProj = new Matrix4f();
-    private final Matrix4f viewProj = new Matrix4f(); // renderedViewProj reprojected to the live camera
+    private final Matrix4f viewProj = new Matrix4f(); // reprojected to the live camera
     private final Vector3f renderedDir = new Vector3f(0, -1, 0);
     private final Vector3f camFract = new Vector3f();
     private Vec3 renderedCamPos = Vec3.ZERO;
@@ -106,25 +95,19 @@ public class ViewpointInstance {
         return colorTextureView;
     }
 
-    /** Null until the first completed render; bind sites skip a null slice. */
     @Nullable
     public GpuBufferSlice getUniformsSlice() {
         return uniforms == null ? null : uniforms.getSlice();
     }
 
-    /** True while this viewpoint's own pass is drawing - its textures are attachments, not inputs. */
+    // while our own pass draws the textures are attachments and can't be bound
     public boolean isRendering() {
         return insidePass;
     }
 
-    /**
-     * Renders if due, then publishes the uniform block — EVERY frame, reuse frames included, so the
-     * reprojected matrix and {@code CamFract} track the live camera. {@code update_interval} is an
-     * EXPRESSION, so it is re-read every frame and may change at runtime — never cache a decision
-     * derived from it.
-     */
+    // uniforms are published every frame, reused ones too, so they follow the camera
     public void renderIfNeeded(Viewpoint vp, GpuBufferSlice shaderFog, Camera cam) {
-        if (insidePass) return; // a nested level render must not re-enter and clear our section list
+        if (insidePass) return; // a nested level render would clear our section list
 
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
@@ -134,11 +117,7 @@ public class ViewpointInstance {
         double interval = vp.updateInterval().evaluate();
         long now = Util.getMillis();
 
-        // DRIFT BAIL-OUT. Reprojection is an exact change of origin, but the map only COVERS what was
-        // around the viewpoint at render time: walk far enough and lookups run off its edge. Past half
-        // the lateral extent, re-render regardless of the interval. At heightmap settings (ortho 320,
-        // interval 20) that is 80 blocks inside one second, so in practice it only fires on a
-        // teleport. A level change can never be reprojected at all.
+        // the map only covers what was around it when rendered, re-render once we drift too far from it
         float maxDrift = renderedLateralHalf * 0.5f;
         boolean reusable = hasRendered && level == renderedLevel
                 && camPos.distanceToSqr(renderedCamPos) <= (double) maxDrift * maxDrift;
@@ -156,8 +135,7 @@ public class ViewpointInstance {
             } finally {
                 insidePass = false;
             }
-            // Only a completed pass counts as rendered; a half-drawn map must not be held for a whole
-            // interval.
+            // don't keep a half drawn map for a whole interval
             hasRendered = ok;
             if (ok) {
                 lastUpdateMs = now;
@@ -166,18 +144,12 @@ public class ViewpointInstance {
                 renderedThisFrame = true;
             }
         }
-        if (!hasRendered) return; // nothing valid to publish; the previous block contents stay bound
+        if (!hasRendered) return;
 
         publishUniforms(camPos, now, interval, renderedThisFrame);
     }
 
-    /**
-     * REPROJECTION. {@code renderedViewProj} expects positions camera-relative to RENDER time, while
-     * every consumer hands in positions camera-relative to NOW. Those differ by exactly the camera
-     * delta, so {@code M·translate(camNow − camAtRender)} is exact, not an approximation — and it is
-     * independent of where the pack snapped the viewpoint's x/z, since an origin shift doesn't care
-     * where the eye is. On a render frame the delta is zero and this is just the rendered matrix.
-     */
+    // shifting by the camera delta since the render is exact, it's just a change of origin
     private void publishUniforms(Vec3 camPos, long now, double interval, boolean renderedThisFrame) {
         viewProj.set(renderedViewProj).translate(
                 (float) (camPos.x - renderedCamPos.x),
@@ -186,8 +158,7 @@ public class ViewpointInstance {
         camFract.set((float) Mth.frac(camPos.x), (float) Mth.frac(camPos.y), (float) Mth.frac(camPos.z));
 
         float ageSeconds = (now - lastUpdateMs) / 1000f;
-        // Ticks -> seconds on the WALL clock, because that is the clock the due check runs on
-        // (Util.getMillis(), interval * 50 ms) - not game time, which drifts from it with TPS.
+        // wall clock like the due check, not game time
         float intervalSeconds = (float) Math.max(interval, 0.0) * 0.05f;
         float phase = intervalSeconds > 0f ? Mth.clamp(ageSeconds / intervalSeconds, 0f, 1f) : 0f;
 
@@ -199,40 +170,31 @@ public class ViewpointInstance {
     private void render(Viewpoint vp, Minecraft mc, Camera cam, Vec3 camPos, GpuBufferSlice shaderFog) {
         ensureTarget(vp.resolution());
 
-        // ---- placement: ABSOLUTE world space in, camera-relative out ----------------------------
-        // This subtraction is the ONLY place the two spaces meet. Packs author world coordinates;
-        // the geometry on the GPU is camera-relative because section origins are uploaded that way.
-        // Keeping the conversion here (rather than expecting packs to write "320 - c.y()") is what
-        // makes a fixed viewpoint a literal constant, which is what makes caching it sound.
+        // packs give world coordinates, geometry is camera relative
         Vector3f eye = new Vector3f(
                 (float) (vp.x().evaluate() - camPos.x),
                 (float) (vp.y().evaluate() - camPos.y),
                 (float) (vp.z().evaluate() - camPos.z));
 
-        // MINECRAFT's pitch convention: +90 looks DOWN, -90 up. Chosen so that pointing a viewpoint
-        // where the player looks is `"x_rot": "c.pitch()"` with no negation - matching the proxy is
-        // what fixes the sign. (The draft wiki page says -90 looks down; it is WRONG.)
+        // minecraft convention, +90 looks down, so c.pitch() points where the player looks
         float pitch = (float) Math.toRadians(vp.xRot().evaluate());
         float yaw = (float) Math.toRadians(vp.yRot().evaluate());
         float roll = (float) Math.toRadians(vp.zRot().evaluate());
 
         float cosPitch = Mth.cos(pitch);
         Vector3f dir = new Vector3f(-Mth.sin(yaw) * cosPitch, -Mth.sin(pitch), Mth.cos(yaw) * cosPitch);
-        // Straight up/down leaves the world-up degenerate as a reference; same guard the shadow map
-        // uses. Roll is authored, so there is no gimbal ambiguity to resolve beyond this.
+        // world up is degenerate when looking straight up or down
         Vector3f up = Math.abs(dir.y) > 0.99f ? new Vector3f(0, 0, 1) : new Vector3f(0, 1, 0);
 
         Matrix4f view = new Matrix4f().rotateZ(roll)
                 .lookAlong(dir.x, dir.y, dir.z, up.x, up.y, up.z)
                 .translate(-eye.x, -eye.y, -eye.z);
 
-        // ---- projection -------------------------------------------------------------------------
         float near = (float) vp.near().evaluate();
         float far = (float) vp.far().evaluate();
         double orthoSize = vp.orthographicSize();
 
-        // Reversed-Z like vanilla Projection: near and far go in swapped, so near lands at depth 1 and
-        // far at 0. The replayed terrain pipelines depth test GREATER, so a forward-Z matrix draws nothing.
+        // reversed-Z like vanilla, the terrain pipelines depth test GREATER
         boolean zZeroToOne = RenderSystem.getDevice().getDeviceInfo().isZZeroToOne();
         Matrix4f proj;
         float lateralHalf;
@@ -241,21 +203,17 @@ public class ViewpointInstance {
             proj = new Matrix4f().ortho(-lateralHalf, lateralHalf, -lateralHalf, lateralHalf, far, near, zZeroToOne);
         } else {
             proj = new Matrix4f().perspective((float) Math.toRadians(vp.fov().evaluate()), 1.0f, far, near, zZeroToOne);
-            // A cone doesn't fit a box; use the far-plane half-width so the cull can only ever be
-            // too generous, never too tight.
+            // far plane half width, so the cull is never too tight
             lateralHalf = (float) (far * Math.tan(Math.toRadians(vp.fov().evaluate()) * 0.5));
         }
 
-        // What the uniform block publishes: the matrix this pass ACTUALLY renders with. Only read once
-        // the pass completes (hasRendered), so a failed pass cannot leak a half-applied basis.
         proj.mul(view, renderedViewProj);
         renderedDir.set(dir);
         renderedLateralHalf = lateralHalf;
         renderedNear = near;
         renderedFar = far;
 
-        // The caster box is axis-symmetric around a point, so it must reach far enough to contain an
-        // asymmetric near..far span (e.g. a world-pinned band seen from below it).
+        // the box is symmetric so it has to contain an asymmetric near..far span
         float depthHalf = Math.max(Math.abs(near), Math.abs(far));
         ShadowCasterVolume volume = new ShadowCasterVolume(view, lateralHalf, depthHalf);
 
@@ -273,8 +231,7 @@ public class ViewpointInstance {
 
         if (CompatHandler.SODIUM) {
             capturedBlockEntities.clear();
-            // Sodium owns the block entities of the re-culled set (the vanilla section meshes are
-            // empty under it), so this is where they come from on that path.
+            // vanilla section meshes are empty under sodium, block entities come from the replay
             SodiumShadowRenderer.replayTerrain(mc, cam, camPos, view, proj,
                     volume, colorTextureView, depthTextureView, capturedBlockEntities);
             if (!vp.renderBlockEntities()) capturedBlockEntities.clear();
@@ -289,18 +246,7 @@ public class ViewpointInstance {
         }
     }
 
-    /**
-     * Entities and block entities are not part of the section meshes, so they are extracted and
-     * submitted like the main pass does, with this viewpoint's matrices and output target swapped
-     * onto the RenderSystem globals. Structure follows {@code ShadowMapRenderer} closely, including
-     * the parts that are easy to get wrong.
-     *
-     * <p>WHY THIS MATTERS FOR A HEIGHT MAP: without it, a boat, a mob or a chest beside the water
-     * contributes nothing to the height field, so a reflection ray passes straight through it to the
-     * sky. Note the height-field caveat though — one height per column means an entity occludes
-     * EVERYTHING below its top surface, which is right for anything standing on the ground and wrong
-     * for anything flying.</p>
-     */
+    // like ShadowMapRenderer, with this viewpoint's matrices and target swapped in
     private void drawEntitiesAndBlockEntities(Viewpoint vp, Minecraft mc, Vec3 camPos, Vector3f eye,
                                               Matrix4f view, ShadowCasterVolume volume, boolean ortho) {
         ClientLevel level = mc.level;
@@ -310,13 +256,10 @@ public class ViewpointInstance {
         BlockEntityRenderDispatcher beDispatcher = mc.getBlockEntityRenderDispatcher();
         FeatureRenderDispatcher featureDispatcher = mc.gameRenderer.featureRenderDispatcher();
         CameraRenderState camState = mc.levelRenderer.levelRenderState.cameraRenderState;
-        // Our own storage, so a renderer that throws can't leave nodes queued for the main pass to draw
-        // again with the camera's matrices.
+        // own storage so a throwing renderer can't leave nodes queued for the main pass
         SubmitNodeStorage submitNodes = new SubmitNodeStorage();
 
-        // Swap this viewpoint's matrices + output target onto the globals the feature draws read.
-        // EVERYTHING here is restored in the finally: an unbalanced push leaks the viewpoint's basis
-        // into later frames and renders the world from it.
+        // all restored in the finally, a leak would render the world from the viewpoint
         RenderSystem.backupProjectionMatrix();
         RenderSystem.setProjectionMatrix(projectionBuffer.slice(),
                 ortho ? ProjectionType.ORTHOGRAPHIC : ProjectionType.PERSPECTIVE);
@@ -325,8 +268,6 @@ public class ViewpointInstance {
         mvStack.set(view);
         RenderSystem.outputColorTextureOverride = colorTextureView;
         RenderSystem.outputDepthTextureOverride = depthTextureView;
-        // Only depth matters for an occlusion capture, but entity shaders still evaluate diffuse
-        // light; use the level setup rather than leaving whatever was last bound.
         mc.gameRenderer.lighting().setupFor(Lighting.Entry.LEVEL);
         try {
             PoseStack poseStack = new PoseStack();
@@ -346,14 +287,13 @@ public class ViewpointInstance {
                             !level.tickRateManager().isEntityFrozen(entity));
                     try {
                         EntityRenderState state = dispatcher.extractEntity(entity, partial);
-                        // A name tag is a HUD element, not part of the entity: text draws with depth writes
-                        // on, so it would land in the depth as a floating slab. The state is ours alone.
+                        // name tags would write depth as a floating slab
                         state.nameTag = null;
                         state.scoreText = null;
                         dispatcher.submit(state, camState, state.x - camPos.x, state.y - camPos.y,
                                 state.z - camPos.z, poseStack, submitNodes);
                     } catch (Exception e) {
-                        // One broken entity renderer, called outside its usual pass, must not kill the frame.
+                        // one broken renderer must not kill the frame
                     }
                 }
             }
@@ -370,7 +310,6 @@ public class ViewpointInstance {
                             beDispatcher.submit(state, poseStack, submitNodes, camState);
                         }
                     } catch (Exception e) {
-                        // As above.
                     }
                     poseStack.popPose();
                 }
@@ -390,8 +329,7 @@ public class ViewpointInstance {
         }
     }
 
-    // Same draw assembly as ShadowMapRenderer#drawVanillaTerrain: 26.2 packs section meshes into shared
-    // buffers, so each draw is a slice of one, and draws are grouped per buffer for drawMultipleIndexed.
+    // same as ShadowMapRenderer#drawVanillaTerrain
     private void drawTerrain(Minecraft mc, Matrix4f view, List<ChunkSectionLayer> layers) {
         if (sections.isEmpty()) return;
 
@@ -410,7 +348,7 @@ public class ViewpointInstance {
         int maxIndices = 0;
         long now = Util.getMillis();
 
-        // read only under the lock: an upload here would move allocations under the main pass's frozen draws
+        // an upload here would move allocations under the main pass's frozen draws
         dispatcher.lock();
         try {
             for (SectionRenderDispatcher.RenderSection section : sections) {
@@ -471,7 +409,7 @@ public class ViewpointInstance {
                 () -> "Polytone viewpoint terrain", colorTextureView, Optional.empty(),
                 depthTextureView, OptionalDouble.empty())) {
             RenderSystem.bindDefaultUniforms(pass);
-            pass.setUniform("Projection", projectionBuffer.slice()); // after the defaults: last bind wins
+            pass.setUniform("Projection", projectionBuffer.slice()); // after the defaults, last bind wins
             pass.bindTexture("Sampler2", mc.gameRenderer.lightmap(),
                     RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR));
             for (ChunkSectionLayer layer : layers) {
@@ -485,16 +423,7 @@ public class ViewpointInstance {
         }
     }
 
-    /**
-     * Sections that can reach the viewpoint's volume, regardless of camera visibility. The volume is
-     * centred on the VIEWPOINT, not the camera, so section centres are offset by the eye before the
-     * test — the one place the generalisation actually differs from the shadow map, whose volume is
-     * always camera-centred.
-     *
-     * <p>NOTE: only ALREADY-COMPILED meshes can be drawn. Sodium builds sections on demand by camera
-     * need, so terrain the player has never looked at is simply absent until it gets built. That is a
-     * build-queue limit, not a culling one, and it is inherent to drawing existing buffers.</p>
-     */
+    // centred on the viewpoint, not the camera. only already built meshes can be drawn
     private void collectSections(Minecraft mc, ShadowCasterVolume volume, Vec3 camPos, Vector3f eye,
                                  List<ChunkSectionLayer> layers) {
         sections.clear();
@@ -516,7 +445,7 @@ public class ViewpointInstance {
                     (float) (origin.getY() + 8 - camPos.y) - eye.y,
                     (float) (origin.getZ() + 8 - camPos.z) - eye.z, 8f, 8f, 8f)) {
                 sections.add(section);
-                // vanilla path only; under Sodium these meshes are empty and the replay supplies them
+                // vanilla only, under sodium the replay supplies them
                 capturedBlockEntities.addAll(mesh.getRenderableBlockEntities());
             }
         }
@@ -532,7 +461,7 @@ public class ViewpointInstance {
             closeTextures();
             allocatedResolution = resolution;
             depthTexture = device.createTexture(() -> "Polytone viewpoint depth",
-                    // COPY_DST: 26.2's clearColorAndDepthTextures refuses textures without it
+                    // clearColorAndDepthTextures needs COPY_DST
                     GpuTexture.USAGE_RENDER_ATTACHMENT | GpuTexture.USAGE_TEXTURE_BINDING
                             | GpuTexture.USAGE_COPY_DST,
                     GpuFormat.D32_FLOAT, resolution, resolution, 1, 1);

@@ -9,8 +9,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-// Placing or breaking a block moves the column's height, and vanilla has already updated the chunk's
-// heightmaps by the time this returns. Biomes never change from a block edit.
+// vanilla has updated the chunk's heightmaps by the time this returns
 @Mixin(LevelChunk.class)
 public class LevelChunkSurfaceMapMixin {
 

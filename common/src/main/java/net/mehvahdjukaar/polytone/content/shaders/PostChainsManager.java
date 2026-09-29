@@ -52,9 +52,7 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
     public static final String SHADOW_UBO_NAME = "PolyShadow";
     public static final String SHADOW_SAMPLER_NAME = "InShadow";
 
-    // Samplers bound at runtime rather than declared by a pipeline: the shadow map plus every viewpoint's
-    // depth_sampler. Programs can compile before a level exists, so the viewpoint names come from the raw
-    // jsons read at prepare time.
+    // bound at runtime, not declared by a pipeline. names come from the raw jsons so they exist before a level does
     public static List<String> dynamicSamplers() {
         List<String> viewpoints = Polytone.VIEWPOINTS.declaredSamplerNames();
         List<String> surfaceMap = Polytone.SURFACE_MAP.samplerNames();
@@ -75,21 +73,19 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
 
     private final List<PostChainActivator> activators = new ArrayList<>();
     private final Map<Identifier, List<Map<String, Identifier>>> samplersByPassPipeline = new HashMap<>();
-    // Chains already reported as unsatisfiable, so the error is logged once instead of every frame. Identity-
-    // based: PostChain has no id and does not override equals, and the instance is what we are gating on.
+    // logged once per chain
     private final Set<PostChain> warnedChains = Collections.newSetFromMap(new IdentityHashMap<>());
 
     private TextureTarget worldDepthSnapshot;
     private boolean worldDepthCaptured = false;
     private boolean levelRenderedThisFrame = false;
 
-    // The chains deferred to the after-hand stage for THIS frame, in priority order. Filled by
-    // addChainsToFrameGraph, consumed by runChainsAfterHand. Render thread only.
+    // this frame's after hand suffix, render thread only
     private final List<ActiveChain> deferredAfterHand = new ArrayList<>();
     private List<Identifier> lastStagingIds = List.of();
     private int lastStagingSplit = -1;
 
-    // See captureRenderedProjection: the bobbed projection this frame is rendered with.
+    // the bobbed projection, see captureRenderedProjection
     private final Matrix4f renderedProjection = new Matrix4f();
     private boolean renderedProjectionValid = false;
 
@@ -124,9 +120,7 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
             activators.clear();
         }
         samplersByPassPipeline.clear();
-        // Chains are rebuilt on reload, so a pack that fixed its targets must be able to report again
         warnedChains.clear();
-        // Holds PostChains a reload closes, and the staging is worth re-logging for the new set
         deferredAfterHand.clear();
         lastStagingIds = List.of();
         lastStagingSplit = -1;
@@ -259,19 +253,13 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         Polytone.POST_TARGETS.close();
     }
 
-    // The projection vanilla actually rasterises the world with. GameRenderer.renderLevel takes
-    // cameraState.projectionMatrix and multiplies the view-bob pose (and the nausea skew) into a COPY,
-    // then renders with that; the CameraRenderState field keeps the un-bobbed matrix. PolyProjMat has to
-    // be the bobbed one, or PolyInvViewProjMat doesn't invert the matrix the depth buffer was written
-    // with and every depth reconstruction (fog, VL, shadows, AO, water) swims while walking.
-    // Captured by GameRendererMixin, which runs before LevelRenderer.render in the same frame.
+    // vanilla renders with a bobbed copy of cameraState.projectionMatrix, depth reconstruction needs that one
     public void captureRenderedProjection(Matrix4fc projection) {
         renderedProjection.set(projection);
         renderedProjectionValid = true;
     }
 
-    // Consumes the capture: a frame that somehow didn't capture falls back to the un-bobbed matrix rather
-    // than silently reusing the previous frame's.
+    // consumed, so a frame without a capture falls back instead of reusing the last one
     private Matrix4fc renderedProjectionOr(Matrix4fc fallback) {
         if (!renderedProjectionValid) return fallback;
         renderedProjectionValid = false;
@@ -295,14 +283,11 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         }
     }
 
-    /** An active chain paired with the id of the json that activated it - PostChain itself has no id. */
+    // PostChain has no id of its own
     private record ActiveChain(Identifier id, PostChain chain, boolean readsMainDepth) {
     }
 
-    // In ascending `priority` order: `activators` is filled from Parsed.SortedMap#entrySet, which sorts by
-    // the json's optional "priority" int (ties falling back to insertion order). A pack's chain list is ONE
-    // ordered program - every chain reads and rewrites minecraft:main - so this order is data flow, and
-    // firstDeferrable below relies on it.
+    // priority order, which is data flow: every chain rewrites minecraft:main
     private List<ActiveChain> activeChains() {
         ShaderManager shaderManager = Minecraft.getInstance().getShaderManager();
         List<ActiveChain> active = new ArrayList<>();
@@ -315,13 +300,8 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         return active;
     }
 
-    // The after-hand stage runs strictly later than the WHOLE level frame graph, so it may only take a
-    // SUFFIX of the priority order: a chain is deferrable only if every chain after it is deferrable too.
-    // Deferring by capability alone silently reorders the pack's program - shadow/AO composites landing on
-    // top of fog, a chain reading minecraft:main after a later chain rewrote its alpha, target writers
-    // running after their readers - which broke Recrafted's fog, VL, clouds and shadow face occlusion.
-    // See AI Memory/polytone/after_hand_stage_order.md. The general rule: a stage boundary is only safe
-    // where no chain after it in priority order needs the earlier stage.
+    // the after hand stage runs after the whole level graph so it can only take a suffix of the priority order,
+    // anything else reorders the chains (composites landing on top of fog, writers running after their readers)
     private static int firstDeferrable(List<ActiveChain> ordered) {
         int i = ordered.size();
         while (i > 0 && canRunAfterHand(ordered.get(i - 1).chain())) i--;
@@ -335,12 +315,9 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         return false;
     }
 
-    // There is otherwise no way to see the staging, and a silent reorder costs a day of shader debugging.
-    // Naming the chain that stopped the walk tells a pack author exactly which one to change to get more of
-    // its stack after the hand.
+    // logged when the split changes, naming the chain that held the rest back
     private void logStaging(List<ActiveChain> ordered, int split) {
-        // Runs every frame, so the unchanged case must not allocate: compare against the last staging
-        // in place and only build the message when the split or the active set actually moved.
+        // every frame, don't allocate unless something changed
         if (split == lastStagingSplit && sameIds(ordered, lastStagingIds)) return;
         lastStagingSplit = split;
         List<Identifier> ids = new ArrayList<>(ordered.size());
@@ -363,13 +340,7 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         return true;
     }
 
-    // Level-FrameGraph placement. Runs before the first-person hand is drawn, so depth-reading chains here
-    // don't see held items. Always invoked: when post_chains_after_hand is off it hosts every chain, and when
-    // it is on it hosts everything up to the deferrable suffix - the vanilla sorting targets live in this
-    // graph and nowhere else, so a chain reading minecraft:translucent has to run here.
-    //
-    // This is also where the frame's split is DECIDED, once, and stashed for runChainsAfterHand, so the two
-    // stages can never disagree about who hosts what.
+    // level graph, before the hand. decides the frame's split and hosts everything before the deferred suffix
     public void addChainsToFrameGraph(int width, int height, LevelTargetBundle targets, FrameGraphBuilder frameGraphBuilder,
                                       GpuBufferSlice fog, CameraRenderState cameraRenderState) {
         Polytone.POST_TARGETS.ensureAllocated(width, height);
@@ -383,19 +354,13 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         deferredAfterHand.addAll(ordered.subList(split, ordered.size()));
 
         for (ActiveChain active : ordered.subList(0, split)) {
-            // An undeferrable chain that is also unsatisfiable here is skipped, but it still acted as a
-            // barrier above: the split must not depend on bundleSatisfies, since a target missing at runtime
-            // (Improved Transparency off) would otherwise let the suffix swallow the rest of the stack.
+            // skipped but still a barrier above, or a missing target would let the suffix swallow the rest
             if (!bundleSatisfies(bundle, active.chain(), "the level frame graph")) continue;
             active.chain().addToFrame(frameGraphBuilder, width, height, bundle);
         }
     }
 
-    // Whether every external target a chain reads can be supplied after the level frame graph has finished.
-    // Only two kinds survive that long: the main target, and our own post_targets, which are persistent
-    // RenderTargets this mod owns and can re-import into any graph. The vanilla sorting targets
-    // (minecraft:translucent and friends) are transient level-graph resources whose handles are dead by then,
-    // so a chain touching one must stay on the level path.
+    // only minecraft:main and our own post_targets outlive the level graph, vanilla's sorting targets don't
     private static boolean canRunAfterHand(PostChain chain) {
         for (Identifier id : ((PostChainAccessor) chain).polytone$getExternalTargets()) {
             if (id.equals(PostChain.MAIN_TARGET_ID)) continue;
@@ -405,10 +370,7 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
         return true;
     }
 
-    // Guard against PostChain.TargetBundle#getOrThrow, which throws MID-FRAME and takes the game down. A
-    // target can be declared and still be absent at runtime (the sorting targets only exist while
-    // options.improvedTransparency is on), so declaration-time validation is not enough. Skip the chain and
-    // say which target and which stage, once per chain, rather than crashing.
+    // getOrThrow would crash mid frame. sorting targets only exist with improved transparency on
     private boolean bundleSatisfies(PostChain.TargetBundle bundle, PostChain chain, String stage) {
         for (Identifier id : ((PostChainAccessor) chain).polytone$getExternalTargets()) {
             if (bundle.get(id) == null) {
@@ -427,32 +389,25 @@ public class PostChainsManager extends ContentManager<PostChainActivator> {
     public void snapshotWorldDepth(RenderTarget main) {
         levelRenderedThisFrame = true;
         worldDepthCaptured = false;
-        // Only a deferred chain that reads minecraft:main's depth needs the world depth back, so skip the
-        // full-screen depth copy and the combine that would follow it otherwise.
+        // only a deferred chain reading main's depth needs the world depth back
         if (!anyDeferredChainReadsMainDepth()) return;
         ensureSnapshotSized(main.width, main.height);
         worldDepthSnapshot.copyDepthFrom(main);
         worldDepthCaptured = true;
     }
 
-    // Fold the saved world depth back into the main depth, then run every chain this stage can host.
+    // folds the world depth back into main, then runs the deferred chains
     public void runChainsAfterHand(RenderTarget main, GraphicsResourceAllocator resourceAllocator) {
         if (!levelRenderedThisFrame) return;
         levelRenderedThisFrame = false;
         boolean depthCaptured = worldDepthCaptured;
         worldDepthCaptured = false;
-        // Exactly the suffix addChainsToFrameGraph deferred this frame - never re-derived, so the two stages
-        // cannot disagree and no chain can be hosted twice or dropped.
+        // exactly what addChainsToFrameGraph deferred, never re-derived
         if (deferredAfterHand.isEmpty()) return;
 
         if (depthCaptured) combineWorldDepthIntoMain(main);
 
-        // Build the graph ourselves instead of calling PostChain#process per chain. process() hands the chain
-        // a bundle holding ONLY minecraft:main, so any chain writing to one of our post_targets - which is
-        // most of them, since a pack declares those as the pass output rather than as an internal target -
-        // died on getOrThrow. Wrapping the bundle the same way addChainsToFrameGraph does splices them back in,
-        // and sharing one graph across all the chains also lets them read each other's outputs, exactly as
-        // they can on the level path.
+        // our own graph, not PostChain#process: that bundle only holds minecraft:main, so post_target writers would throw
         Polytone.POST_TARGETS.ensureAllocated(main.width, main.height);
         FrameGraphBuilder builder = new FrameGraphBuilder();
         var mainHandle = builder.importExternal(PostChain.MAIN_TARGET_ID.toString(), main);

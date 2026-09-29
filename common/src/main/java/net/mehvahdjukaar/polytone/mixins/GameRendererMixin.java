@@ -43,15 +43,12 @@ public abstract class GameRendererMixin {
         if (preview != null) cir.setReturnValue(preview);
     }
 
-    // PolyProjMat/PolyInvViewProjMat must describe the matrix the world is actually rasterised with.
-    // Vanilla builds it here - cameraState.projectionMatrix copied, then view bob and the nausea skew
-    // multiplied in - and hands it straight to the projection UBO. Grab that argument on its way past,
-    // before LevelRenderer.render runs and LevelRendererMixin writes the globals.
+    // the projection the world is actually rasterised with, view bob and nausea included
     @ModifyArg(method = "renderLevel", index = 0, at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/ProjectionMatrixBuffer;getBuffer(Lorg/joml/Matrix4f;)Lcom/mojang/blaze3d/buffers/GpuBufferSlice;"))
     private Matrix4f polytone$captureRenderedProjection(Matrix4f projectionMatrix) {
         Polytone.POST_CHAINS.captureRenderedProjection(projectionMatrix);
-        return projectionMatrix; // unmodified - this is a capture, not an edit
+        return projectionMatrix;
     }
 
     @Inject(method = "close", at = @At(value = "TAIL"))

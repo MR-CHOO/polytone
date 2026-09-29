@@ -99,10 +99,7 @@ public final class SodiumShadowRenderer {
         sectionManager.finalizeRenderLists(camera, viewport, FogParameters.NONE, true);
     }
 
-    // The light cull refills the region lists the camera's list points at, so it has to be rebuilt, not
-    // kept. Now, not via markGraphDirty: culling runs before render, so a dirty flag only rebuilds next
-    // frame. The rebuild reads Sodium's occlusion results, which the light cull never touches, so the
-    // graph stays valid: marking it dirty on every render forced a full occlusion search the next frame.
+    // rebuilt now rather than marked dirty, which would force a full occlusion search next frame
     private static void rebuildCameraRenderList(Minecraft mc, Camera camera) {
         RenderSectionManager sectionManager = renderSectionManager();
         if (sectionManager == null) return;

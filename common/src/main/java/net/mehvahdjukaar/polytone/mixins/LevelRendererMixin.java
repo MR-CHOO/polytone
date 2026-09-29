@@ -52,15 +52,14 @@ public class LevelRendererMixin {
                                Vector4f fogColor,
                                boolean shouldRenderSky,
                                CallbackInfo ci) {
-        // no render pass is open here, which the UBO writes below need.
-        // un-bobbed fallback: updateGlobalUniforms prefers the bobbed matrix GameRendererMixin captured
+        // no render pass is open here, which the UBO writes below need
         Polytone.POST_CHAINS.updateGlobalUniforms(cameraState.projectionMatrix, modelViewMatrix,
                 deltaTracker.getGameTimeDeltaTicks());
         Polytone.SHADER_EFFECTS.updateAll();
         // shadow map goes first so the post chains built into this frame's graph sample this frame's map
         Polytone.SHADOWS.renderer().renderShadowPassIfNeeded(terrainFog, Minecraft.getInstance().gameRenderer.mainCamera(),
                 modelViewMatrix, cameraState.projectionMatrix);
-        // viewpoints right after, for the same reason. No fog: it would be measured from the viewpoint's eye
+        // viewpoints too, without fog since it would be measured from their eye
         GpuBufferSlice noFog = ((GameRendererAccessor) Minecraft.getInstance().gameRenderer).polytone$getFogRenderer()
                 .getBuffer(FogRenderer.FogMode.NONE);
         Polytone.VIEWPOINTS.renderActive(noFog, Minecraft.getInstance().gameRenderer.mainCamera());
@@ -107,8 +106,7 @@ public class LevelRendererMixin {
                                     boolean shouldRenderSky,
                                     CallbackInfo ci,
                                     @Local FrameGraphBuilder frameGraphBuilder) {
-        // always invoked: the sorting targets only exist inside this graph, so with post_chains_after_hand on
-        // this still hosts every chain up to the last one that needs them
+        // always, the sorting targets only exist in this graph
         RenderTarget mainTarget = Minecraft.getInstance().gameRenderer.mainRenderTarget();
         Polytone.POST_CHAINS.addChainsToFrameGraph(mainTarget.width, mainTarget.height, this.targets, frameGraphBuilder,
                 terrainFog, this.levelRenderState.cameraRenderState);

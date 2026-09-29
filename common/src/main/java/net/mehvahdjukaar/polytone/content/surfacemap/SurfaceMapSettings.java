@@ -19,21 +19,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-/**
- * {@code polytone/surface_map.json}: a world-locked map of what is at the ground surface at each XZ,
- * filled from the chunks the client already has. No file means no map and no cost.
- *
- * <pre>
- * {
- *   "coverage": "render_distance",           // or a radius in blocks
- *   "biome": { "attributes": ["minecraft:visual/fog_end_distance"] },
- *   "heights": {
- *     "InSurfaceGround": "motion_blocking_no_leaves",
- *     "InSurfaceCanopy": { "heightmap": "motion_blocking", "coverage": 128 }
- *   }
- * }
- * </pre>
- */
+// polytone/surface_map.json: a world locked map of the ground surface, filled from the loaded chunks
 public record SurfaceMapSettings(Coverage coverage, Optional<BiomeLayer> biome, Map<String, HeightLayer> heights) {
 
     public static final SurfaceMapSettings NONE = new SurfaceMapSettings(Coverage.RENDER_DISTANCE, Optional.empty(), Map.of());
@@ -49,12 +35,7 @@ public record SurfaceMapSettings(Coverage coverage, Optional<BiomeLayer> biome, 
         return biome.isEmpty() && heights.isEmpty();
     }
 
-    /**
-     * Folds another pack's file into this one. Every pack shares a single map, so a file adds to it
-     * rather than replacing it: height layers union by sampler name, and where two files ask for
-     * different amounts of the same thing the larger wins - a window that is too small is a wrong
-     * answer, while one that is too big only costs fill time.
-     */
+    // every pack shares one map: layers union by sampler name and the larger request wins
     public SurfaceMapSettings mergedWith(SurfaceMapSettings other, Identifier from) {
         if (this == NONE) return other;   // NONE is "nothing asked yet", not a request for render_distance
         if (other == NONE) return this;
@@ -78,9 +59,7 @@ public record SurfaceMapSettings(Coverage coverage, Optional<BiomeLayer> biome, 
                     attributes.size(), BiomeLayer.MAX_ATTRIBUTES, from);
             attributes = attributes.subList(0, BiomeLayer.MAX_ATTRIBUTES);
         }
-        // A shader addresses the palette BY POSITION, so a union can move another pack's indices under
-        // it. Keeping the first file's order leaves that file correct whatever happens; the second is
-        // only safe when its own list survives as a prefix, so say so out loud when it does not.
+        // shaders index the palette by position, only the first file's order is safe
         List<EnvironmentAttribute<?>> theirs = second.get().attributes();
         if (!attributes.subList(0, Math.min(attributes.size(), theirs.size())).equals(theirs)) {
             Polytone.LOGGER.warn("Surface map: {} lists its biome attributes in an order another pack's "
@@ -94,7 +73,7 @@ public record SurfaceMapSettings(Coverage coverage, Optional<BiomeLayer> biome, 
                         : Optional.empty()));
     }
 
-    /** Half-width of a layer's window: the client's render distance, or a fixed radius in blocks. */
+    // window half width: the render distance or a fixed radius in blocks
     public record Coverage(Optional<Integer> blocks, int floorBlocks) {
         public static final Coverage RENDER_DISTANCE = new Coverage(Optional.empty(), 0);
 
@@ -113,19 +92,11 @@ public record SurfaceMapSettings(Coverage coverage, Optional<BiomeLayer> biome, 
                                 .orElseGet(() -> Either.left("render_distance")));
 
         public int resolve(int renderDistanceChunks) {
-            // EXACTLY the render distance, never a chunk more. The client holds a square of chunks
-            // centred on the player's OWN chunk, so the loaded area reaches at least renderDistance * 16
-            // blocks past the player in every direction but is not guaranteed one block further. A radius
-            // of (renderDistance + 1) * 16 therefore always includes a ring of chunks that never load, and
-            // those cells never get written - a permanent unfilled edge on the map rather than a wrong one.
+            // not a chunk more, that ring never loads and would stay unfilled
             return Math.max(floorBlocks, blocks.orElseGet(() -> renderDistanceChunks * 16));
         }
 
-        /**
-         * The larger of the two. {@code render_distance} and a fixed radius cannot be compared until the
-         * render distance is known, so merging them keeps the render distance and carries the radius as a
-         * floor; {@link #resolve} takes the max at the point where it finally can.
-         */
+        // render_distance and a radius can't be compared yet, so the radius becomes a floor
         public Coverage mergedWith(Coverage other) {
             int floor = Math.max(floorBlocks, other.floorBlocks);
             if (blocks.isEmpty() || other.blocks.isEmpty()) {
@@ -136,13 +107,12 @@ public record SurfaceMapSettings(Coverage coverage, Optional<BiomeLayer> biome, 
         }
     }
 
-    /** @param attributes what the palette carries per biome, in this order */
+    // attributes in palette order
     public record BiomeLayer(List<EnvironmentAttribute<?>> attributes, Optional<Coverage> coverage) {
 
         public static final int MAX_ATTRIBUTES = 8;
 
-        // Only attributes vanilla blends between biomes make sense per cell; the rest are dimension-wide
-        // or gameplay flags, and a pack asking for one is a mistake worth saying out loud.
+        // only attributes vanilla blends between biomes make sense per cell
         private static final Codec<EnvironmentAttribute<?>> ATTRIBUTE_CODEC = EnvironmentAttributes.CODEC
                 .validate(a -> !a.isSpatiallyInterpolated()
                         ? DataResult.error(() -> "Environment attribute is not spatially interpolated, so it has no per-biome value")
@@ -156,12 +126,10 @@ public record SurfaceMapSettings(Coverage coverage, Optional<BiomeLayer> biome, 
         ).apply(i, BiomeLayer::new));
     }
 
-    /** @param heightmap one of the three the client actually has; the rest never leave the server */
+    // only three heightmaps exist on the client
     public record HeightLayer(Heightmap.Types heightmap, Optional<Coverage> coverage) {
 
-        // Vanilla's own codec spells these MOTION_BLOCKING_NO_LEAVES and answers a typo with
-        // "Unknown element name". Every other name a Polytone json takes is lowercase, so these are
-        // keyed the way a pack would write them, and a wrong one says what the choices are.
+        // lowercase like every other name, and a typo lists the choices
         private static final Codec<Heightmap.Types> TYPE_CODEC = Codec.STRING.comapFlatMap(s -> {
             for (Heightmap.Types t : Heightmap.Types.values()) {
                 if (t.sendToClient() && t.getSerializedName().equalsIgnoreCase(s)) return DataResult.success(t);

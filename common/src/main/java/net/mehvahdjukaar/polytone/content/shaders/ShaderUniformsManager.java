@@ -34,7 +34,7 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
     private final Map<Identifier, List<ExpressionUniformBuffers>> byShader = new HashMap<>();
     private final Map<Identifier, List<ExpressionUniformBuffers>> byPostPassPipeline = new HashMap<>();
 
-    // Written off-thread during prepare, read on the render thread at link time
+    // written off thread during prepare
     private volatile Set<String> modifierBlockNames = Set.of();
     private final Map<PipelineKey, Set<String>> pendingChecks = new LinkedHashMap<>();
     private final Set<String> warnedPairs = new HashSet<>();
@@ -51,11 +51,7 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
         return resources;
     }
 
-    // These files are keyed BY SHADER ID, and a modifier for an id nothing provides simply never binds:
-    // every shader still compiles, links and renders, and nothing is logged. A vanilla shader rename
-    // therefore kills a pack's modifiers silently - 26.1/26.2's core shader renames orphaned 12 of
-    // Recrafted's, taking dynamic lights off all text and all items with no symptom in the log.
-    // A shader id resolves to shaders/<path>.vsh / .fsh, so an orphan is detectable right here.
+    // a modifier for a shader nothing provides never binds and nothing else would log it
     private static void warnAboutOrphanedTargets(ResourceManager resourceManager,
                                                  Map<Identifier, JsonElement> jsons) {
         for (Identifier shaderId : jsons.keySet()) {
@@ -98,17 +94,11 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
                 }
             }
         }
-        // Every key in any loaded modifier file - names the PACK ITSELF declared as Polytone expression
-        // blocks. Using that as the ownership set is what makes the checks below false-positive free: no
-        // prefix convention, no guessing. Vanilla's blocks (Fog, DynamicTransforms, Projection, Globals,
-        // LightmapInfo) and Sodium's never appear as modifier keys, so they can never be flagged.
+        // only names a pack declared, so vanilla and sodium blocks are never flagged
         modifierBlockNames = Set.copyOf(names);
     }
 
-    // Called once per pipeline when its program links, on both backends. Deliberately NOT per pass: a
-    // pipeline that simply hasn't drawn yet would otherwise look broken. The check itself is deferred to
-    // the next frame because pipelines can link during the same reload that parses the modifier files,
-    // and running it before byShader is filled would flag everything.
+    // checked the next frame, pipelines can link before the modifiers are registered
     public void onPipelineLinked(RenderPipeline pipeline, Set<String> declaredBlocks) {
         if (declaredBlocks.isEmpty() || modifierBlockNames.isEmpty()) return;
         synchronized (pendingChecks) {
@@ -138,9 +128,7 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
                 for (ExpressionUniformBuffers b : postPass) supplied.addAll(b.getExpressions().keySet());
             }
 
-            // Declared by the shader, owned by Polytone, supplied by nobody: the block exists in the
-            // program and is never written, silently. This is the shape of a shader rename or a modifier
-            // file that was never written for this shader id.
+            // declared by the shader, owned by a modifier, supplied by nobody
             for (String name : declared) {
                 if (!modifierBlockNames.contains(name) || supplied.contains(name)) continue;
                 if (!warnedPairs.add(key + "|" + name)) continue;
@@ -151,15 +139,11 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
                         key, name, name, suppliersOf(name));
             }
 
-            // NOT checked: the inverse ("supplies a block the program doesn't have"). It looks like it
-            // would catch typos and stale keys, but `declared` here is what vanilla RESOLVED as ACTIVE
-            // uniforms of this compiled program, not what the source declares. A block behind an #ifdef -
-            // Sodium compiles a variant per terrain pass - is legitimately inactive in some variants, and
-            // an unused block is optimised out entirely, so that direction warns on healthy packs.
+            // not the inverse: blocks behind an #ifdef get optimised out, that would warn on healthy packs
         }
     }
 
-    // Where a block IS supplied, so the warning above points straight at the mismatch
+    // where it is supplied, to point at the mismatch
     private List<Identifier> suppliersOf(String blockName) {
         List<Identifier> ids = new ArrayList<>();
         for (var e : byShader.entrySet()) {
@@ -208,7 +192,6 @@ public class ShaderUniformsManager extends ContentManager<ExpressionUniformBuffe
             byShader.clear();
             byPostPassPipeline.clear();
         }
-        // Pipelines relink on a reload, so a pack that fixed a block name must be able to report again
         synchronized (pendingChecks) {
             pendingChecks.clear();
         }

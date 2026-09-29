@@ -31,25 +31,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Loads {@code polytone/viewpoints/<name>.json} and drives the per-viewpoint renderers.
- *
- * <p><b>Gating:</b> a viewpoint renders only when some active post chain names it in
- * {@code uses_viewpoints} AND its own {@code activation_condition} passes. An authored-but-unreferenced
- * viewpoint costs exactly nothing, which is what makes it safe for a pack to ship several.</p>
- */
+// a viewpoint renders only while an active post chain lists it in uses_viewpoints and its own condition passes
 public class ViewpointsManager extends ContentManager<Viewpoint> {
 
     private static final String[] SAMPLER_KEYS = {"depth_sampler", "color_sampler"};
 
     private final Map<Identifier, Viewpoint> viewpoints = new LinkedHashMap<>();
-    // GPU state, kept ACROSS reloads where the id survives, so a reload doesn't drop every texture
-    // and re-render everything on the next frame.
+    // kept across reloads where the id survives
     private final Map<Identifier, ViewpointInstance> instances = new HashMap<>();
-    // Every depth_sampler named by a viewpoint json, read raw at prepare time like uniform_block below.
-    // GlProgramMixin / GlslCompilerMixin read it (via PostChainsManager.dynamicSamplers) when a program is
-    // compiled to give the sampler a real binding - otherwise it silently falls back to unit 0 and reads
-    // the scene texture. Programs can compile before a level exists, so this can't wait for parsing.
+    // read raw at prepare, programs can compile before parsing and need these to bind the samplers
     private volatile List<String> declaredSamplerNames = List.of();
     private GpuBuffer emptyUniformBlock = null;
 
@@ -62,10 +52,7 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
     @Override
     protected AssetsFiles prepare(PreparableReloadListener.SharedState sharedState) {
         AssetsFiles resources = super.prepare(sharedState);
-        // uniform_block names must be known BEFORE any program declaring them compiles, or GlProgram
-        // logs "Found unknown and unsupported uniform" and never gives the block a binding point.
-        // Parsing happens later, with the level, so read the raw json here - the same trick
-        // PostChainsManager uses for expression uniforms.
+        // needed before programs compile, parsing only happens later with the level
         List<String> declared = new ArrayList<>();
         for (JsonElement e : resources.jsons().values()) {
             if (!(e instanceof JsonObject obj)) continue;
@@ -83,7 +70,6 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
         return resources;
     }
 
-    /** Sampler names any viewpoint json declares, for registering on programs before parsing happens. */
     public List<String> declaredSamplerNames() {
         return declaredSamplerNames;
     }
@@ -109,16 +95,10 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
     @Override
     protected void resetWithLevel(boolean logOff) {
         viewpoints.clear();
-        // Instances are NOT closed here: parse repopulates viewpoints immediately and surviving ids
-        // reuse their textures. Orphans are collected in renderActive().
+        // not closed here, surviving ids reuse their textures. orphans go in renderActive()
     }
 
-    /**
-     * Binds each viewpoint's depth and colour textures under their {@code depth_sampler} /
-     * {@code color_sampler} names, only on programs that declare them. Until the viewpoint has rendered,
-     * the missing texture stands in, the same way {@code InShadow} does, since a declared binding may not
-     * be left empty. The first viewpoint that names a sampler owns it.
-     */
+    // missing texture until rendered, a declared sampler can't be left unbound. first viewpoint naming it wins
     public void bindSamplers(RenderPass pass, Set<String> declaredUniforms) {
         if (viewpoints.isEmpty()) return;
         Set<String> bound = new HashSet<>();
@@ -142,11 +122,7 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
         pass.bindTexture(name, texture, RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
     }
 
-    /**
-     * Binds each viewpoint's {@code uniform_block} to a pass whose program declares it - same gating
-     * as the samplers, never a block the program doesn't have. Until that viewpoint has completed a
-     * render the block reads as zeros, so {@code Update.x} (rendered) is 0.
-     */
+    // zeros until the viewpoint has rendered once
     public void bindUniformBlocks(RenderPass pass, Set<String> declaredUniforms) {
         if (viewpoints.isEmpty()) return;
         for (var e : viewpoints.entrySet()) {
@@ -174,11 +150,7 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
         return viewpoints.isEmpty();
     }
 
-    /**
-     * Renders every viewpoint that is both requested by an active chain and active itself. Called
-     * from {@code LevelRenderer.render} HEAD, where no render pass is open (the UBO writes need that) and
-     * last frame's section meshes are still current.
-     */
+    // LevelRenderer.render HEAD: no render pass open and last frame's meshes are still current
     public void renderActive(GpuBufferSlice shaderFog, Camera cam) {
         if (viewpoints.isEmpty()) return;
         var wanted = Polytone.POST_CHAINS.wantedViewpoints();
@@ -191,7 +163,7 @@ public class ViewpointsManager extends ContentManager<Viewpoint> {
                     .renderIfNeeded(e.getValue(), shaderFog, cam);
         }
 
-        // Drop GPU state for viewpoints a reload removed, rather than leaking their textures.
+        // drop GPU state for viewpoints a reload removed
         if (instances.size() > viewpoints.size()) {
             instances.entrySet().removeIf(e -> {
                 if (viewpoints.containsKey(e.getKey())) return false;

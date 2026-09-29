@@ -15,8 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.util.Map;
 import java.util.function.Consumer;
 
-// A chunk's heightmaps arrive with it, and vanilla REUSES the LevelChunk when one is resent, so
-// comparing chunk identity would miss a resend: hook the two places the data actually changes.
+// vanilla reuses the LevelChunk on a resend, so hook where the data changes
 @Mixin(ClientChunkCache.class)
 public class ClientChunkCacheMixin {
 

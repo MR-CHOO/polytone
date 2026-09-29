@@ -66,7 +66,7 @@ public abstract class AbstractEntityProxy extends PositionalProxy {
         return entity().isInWater();
     }
 
-    // true when the entity's EYES are in the fluid tag, e.g. "minecraft:water". inWater() is true when merely touching
+    // eyes in the fluid tag, inWater() is true when merely touching
     public boolean eyeInFluid(String fluidTag) {
         return entity().isEyeInFluid(TagKey.create(Registries.FLUID, Identifier.parse(fluidTag)));
     }

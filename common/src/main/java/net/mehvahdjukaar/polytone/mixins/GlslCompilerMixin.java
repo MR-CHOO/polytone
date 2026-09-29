@@ -50,8 +50,7 @@ public class GlslCompilerMixin {
         for (String name : PostChainsManager.dynamicSamplers()) {
             if (declared.contains(name)) PostChainsManager.onDynamicSamplerDeclared(name);
         }
-        // Vulkan half of the shader_modifiers block check; GlDeviceMixin is the GL half. Blocks only:
-        // samplers and texel buffers are not what a modifier supplies.
+        // vulkan half of the shader_modifiers block check, blocks only
         Set<String> blocks = new HashSet<>(entries.size());
         for (var e : entries) {
             if (e.type() == VulkanBindGroupLayout.VulkanBindGroupEntryType.UNIFORM_BUFFER) blocks.add(e.name());

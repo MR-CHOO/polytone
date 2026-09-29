@@ -14,9 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.util.HashSet;
 import java.util.Set;
 
-// GL half of the shader_modifiers block check. GlProgram knows its uniforms but not which pipeline it
-// belongs to, so hook the compile instead: here both the shader ids and the linked program are in hand.
-// The Vulkan half lives in GlslCompilerMixin, which already has the pipeline.
+// GL half of the shader_modifiers block check, GlslCompilerMixin is the vulkan one
 @Mixin(GlDevice.class)
 public class GlDeviceMixin {
 
@@ -27,7 +25,7 @@ public class GlDeviceMixin {
         if (program == null) return;
         Set<String> blocks = new HashSet<>();
         for (var e : program.getUniforms().entrySet()) {
-            // uniform BLOCKS only - samplers and texel buffers are not what a modifier supplies
+            // blocks only
             if (e.getValue() instanceof Uniform.Ubo) blocks.add(e.getKey());
         }
         Polytone.SHADER_EFFECTS.onPipelineLinked(pipeline, blocks);

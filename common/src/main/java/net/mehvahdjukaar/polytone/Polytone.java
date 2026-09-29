@@ -111,8 +111,7 @@ public class Polytone {
             NOISES, SOUND_TYPES, BIOME_ID_MAPPERS, COLORMAPS, CUSTOM_PARTICLES, COLORS,
             BLOCK_SET, BLOCK_MODIFIERS, FLUID_MODIFIERS, CUSTOM_MODELS, ITEM_MODIFIERS, ITEM_MODELS,
             BIOME_MODIFIERS, LIGHTMAPS,
-            // VIEWPOINTS and SURFACE_MAP before POST_CHAINS: their sampler and block names must exist
-            // before programs compile
+            // before POST_CHAINS so their names exist before programs compile
             DIMENSION_MODIFIERS, POST_TARGETS, VIEWPOINTS, SURFACE_MAP, POST_CHAINS, SHADOWS, SHADER_EFFECTS,
             PARTICLE_MODIFIERS, SLOTIFY, OVERLAY_MODIFIERS, ENTITY_MODIFIERS,
             CREATIVE_TABS_MODIFIERS);

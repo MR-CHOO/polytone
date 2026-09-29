@@ -27,17 +27,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * The live state of the surface map: one texture per layer, each a window of the world locked to the
- * block grid and addressed toroidally, so walking never shifts what is already stored - only cells
- * entering the window, and chunks that changed, are written again.
- *
- * <p>Filled from the client's own heightmaps, which arrive with the chunk and are kept current as
- * blocks change, so this is a read, not a render.</p>
- */
+// world locked layers addressed toroidally, only entering and changed chunks are written again
 public class SurfaceMap implements AutoCloseable {
 
-    // chunks written per layer per frame while catching up; joining at render distance 32 is ~4500 chunks
+    // chunks per layer per frame while catching up
     private static final int FILL_BUDGET = 48;
 
     public static final String BIOME_SAMPLER = "InSurfaceBiome";
@@ -55,9 +48,7 @@ public class SurfaceMap implements AutoCloseable {
     public void setSettings(SurfaceMapSettings settings) {
         this.settings = settings;
         this.layersStale = true;
-        // Freed HERE, not in update(): with empty settings the manager never calls update() again (its
-        // gate checks isEmpty() first), so a cleanup there is unreachable and the old textures and palette
-        // would stay allocated AND bound - a map that was turned off kept rendering its last frozen state.
+        // freed here: with empty settings update() is never called again
         if (settings.isEmpty()) close();
     }
 
@@ -65,7 +56,6 @@ public class SurfaceMap implements AutoCloseable {
         return settings;
     }
 
-    /** The texture a shader declaring this sampler name reads, or null when nothing provides it. */
     @Nullable
     public GpuTextureView texture(String samplerName) {
         if (BIOME_SAMPLER.equals(samplerName)) return biome == null ? null : biome.view();
@@ -73,7 +63,6 @@ public class SurfaceMap implements AutoCloseable {
         return layer == null ? null : layer.view();
     }
 
-    /** The palette block, or null until the biome layer has been built and evaluated once. */
     @Nullable
     public GpuBufferSlice paletteSlice() {
         return biome == null ? null : palette.slice();
@@ -83,11 +72,11 @@ public class SurfaceMap implements AutoCloseable {
         return settings.isEmpty();
     }
 
-    /** Called once per frame, with no render pass open. */
+    // once per frame, no render pass open
     public void update(ClientLevel level, Vec3 camPos, float partialTick, int renderDistanceChunks,
                        List<String> wantedSamplers) {
         if (settings.isEmpty()) {
-            if (!heights.isEmpty() || biome != null) close();   // belt and braces: setSettings already did
+            if (!heights.isEmpty() || biome != null) close();
             return;
         }
         // also when the wanted set grows: a program may declare a sampler after the first frame
@@ -104,13 +93,13 @@ public class SurfaceMap implements AutoCloseable {
         }
         if (biome != null) {
             biome.update(level, camX, camZ, palette);
-            // evaluated once per tick and interpolated every frame, like the camera probe - see palette.update
+            // per tick, lerped every frame
             settings.biome().ifPresent(layer -> palette.update(level, camPos, layer.attributes(),
                     biome.originX, biome.originZ, BiomeTexture.TEXEL_SIZE, biome.size, partialTick));
         }
     }
 
-    // A layer nothing declares is never allocated, so a pack that ships the json but no shader pays nothing
+    // a layer no shader declares is never allocated
     private void rebuildLayers(ClientLevel level, int renderDistanceChunks, List<String> wantedSamplers) {
         close();
         settings.heights().forEach((sampler, layer) -> {
@@ -141,8 +130,7 @@ public class SurfaceMap implements AutoCloseable {
         return block >> 4;
     }
 
-    // All of them when they fit in one frame's budget, else nearest the camera first, so the ground under
-    // the player is never the last to fill after a join, a reload or a teleport
+    // nearest the camera first when over budget
     private static long[] fillOrder(LongOpenHashSet dirty, int camX, int camZ) {
         long[] keys = dirty.toLongArray();
         if (keys.length > FILL_BUDGET) {
@@ -172,10 +160,7 @@ public class SurfaceMap implements AutoCloseable {
         lastLevel = null;
     }
 
-    /**
-     * The biome layer: R = the cell's palette slot, 0 until written, 255 when the window held more than
-     * the palette can carry. One texel per stored biome cell, so this is exact, not sampled.
-     */
+    // R = palette slot, 0 until written, 255 on overflow. one texel per biome cell
     private static class BiomeTexture {
         static final int TEXEL_SIZE = 4;   // vanilla stores one biome per 4x4x4 cell
         private static final int CELLS_PER_CHUNK = 16 / TEXEL_SIZE;
@@ -231,11 +216,7 @@ public class SurfaceMap implements AutoCloseable {
             boolean hadWindow = oldX != Integer.MIN_VALUE;
             originX = newOriginX;
             originZ = newOriginZ;
-            // A chunk entering the window inherits the texels of the one that just left - that is the toroid.
-            // Left alone they would keep the OLD place's slots at full alpha until the new chunk streams in,
-            // which a shader cannot tell from real data, and which also pins the old place's palette slots
-            // so retainOnly cannot free them. So an entering chunk reads "not written yet" from the moment it
-            // enters. A jump of a whole span (a teleport) keeps nothing, so it is one wipe, not a blit per chunk.
+            // entering chunks inherit the texels of the ones that left, so blank them until written
             boolean overlaps = hadWindow && Math.abs(newOriginX - oldX) < span && Math.abs(newOriginZ - oldZ) < span;
             if (hadWindow && !overlaps) clearAll();
             for (int bx = newOriginX; bx < newOriginX + span; bx += 16) {
@@ -245,8 +226,7 @@ public class SurfaceMap implements AutoCloseable {
                     dirty.add(ChunkPos.pack(bx >> 4, bz >> 4));
                 }
             }
-            // the window is the whole texture, so entering chunks always make up whole columns and rows of it:
-            // blank them a strip at a time, one upload each, rather than one upload per chunk
+            // entering chunks are whole rows and columns, blank them a strip at a time
             if (overlaps) {
                 for (int bx = newOriginX; bx < newOriginX + span; bx += 16) {
                     if (bx < oldX || bx >= oldX + span) clearColumn(bx >> 4);
@@ -300,9 +280,7 @@ public class SurfaceMap implements AutoCloseable {
             if (dirty.isEmpty()) return;
             NativeImage image = texture.getPixels();
             if (image == null) return;
-            // The palette has no idea which of its slots still matter - this texture is the only record.
-            // Free them before the last slot goes, or a long walk fills all 63 with biomes that left the
-            // window and every cell after that reads as overflow.
+            // the texture is the only record of which slots are still used
             if (palette.isFull()) palette.retainOnly(usedSlots());
             int done = 0;
             for (long key : fillOrder(dirty, camX, camZ)) {
@@ -334,8 +312,7 @@ public class SurfaceMap implements AutoCloseable {
                 for (int cellZ = 0; cellZ < CELLS_PER_CHUNK; cellZ++) {
                     int blockX = (chunkX << 4) + cellX * TEXEL_SIZE + TEXEL_SIZE / 2;
                     int blockZ = (chunkZ << 4) + cellZ * TEXEL_SIZE + TEXEL_SIZE / 2;
-                    // Just above the local ground: above the surface vanilla's biomes are column-constant,
-                    // so this is the biome of the air a consumer is asking about.
+                    // just above the ground, where biomes are column constant
                     int y = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ) + 1;
                     int slot = palette.slotFor(chunk.getNoiseBiome(
                             QuartPos.fromBlock(blockX), QuartPos.fromBlock(y), QuartPos.fromBlock(blockZ)));
@@ -359,10 +336,7 @@ public class SurfaceMap implements AutoCloseable {
         }
     }
 
-    /**
-     * One height layer. R = low byte, G = high byte of (height - minY), A = 255 once written, so a
-     * shader can tell "nothing here yet" from "height 0".
-     */
+    // R = low byte, G = high byte of (height - minY), A = 255 once written
     private static class HeightTexture {
         private final String sampler;
         private final Heightmap.Types type;
@@ -371,8 +345,7 @@ public class SurfaceMap implements AutoCloseable {
         private final DynamicTexture texture;
         private final LongOpenHashSet dirty = new LongOpenHashSet();
 
-        // one chunk's worth of texels, blitted on its own so a single changed column never re-uploads the
-        // whole window (a render-distance-sized layer is megabytes)
+        // one chunk, so a changed column doesn't re-upload the whole window
         private final NativeImage scratch = new NativeImage(16, 16, true);
         private NativeImage blankColumn, blankRow;
 
@@ -410,8 +383,7 @@ public class SurfaceMap implements AutoCloseable {
             fill(level, camX, camZ);
         }
 
-        // The window is locked to the block grid: it only ever jumps in whole chunks, and only the chunks
-        // that just entered are rewritten. Everything already stored keeps its texel.
+        // locked to the block grid, only chunks that just entered are rewritten
         private void moveWindow(int camX, int camZ) {
             int newOriginX = (camX - size / 2) & ~15;
             int newOriginZ = (camZ - size / 2) & ~15;
@@ -496,8 +468,7 @@ public class SurfaceMap implements AutoCloseable {
                     int blockX = (chunkX << 4) + dx;
                     int blockZ = (chunkZ << 4) + dz;
                     int h = Mth.clamp(chunk.getHeight(type, blockX, blockZ) - minY, 0, 0xFFFF);
-                    // setPixel takes ARGB and does the swap to the native layout itself, so the low
-                    // byte goes in RED and the high byte in GREEN. Same packing as GpuParticleHeightmap.
+                    // setPixel takes ARGB: low byte in red, high byte in green
                     int pixel = 0xFF000000 | ((h & 0xFF) << 16) | ((h >> 8) << 8);
                     image.setPixel(destX + dx, destZ + dz, pixel);
                     scratch.setPixel(dx, dz, pixel);

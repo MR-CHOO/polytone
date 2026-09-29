@@ -15,10 +15,7 @@ import java.util.Optional;
 @Mixin(PostChain.class)
 public class PostChainMixin {
 
-    // A "scale" multiplies whatever size the target would otherwise have: its absolute width/height where it gives
-    // one, else the screen size vanilla is handed here - so a sizeless target follows a window resize exactly as
-    // vanilla's own does, and {128x128, 0.5} is 64x64. Above 1 is just a larger target, which vanilla already allows
-    // for an absolute size without clamping, so nothing is clamped here either.
+    // scale multiplies the absolute size when given, else the screen size vanilla passes here
     @WrapOperation(method = "addToFrame", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/PostChainConfig$InternalTarget;width()Ljava/util/Optional;"))
     private Optional<Integer> polytone$scaledWidth(PostChainConfig.InternalTarget target,

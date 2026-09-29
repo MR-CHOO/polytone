@@ -27,9 +27,7 @@ public final class PostChainActivator {
                     i.optional("samplers", Codec.unboundedMap(Codec.STRING, Identifier.CODEC),
                             Map.of(), p -> p.samplers),
                     i.optional("use_shadow_map", Codec.BOOL, false, p -> p.useShadowMap),
-                    // Ids of polytone/viewpoints/*.json this chain wants rendered. Explicit rather than
-                    // inferred: a viewpoint's sampler is bound dynamically by name and isn't visible in the
-                    // chain's declared inputs until bind time - far too late to decide whether to render it.
+                    // explicit, a viewpoint sampler bound by name isn't in the chain's inputs in time
                     i.optional("uses_viewpoints", Identifier.CODEC.listOf(), List.of(), p -> p.usesViewpoints)
             ).apply(i, PostChainActivator::new));
 
@@ -64,7 +62,7 @@ public final class PostChainActivator {
         return active;
     }
 
-    // PostChain carries no id of its own, so this is the only name the staging log can print
+    // PostChain has no id of its own
     public Identifier postChainId() {
         return postChainId;
     }

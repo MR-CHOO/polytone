@@ -28,13 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Loads {@code polytone/surface_map.json} and keeps {@link SurfaceMap} fed. Registered before
- * POST_CHAINS so its sampler names exist when programs link, the same reason viewpoints are.
- *
- * <p>A layer is only allocated once some linked program declares its sampler name, so shipping the
- * json without a shader that reads it costs nothing.</p>
- */
+// registered before POST_CHAINS so the sampler names exist when programs link
 public class SurfaceMapManager extends SingleFileContentManager<SurfaceMapSettings> {
 
     private final SurfaceMap map = new SurfaceMap();
@@ -56,8 +50,7 @@ public class SurfaceMapManager extends SingleFileContentManager<SurfaceMapSettin
     @Override
     protected AssetsFiles prepare(PreparableReloadListener.SharedState sharedState) {
         AssetsFiles resources = super.prepare(sharedState);
-        // The names have to be known BEFORE any program declaring them compiles, and parsing happens
-        // later, with the level - so read them straight out of the raw json, as viewpoints do.
+        // needed before programs compile, parsing only happens later with the level
         List<String> names = new ArrayList<>();
         for (JsonElement e : resources.jsons().values()) {
             if (!(e instanceof JsonObject obj)) continue;
@@ -75,7 +68,6 @@ public class SurfaceMapManager extends SingleFileContentManager<SurfaceMapSettin
         return resources;
     }
 
-    /** Sampler names any surface_map.json declares, for registering on programs before parsing happens. */
     public List<String> samplerNames() {
         return samplerNames;
     }
@@ -86,11 +78,7 @@ public class SurfaceMapManager extends SingleFileContentManager<SurfaceMapSettin
 
     @Override
     protected void parseWithLevel(AssetsFiles resources, RegistryOps<JsonElement> ops, HolderLookup.Provider access) {
-        // MERGED, not last-wins. SingleFileContentManager hands over one file per namespace and its own
-        // comment says it does not merge them, which is right for content keyed by file name and wrong
-        // here: there is ONE map shared by every pack, so taking the last file silently deletes the
-        // layers and the coverage every other pack asked for - and which file is last is HashMap order.
-        // Enabling a second pack would then change what the first one sees.
+        // merged, not last wins: every pack shares one map
         SurfaceMapSettings result = SurfaceMapSettings.NONE;
         for (var entry : resources.jsons().entrySet()) {
             try {
@@ -114,7 +102,7 @@ public class SurfaceMapManager extends SingleFileContentManager<SurfaceMapSettin
         map.setSettings(SurfaceMapSettings.NONE);
     }
 
-    /** From {@code LevelRenderer.render} HEAD, where no render pass is open. */
+    // LevelRenderer.render HEAD, no render pass open
     public void update(ClientLevel level, Vec3 camPos, float partialTick) {
         if (map.isEmpty() || declaredSamplers.isEmpty()) return;
         int renderDistance = Minecraft.getInstance().options.renderDistance().get();
@@ -133,10 +121,7 @@ public class SurfaceMapManager extends SingleFileContentManager<SurfaceMapSettin
         return !declaredSamplers.isEmpty();
     }
 
-    /**
-     * Binds each layer under the sampler name the pack gave it, only on programs that declare it. A layer
-     * that has not been allocated yet stands in with {@link #emptyLayer()}.
-     */
+    // unallocated layers get an empty stand in
     public void bindSamplers(RenderPass pass, Set<String> declaredUniforms) {
         if (samplerNames.isEmpty()) return;
         for (String name : samplerNames) {
@@ -147,24 +132,14 @@ public class SurfaceMapManager extends SingleFileContentManager<SurfaceMapSettin
         }
     }
 
-    /**
-     * Binds the biome palette to a pass whose program declares it; zeros until the first evaluation.
-     *
-     * <p>A declared block MUST be given a buffer, which is why the empty one exists. There is always
-     * at least one frame where the palette does not: the layer is only allocated once a program
-     * declares its sampler, and that declaration happens at link time, DURING the frame — after the
-     * update at {@code LevelRenderer.render} HEAD has already run and returned early. So the first
-     * frame a chain reading the map is active is guaranteed to reach here with a null slice, and
-     * leaving the block unbound is a render-pass error rather than a shader reading zeros. Both the
-     * shadow map and the viewpoints already stand in an empty block for exactly this reason.</p>
-     */
+    // a declared block must get a buffer, and the palette is still null on the first frame
     public void bindUniformBlocks(RenderPass pass, Set<String> declaredUniforms) {
         if (!declaredUniforms.contains(SurfaceBiomePalette.UBO_NAME)) return;
         GpuBufferSlice palette = map.paletteSlice();
         pass.setUniform(SurfaceBiomePalette.UBO_NAME, palette != null ? palette : emptyPalette());
     }
 
-    /** Zeros, so a shader sees "slots in use = 0" and falls back to the camera path on its own. */
+    // zeros, shaders see no slots in use
     private GpuBufferSlice emptyPalette() {
         if (emptyPalette == null) {
             emptyPalette = RenderSystem.getDevice().createBuffer(() -> "Polytone empty surface biome palette",
@@ -177,16 +152,7 @@ public class SurfaceMapManager extends SingleFileContentManager<SurfaceMapSettin
         return emptyPalette.slice();
     }
 
-    /**
-     * Stands in for a layer that has no texture yet, on the same first frame {@link #emptyPalette()}
-     * covers - a program declares its sampler at link time, after the update that would allocate it has
-     * already run.
-     *
-     * <p>Deliberately NOT the missing texture the shadow map and the viewpoints stand in. Every layer
-     * here says "no data" with alpha 0, and the missing texture is opaque magenta: a pack doing the
-     * documented alpha test would read it as real data, then decode its red channel as palette slot 248
-     * or as a height of 63000 blocks. Zeros are the only stand-in that the contract survives.</p>
-     */
+    // zeros, not the missing texture: that one is opaque and would pass the alpha test as data
     private GpuTextureView emptyLayer() {
         if (emptyLayer == null) {
             emptyLayer = new DynamicTexture(() -> "Polytone empty surface map layer", 1, 1, true);

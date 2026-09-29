@@ -76,8 +76,7 @@ public abstract class ScreenMixin implements SlotifyScreen {
     @Unique
     private boolean polytone$widgetsDirty = false;
 
-    // widgets are modified on the next frame instead of when added so other mods that move them after init
-    // (mod menu) see vanilla positions and cant make us apply our offsets twice
+    // applied on the next frame so mods moving widgets after init (mod menu) see vanilla positions
     @Inject(method = {"init(II)V", "rebuildWidgets", "resize(II)V"}, at = @At("TAIL"))
     private void onLayout(CallbackInfo ci) {
         polytone$widgetsDirty = true;
