@@ -94,7 +94,13 @@ public class PostTargetsManager extends ContentManager<PostTargetsManager.Target
         }
     }
 
-    public PostChain.TargetBundle wrap(LevelTargetBundle vanilla, FrameGraphBuilder builder) {
+    // persistent, so they can be imported into any frame graph including the after hand one
+    public Set<Identifier> customTargetIds() {
+        return this.specs.keySet();
+    }
+
+    // any bundle, so it also works from the main only one after the level graph
+    public PostChain.TargetBundle wrap(PostChain.TargetBundle vanilla, FrameGraphBuilder builder) {
         if (targets.isEmpty()) return vanilla;
         Map<Identifier, ResourceHandle<RenderTarget>> handles = new HashMap<>();
         for (var e : targets.entrySet()) {
