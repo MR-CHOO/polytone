@@ -170,5 +170,11 @@ public abstract class AbstractEntityProxy extends PositionalProxy {
         return entity().getDeltaMovement().lengthSqr();
     }
 
+    // block the entity's feet are in, so you can do p.at().down() to get the one below.
+    // not on PositionalProxy or blocks could chain it to escape the neighbor depth limit
+    public BlockProxy at() {
+        return new BlockProxy(getLevelInternal(), getPosInternal(), null);
+    }
+
 
 }
