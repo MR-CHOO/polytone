@@ -88,6 +88,12 @@ public class CameraProxy extends PositionalProxy {
         return Minecraft.getInstance().options.renderDistance().get() * 16.0;
     }
 
+    // the Brightness option, 0 (Moody) to 1 (Bright): the lightmap's display curve bends with it,
+    // so a shader that has to undo that curve needs the player's value
+    public double brightness() {
+        return Minecraft.getInstance().options.gamma().get();
+    }
+
     long lastFovUpdate = -1;
     double cachedFov = -1;
 
