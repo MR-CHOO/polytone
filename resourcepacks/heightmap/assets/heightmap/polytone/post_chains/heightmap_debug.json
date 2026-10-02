@@ -1,0 +1,7 @@
+{
+  "_comment": "High priority so it runs last: nothing draws over the debug windows, and it can defer to the after-hand stage.",
+  "post_chain": "heightmap:heightmap_debug",
+  "priority": 1000,
+  "activation_condition": 1,
+  "uses_viewpoints": ["heightmap:heightmap"]
+}
