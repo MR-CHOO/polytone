@@ -72,7 +72,23 @@ public abstract class GameRendererMixin {
             target = "Lnet/minecraft/client/renderer/GameRenderer;renderLevel(Lnet/minecraft/client/DeltaTracker;)V"))
     private void polytone$runPostChainsAfterHand(DeltaTracker deltaTracker, boolean bl, CallbackInfo ci) {
         if (!Polytone.CONFIGS.postChainsAfterHand.get()) return;
+        long probe = net.mehvahdjukaar.polytone.common.FrameProbe.now(); // TEMPORARY probe
         Polytone.POST_CHAINS.runChainsAfterHand(Minecraft.getInstance().gameRenderer.mainRenderTarget(), this.resourcePool);
+        net.mehvahdjukaar.polytone.common.FrameProbe.lap(net.mehvahdjukaar.polytone.common.FrameProbe.CHAINS_AFTER_HAND, probe);
+    }
+
+    // TEMPORARY probe
+    @org.spongepowered.asm.mixin.Unique
+    private long polytone$probeLevel;
+
+    @Inject(method = "renderLevel", at = @At("HEAD"))
+    private void polytone$probeLevelStart(DeltaTracker deltaTracker, CallbackInfo ci) {
+        polytone$probeLevel = net.mehvahdjukaar.polytone.common.FrameProbe.now();
+    }
+
+    @Inject(method = "renderLevel", at = @At("RETURN"))
+    private void polytone$probeLevelEnd(DeltaTracker deltaTracker, CallbackInfo ci) {
+        net.mehvahdjukaar.polytone.common.FrameProbe.lap(net.mehvahdjukaar.polytone.common.FrameProbe.RENDER_LEVEL, polytone$probeLevel);
     }
 
 }

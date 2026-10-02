@@ -52,23 +52,28 @@ public class LevelRendererMixin {
                                Vector4f fogColor,
                                boolean shouldRenderSky,
                                CallbackInfo ci) {
+        long probe = net.mehvahdjukaar.polytone.common.FrameProbe.now(); // TEMPORARY probe
         // no render pass is open here, which the UBO writes below need
         Polytone.POST_CHAINS.updateGlobalUniforms(cameraState.projectionMatrix, modelViewMatrix,
                 deltaTracker.getGameTimeDeltaTicks());
         Polytone.SHADER_EFFECTS.updateAll();
+        probe = net.mehvahdjukaar.polytone.common.FrameProbe.lap(net.mehvahdjukaar.polytone.common.FrameProbe.UNIFORMS, probe);
         // shadow map goes first so the post chains built into this frame's graph sample this frame's map
         Polytone.SHADOWS.renderer().renderShadowPassIfNeeded(terrainFog, Minecraft.getInstance().gameRenderer.mainCamera(),
                 modelViewMatrix, cameraState.projectionMatrix);
+        probe = net.mehvahdjukaar.polytone.common.FrameProbe.lap(net.mehvahdjukaar.polytone.common.FrameProbe.SHADOWS, probe);
         // viewpoints too, without fog since it would be measured from their eye
         GpuBufferSlice noFog = ((GameRendererAccessor) Minecraft.getInstance().gameRenderer).polytone$getFogRenderer()
                 .getBuffer(FogRenderer.FogMode.NONE);
         Polytone.VIEWPOINTS.renderActive(noFog, Minecraft.getInstance().gameRenderer.mainCamera());
+        probe = net.mehvahdjukaar.polytone.common.FrameProbe.lap(net.mehvahdjukaar.polytone.common.FrameProbe.VIEWPOINTS, probe);
         // reads chunks the client already has, so this is a fill, not a render
         if (this.levelRenderState.cameraRenderState != null && Minecraft.getInstance().level != null) {
             Polytone.SURFACE_MAP.update(Minecraft.getInstance().level,
                     Minecraft.getInstance().gameRenderer.mainCamera().position(),
                     deltaTracker.getGameTimeDeltaPartialTick(false));
         }
+        net.mehvahdjukaar.polytone.common.FrameProbe.lap(net.mehvahdjukaar.polytone.common.FrameProbe.SURFACE_MAP, probe);
     }
 
     // after weather, the last world pass that depth tests
@@ -107,8 +112,10 @@ public class LevelRendererMixin {
                                     CallbackInfo ci,
                                     @Local FrameGraphBuilder frameGraphBuilder) {
         // always, the sorting targets only exist in this graph
+        long probe = net.mehvahdjukaar.polytone.common.FrameProbe.now(); // TEMPORARY probe
         RenderTarget mainTarget = Minecraft.getInstance().gameRenderer.mainRenderTarget();
         Polytone.POST_CHAINS.addChainsToFrameGraph(mainTarget.width, mainTarget.height, this.targets, frameGraphBuilder,
                 terrainFog, this.levelRenderState.cameraRenderState);
+        net.mehvahdjukaar.polytone.common.FrameProbe.lap(net.mehvahdjukaar.polytone.common.FrameProbe.CHAIN_GRAPH, probe);
     }
 }

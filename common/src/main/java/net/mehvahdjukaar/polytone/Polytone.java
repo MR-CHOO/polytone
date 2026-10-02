@@ -167,12 +167,14 @@ public class Polytone {
 
 
     public static void onTick(Level level) {
+        long probe = net.mehvahdjukaar.polytone.common.FrameProbe.now(); // TEMPORARY probe
         GLOBAL_EXPRESSION.tick(level);
         ClientFrameTicker.onTick(level);
         ExpTicker.onTick(level);
         ENTITY_MODIFIERS.onTick(level);
         POST_CHAINS.tick();
         TokenBucketTracker.tick();
+        net.mehvahdjukaar.polytone.common.FrameProbe.lap(net.mehvahdjukaar.polytone.common.FrameProbe.POLY_TICK, probe);
     }
 
     public static void onTagsReceived(HolderLookup.Provider registryAccess) {
